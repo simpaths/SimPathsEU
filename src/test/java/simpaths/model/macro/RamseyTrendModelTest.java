@@ -20,7 +20,7 @@ import java.util.Map;
  *
  * <p>Validates that the Java Ramsey solver remains consistent with the MATLAB
  * export contract used by SimPaths. The MATLAB pipeline exports a historical
- * reference CSV ({@code growth_model_reference_Poland.csv}) and a terminal state
+ * reference CSV ({@code growth_model_reference_poland.csv}) and a terminal state
  * ({@code growth_terminal_state.json}). At runtime, SimPaths projects forward
  * from that terminal state, so the most important parity checks are anchored on
  * the exported terminal quarter rather than on the full historical detrending
@@ -60,7 +60,7 @@ public class RamseyTrendModelTest {
     /**
      * Frozen test fixtures, decoupled from the live {@code input/PL/MacroModel}
      * bundle. Each directory holds a self-contained, pinned MacroModel export
-     * ({@code growth_params_Poland.json}, {@code growth_model_reference_Poland.csv},
+     * ({@code growth_params_Poland.json}, {@code growth_model_reference_poland.csv},
      * {@code growth_terminal_state.json}) so swapping the live SimPaths input
      * between exogenous and endogenous Ramsey can never break this suite.
      *
@@ -74,6 +74,9 @@ public class RamseyTrendModelTest {
      */
     private static final String MACRO_MODEL_PATH = resolveFixtureDir("exogenous");
     private static final String ENDO_MODEL_PATH  = resolveFixtureDir("endogenous");
+
+    /** The live export bundle, which the fixtures are snapshots of. */
+    private static final String BUNDLE_PATH = "input/PL/MacroModel";
 
     /** Resolve a frozen fixture directory from the test classpath. */
     private static String resolveFixtureDir(String mode) {
@@ -148,19 +151,19 @@ public class RamseyTrendModelTest {
     public static void checkTestData() {
         Path dir = Paths.get(MACRO_MODEL_PATH);
         Path paramsFile = dir.resolve("growth_params_Poland.json");
-        Path referenceFile = dir.resolve("growth_model_reference_Poland.csv");
+        Path referenceFile = dir.resolve("growth_model_reference_poland.csv");
         Path terminalFile = dir.resolve("growth_terminal_state.json");
 
         testDataAvailable = Files.exists(paramsFile)
                 && Files.exists(referenceFile)
                 && Files.exists(terminalFile);
 
-        Path endoReferenceFile = Paths.get(ENDO_MODEL_PATH, "growth_model_reference_Poland.csv");
+        Path endoReferenceFile = Paths.get(ENDO_MODEL_PATH, "growth_model_reference_poland.csv");
 
         if (!testDataAvailable) {
             System.out.println("WARNING: Ramsey test fixtures not found at " + MACRO_MODEL_PATH);
             System.out.println("Required files: growth_params_Poland.json, "
-                    + "growth_model_reference_Poland.csv, growth_terminal_state.json");
+                    + "growth_model_reference_poland.csv, growth_terminal_state.json");
             System.out.println("Skipping Ramsey cross-validation tests.");
         } else {
             try {
@@ -453,6 +456,50 @@ public class RamseyTrendModelTest {
      * existed, over a projection production never uses. Regenerating the fixture on 2026-08-18
      * exposed it. Route this through the production loader so the two can only drift together.</p>
      */
+    /**
+     * Every directory the Ramsey loader can be pointed at must spell the reference CSV
+     * the way the loader derives it.
+     *
+     * <p>{@code MacroModelManager.initializeRamseyTrend} reads the country tag out of
+     * {@code growth_params_<Country>.json} and then lower-cases it to build
+     * {@code growth_model_reference_<country>.csv}. The export bundle is written that way,
+     * but the parity fixtures were copied in under a capitalised name, so the loader's
+     * derived name matched only on a case-insensitive filesystem. Every Windows run stayed
+     * green while CI on Linux failed outright.</p>
+     *
+     * <p>This compares the derived name against the actual directory listing rather than
+     * calling {@code File.exists()}, because {@code exists()} is itself case-insensitive on
+     * Windows and would reproduce the blind spot it is meant to catch.</p>
+     */
+    @Test
+    public void referenceCsvIsSpelledTheWayTheLoaderDerivesIt() {
+        for (String dirPath : new String[] {MACRO_MODEL_PATH, ENDO_MODEL_PATH, BUNDLE_PATH}) {
+            java.io.File dir = new java.io.File(dirPath);
+            Assumptions.assumeTrue(dir.isDirectory(), "Not a directory: " + dirPath);
+
+            String[] names = dir.list();
+            assertNotNull(names, "Cannot list " + dirPath);
+            java.util.List<String> listing = java.util.Arrays.asList(names);
+
+            java.util.List<String> paramFiles = listing.stream()
+                    .filter(n -> n.startsWith("growth_params_") && n.endsWith(".json"))
+                    .sorted()
+                    .toList();
+            assertFalse(paramFiles.isEmpty(), "No growth_params_*.json in " + dirPath);
+
+            String tag = paramFiles.get(0).substring("growth_params_".length(),
+                    paramFiles.get(0).length() - ".json".length());
+            String derived = "growth_model_reference_" + tag.toLowerCase() + ".csv";
+
+            assertTrue(listing.contains(derived),
+                    "The loader derives '" + derived + "' from " + paramFiles.get(0)
+                    + ", but " + dirPath + " contains "
+                    + listing.stream().filter(n -> n.startsWith("growth_model_reference_")).toList()
+                    + ". Names must match exactly; a case-only difference works on Windows"
+                    + " and fails on Linux.");
+        }
+    }
+
     @Test
         public void testForwardProjectionAnchorMatchesMATLABExport() throws Exception {
         assumeTestDataAvailable();
