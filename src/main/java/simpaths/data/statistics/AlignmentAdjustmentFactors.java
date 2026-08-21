@@ -7,12 +7,12 @@ import microsim.data.db.PanelEntityKey;
 import simpaths.data.Parameters;
 import simpaths.data.filters.FertileFilter;
 import simpaths.model.BenefitUnit;
+import simpaths.model.BenefitUnitSubgroup;
 import simpaths.model.Person;
 import simpaths.model.SimPathsModel;
 import simpaths.model.enums.Dcpst;
 import simpaths.model.enums.Indicator;
 import simpaths.model.enums.Les_c4;
-import simpaths.model.enums.Occupancy;
 import simpaths.model.enums.OccupancyExtended;
 import simpaths.model.enums.TargetShares;
 import simpaths.model.enums.TimeSeriesVariable;
@@ -432,27 +432,14 @@ public class AlignmentAdjustmentFactors {
 
     /**
      * Classifies a BenefitUnit into an OccupancyExtended subgroup.
-     * Mirrors the matchesSubgroup logic used in ActivityAlignmentV2.
-     * Returns null if the unit does not fall into any at-risk-of-work subgroup.
+     *
+     * <p>Delegates to {@link BenefitUnitSubgroup}, the single definition shared
+     * with {@code ActivityAlignmentV2.matchesSubgroup}. These diagnostics report
+     * on the population the alignment operated on, so they must classify it the
+     * same way — which two separate copies had already stopped doing.</p>
      */
     private static OccupancyExtended classifyBenefitUnit(BenefitUnit bu) {
-        Occupancy occ = bu.getOccupancy();
-        Person male = bu.getMale();
-        Person female = bu.getFemale();
-        boolean maleAtRisk = (male != null) && male.atRiskOfWork();
-        boolean femaleAtRisk = (female != null) && female.atRiskOfWork();
-
-        if (occ == Occupancy.Couple) {
-            if (maleAtRisk && femaleAtRisk) return OccupancyExtended.Couple;
-            if (maleAtRisk) return OccupancyExtended.Male_With_Dependent;
-            if (femaleAtRisk) return OccupancyExtended.Female_With_Dependent;
-            return null;
-        } else if (occ == Occupancy.Single_Male && male != null) {
-            return (male.getAdultChildFlag() == 1) ? OccupancyExtended.Male_AC : OccupancyExtended.Single_Male;
-        } else if (occ == Occupancy.Single_Female && female != null) {
-            return (female.getAdultChildFlag() == 1) ? OccupancyExtended.Female_AC : OccupancyExtended.Single_Female;
-        }
-        return null;
+        return BenefitUnitSubgroup.classify(bu);
     }
 
     private static double computeShare(double[] stats) {
