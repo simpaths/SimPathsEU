@@ -406,8 +406,9 @@ public class SimPathsStart implements ExperimentBuilder {
 		Parameters.loadTimeSeriesFactorMaps(country);
 		Parameters.instantiateAlignmentMaps();
 
-        // define country string for Parameters
-        Parameters.defineCountryString(country);
+		// define country string for Parameters
+		Parameters.defineCountryString(country);
+		
 		// set-up database
 		Parameters.databaseSetup(country, showGui, startYear);
 	}

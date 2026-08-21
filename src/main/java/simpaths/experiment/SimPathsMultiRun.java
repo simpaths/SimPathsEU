@@ -129,7 +129,8 @@ public class SimPathsMultiRun extends MultiRun {
         DatabaseUtils.databaseInputUrl = Experiment.inputFolder + File.separator + "input";
 
 		if (flagDatabaseSetup) {
-
+			// Define country string before database setup
+			Parameters.defineCountryString(country);
 			Parameters.databaseSetup(country, executeWithGui, startYear);
 		} else {
 			// standard simulation
