@@ -28,6 +28,8 @@ import org.apache.log4j.FileAppender;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PatternLayout;
 import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import microsim.data.ExperimentManager;
 
 
@@ -65,6 +67,7 @@ public class SimPathsMultiRun extends MultiRun {
 	private static Country country;
 	private static double interestRateInnov = 0.0;
 	private static double disposableIncomeFromLabourInnov = 0.0;
+	private static boolean outputToFile = false;
 	private Long counter = 0L;
 	public static Logger log = Logger.getLogger(SimPathsMultiRun.class);
 
@@ -136,6 +139,12 @@ public class SimPathsMultiRun extends MultiRun {
 			// standard simulation
 
 			log.info("Starting run with seed = " + randomSeed);
+
+			// Set up file logging early (before engine.setup) so logs directory is created
+			// in the same timestamped folder that will be used for CSV output
+			if (outputToFile) {
+				setupFileLogging(randomSeed);
+			}
 
 			SimulationEngine engine = SimulationEngine.getInstance();
 
@@ -263,26 +272,7 @@ public class SimPathsMultiRun extends MultiRun {
 				popSize = Integer.parseInt(cmd.getOptionValue("p"));
 			}
 			if (cmd.hasOption("f")) {
-				try {
-					File logDir = new File("output/logs");
-					if (!logDir.exists()) {
-						logDir.mkdirs();
-					}
-					// Writing console outputs to `run_[seed].txt
-					System.setOut(new PrintStream(new BufferedOutputStream(new FileOutputStream(logDir.getPath() + "/run_" + randomSeed + ".txt")), true));
-
-					// Writing logs to `run_[seed].log`
-					FileAppender appender = new FileAppender();
-					appender.setName("Run logging");
-					appender.setFile(logDir.getPath() + "/run_" + randomSeed + ".log");
-					appender.setAppend(false);
-					appender.setLayout(new PatternLayout("%d{yyyy MMM dd HH:mm:ss} - %m%n"));
-					appender.activateOptions();
-					Logger.getRootLogger().setLevel(Level.DEBUG);
-					Logger.getRootLogger().addAppender(appender);
-				} catch (FileNotFoundException e) {
-					throw new RuntimeException(e);
-				}
+				outputToFile = true;
 			}
 		} catch (ParseException e) {
 			System.err.println("Error parsing command line arguments: " + e.getMessage());
@@ -491,6 +481,55 @@ public class SimPathsMultiRun extends MultiRun {
 		model.setDisposableIncomeFromLabourInnov(disposableIncomeFromLabourInnov);
 	}
 
+	/**
+	 * Set up file logging to a timestamped output folder.
+	 * Creates a 'logs' subdirectory containing run_[seed].txt and run_[seed].log.
+	 * 
+	 * Also sets Experiment.testOutputFolder so that the database and CSV outputs
+	 * use the same folder, avoiding multiple timestamped folders.
+	 * 
+	 * @param seed The random seed (used for folder naming and log file names)
+	 */
+	private static void setupFileLogging(Long seed) {
+		try {
+			// Generate timestamped folder path (same format as Experiment.initialiseOutputFolder())
+			// Include run label suffix to match Experiment run-folder naming
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+			String timestamp = sdf.format(new Date());
+			String runLabel = buildRunLabel(seed, 0L);
+			// Use "./" prefix for H2 database compatibility (requires explicit relative or absolute path)
+			String outputFolder = "." + File.separator + "output" + File.separator + timestamp + "_" + runLabel;
+			
+			// Set the shared output folder for all JAS-mine components (database, CSV, etc.)
+			// This prevents multiple timestamped folders from being created
+			Experiment.testOutputFolder = outputFolder;
+			
+			File logDir = new File(outputFolder + File.separator + "logs");
+			if (!logDir.exists()) {
+				logDir.mkdirs();
+			}
+			
+			// Writing console outputs to run_[seed].txt
+			System.setOut(new PrintStream(new BufferedOutputStream(
+				new FileOutputStream(logDir.getPath() + File.separator + "run_" + seed + ".txt")), true));
+			
+			// Writing logs to run_[seed].log
+			FileAppender appender = new FileAppender();
+			appender.setName("Run logging " + seed);  // Unique name per run
+			appender.setFile(logDir.getPath() + File.separator + "run_" + seed + ".log");
+			appender.setAppend(false);
+			appender.setLayout(new PatternLayout("%d{yyyy MMM dd HH:mm:ss} - %m%n"));
+			appender.activateOptions();
+			Logger.getRootLogger().setLevel(Level.DEBUG);
+			Logger.getRootLogger().addAppender(appender);
+			
+			log.info("File logging enabled. Output folder: " + outputFolder);
+		} catch (FileNotFoundException e) {
+			System.err.println("Failed to set up file logging: " + e.getMessage());
+			throw new RuntimeException(e);
+		}
+	}
+
 	private void iterateParameters(Long counter) {
 
 		if (randomSeedInnov) {
@@ -524,6 +563,10 @@ public class SimPathsMultiRun extends MultiRun {
 
 	@Override
 	public String setupRunLabel() {
-		return randomSeed.toString() + "_" + counter.toString();
+		return buildRunLabel(randomSeed, counter);
+	}
+
+	private static String buildRunLabel(Long seed, Long runCounter) {
+		return seed + "_" + runCounter;
 	}
 }

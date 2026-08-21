@@ -599,9 +599,13 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
 
     private void saveRunParameters() {
 
-        String filePath = DatabaseUtils.databaseInputUrl;
-        filePath = filePath.substring(0, filePath.length()-5) + "options.txt";
-        try ( FileWriter fw = new FileWriter(filePath, true);
+        File outputDirectory = new File(getEngine().getCurrentExperiment().getOutputFolder());
+        if (!outputDirectory.exists() && !outputDirectory.mkdirs()) {
+            throw new RuntimeException("Failed to create output directory for run parameters: " + outputDirectory);
+        }
+
+        String filePath = new File(outputDirectory, "options.txt").getPath();
+        try ( FileWriter fw = new FileWriter(filePath, false);
               BufferedWriter bw = new BufferedWriter(fw);
               PrintWriter pw = new PrintWriter(bw)
         ) {
