@@ -47,6 +47,7 @@ import microsim.engine.SimulationEngine;
 
 // import LABOURsim packages
 import simpaths.data.Parameters;
+import simpaths.model.macro.MacroModelManager;
 import simpaths.model.enums.*;
 import simpaths.model.taxes.DonorTaxUnit;
 import simpaths.model.taxes.DonorTaxUnitPolicy;
@@ -322,6 +323,43 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
     @GUIparameter(description = "macro shocks: on")
     private boolean macroShocksOn = false;
 
+    // ========== Macro Model Integration ==========
+
+    /** Macro model manager (encapsulates DSGE cycle + Ramsey trend logic) */
+    private final MacroModelManager macroManager = new MacroModelManager();
+    
+    /** Default for {@code mm_dsgeMaxStateDeviation}; named so the inert-switch check can spot an override. */
+    private static final double DEFAULT_DSGE_MAX_STATE_DEVIATION = 10.0;
+
+    // Configuration fields for YAML/reflection compatibility
+    // These are synced to macroManager in buildObjects()
+    @GUIparameter(description = "Macro module layers to run: off, ramsey, dsge, or ramsey_dsge")
+    private MacroModelMode mm_macroModel = MacroModelMode.OFF;
+
+    @GUIparameter(description = "Macro logging verbosity: off, state, or verbose (verbose implies state)")
+    private MacroLogLevel mm_macroLogging = MacroLogLevel.OFF;
+
+    @GUIparameter(description = "Record macro-level labor supply paths (MacroPaths.csv) even with mm_macroModel: off")
+    private boolean mm_useMacroPathRecorder = true;
+
+    @GUIparameter(description = "CSV file name for exogenous DSGE shock scenario (relative to MacroModel dir, empty = no scenario)")
+    private String mm_dsgeShockScenario = "";
+
+    @GUIparameter(description = "CSV file name for Ramsey growth model scenario (relative to MacroModel dir, empty = baseline)")
+    private String mm_ramseyScenario = "";
+
+    @GUIparameter(description = "Realized labour-supply margins fed back into the yearly Ramsey re-solve: none, employment, hours, or employment_and_hours")
+    private MacroFeedbackMargins mm_ramseyFeedbackMargins = MacroFeedbackMargins.EMPLOYMENT_AND_HOURS;
+
+    @GUIparameter(description = "Persistence of the realized employment gap in the Ramsey feedback belief: 1 = permanent (random walk), 0 = current year only")
+    private double mm_ramseyFeedbackPersistence = 1.0;
+
+    @GUIparameter(description = "Persistence of the realized hours gap in the Ramsey feedback belief: 1 = permanent, 0 = current year only")
+    private double mm_ramseyFeedbackHoursPersistence = 1.0;
+
+    @GUIparameter(description = "Maximum DSGE state deviation before the stability check fires (log-deviation units)")
+    private double mm_dsgeMaxStateDeviation = DEFAULT_DSGE_MAX_STATE_DEVIATION;
+
     RandomGenerator cohabitInnov;
     Random initialiseInnov1;
     Random initialiseInnov2;
@@ -363,6 +401,33 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         // time check
         elapsedTime0 = System.currentTimeMillis();
         timerStartSim = elapsedTime0;
+
+        // Sync macro-model configuration fields to manager (fields set via reflection/YAML)
+        macroManager.setEnabled(mm_macroModel.isOn());
+        macroManager.setUseDsge(mm_macroModel.usesDsge());
+        macroManager.setUseRamseyTrend(mm_macroModel.usesRamseyTrend());
+
+        // Path recording is orthogonal to the macro layers:
+        // - mm_macroModel on,  mm_useMacroPathRecorder=true  -> macro + recording
+        // - mm_macroModel on,  mm_useMacroPathRecorder=false -> macro only, no CSV
+        // - mm_macroModel off, mm_useMacroPathRecorder=true  -> recorder-only mode
+        // - mm_macroModel off, mm_useMacroPathRecorder=false -> nothing
+        macroManager.setPathRecordingEnabled(mm_useMacroPathRecorder);
+        macroManager.setRecorderOnlyMode(!mm_macroModel.isOn() && mm_useMacroPathRecorder);
+        macroManager.setLogMacroState(mm_macroLogging.logsState());
+        macroManager.setVerboseMacroLogging(mm_macroLogging.isVerbose());
+        // Freeze the exogenous WageGrowth index out of sample only when the Ramsey layer is
+        // the secular wage source; otherwise the Ramsey trend double-counts it. Baseline and
+        // time-trend modes keep the index as-is.
+        Parameters.freezeWageGrowthForRamseyTrend = mm_macroModel.usesRamseyTrend();
+        macroManager.setDsgeShockScenario(mm_dsgeShockScenario);
+        macroManager.setRamseyScenario(mm_ramseyScenario);
+        macroManager.setMaxBounds(mm_dsgeMaxStateDeviation);
+        macroManager.setRamseyFeedbackMargins(mm_ramseyFeedbackMargins);
+        macroManager.setRamseyFeedbackPersistence(mm_ramseyFeedbackPersistence);
+        macroManager.setRamseyFeedbackHoursPersistence(mm_ramseyFeedbackHoursPersistence);
+
+        warnAboutInertMacroSwitches();
 
         // set seed for random number generator
         if (fixRandomSeed) SimulationEngine.getRnd().setSeed(randomSeedIfFixed);
@@ -518,6 +583,7 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         // HOUSEHOLD COMPOSITION MODULE: Decide whether to enter into a union (marry / cohabit), and then perform union matching (marriage) between a male and female
 
         // Update potential earnings so that as up to date as possible to decide partner in union matching.
+        // If DSGE is enabled (runs later), wages will be adjusted after union matching.
         yearlySchedule.addCollectionEvent(persons, Person.Processes.UpdatePotentialHourlyEarnings);
 
         // Consider whether in consensual union (cohabiting)
@@ -534,6 +600,16 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         yearlySchedule.addEvent(this, Processes.FertilityAlignment);        //Align to fertility rates implied by projected population statistics.
         yearlySchedule.addCollectionEvent(persons, Person.Processes.Fertility);
         yearlySchedule.addCollectionEvent(persons, Person.Processes.GiveBirth, false);        //Cannot use read-only collection schedule as newborn children cause concurrent modification exception.  Need to specify false in last argument of Collection event.
+
+        // DSGE MACRO MODEL (if enabled) - computes wage/inflation feedback
+        // Placed AFTER union matching so all BenefitUnits exist before labor market iteration.
+        // Uses current labor force state to compute equilibrium deviations that will affect this year's wages.
+        // Included in BOTH schedules: in year 1 it only initializes (no feedback), so that
+        // latchBaselineFromPostLaborMarket (called later in LabourMarketAndIncomeUpdate) can
+        // latch the baseline immediately. Without this, initialization is deferred to year 2,
+        // adding an unnecessary 1-year delay before the first DSGE output.
+        firstYearSched.addEvent(this, Processes.DSGEMacroUpdate);
+        yearlySchedule.addEvent(this, Processes.DSGEMacroUpdate);
 
         // TIME USE MODULE
         yearlySchedule.addEvent(this, Processes.LabourMarketAndIncomeUpdate);
@@ -556,6 +632,7 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         addEventToAllYears(tests, Tests.Processes.RunTests); //Run tests
         addCollectionEventToAllYears(persons, Person.Processes.UpdateOutputVariables); // Update idPartner, dhhtp_c4
         addCollectionEventToAllYears(benefitUnits, BenefitUnit.Processes.UpdateOutputVariables); // Update dhhtp_c4
+        addEventToAllYears(Processes.MacroEndYearCapture);
         addEventToAllYears(Processes.EndYear);
 
         // UPDATE YEAR
@@ -715,6 +792,24 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
             pw.println(line);
             line = "disposableIncomeInnov: " + disposableIncomeFromLabourInnov;
             pw.println(line);
+            line = "mm_macroModel: " + mm_macroModel.name().toLowerCase();
+            pw.println(line);
+            line = "mm_macroLogging: " + mm_macroLogging.name().toLowerCase();
+            pw.println(line);
+            line = "mm_useMacroPathRecorder: " + mm_useMacroPathRecorder;
+            pw.println(line);
+            line = "mm_dsgeShockScenario: " + mm_dsgeShockScenario;
+            pw.println(line);
+            line = "mm_ramseyScenario: " + mm_ramseyScenario;
+            pw.println(line);
+            line = "mm_dsgeMaxStateDeviation: " + mm_dsgeMaxStateDeviation;
+            pw.println(line);
+            line = "mm_ramseyFeedbackMargins: " + mm_ramseyFeedbackMargins.name().toLowerCase();
+            pw.println(line);
+            line = "mm_ramseyFeedbackPersistence: " + mm_ramseyFeedbackPersistence;
+            pw.println(line);
+            line = "mm_ramseyFeedbackHoursPersistence: " + mm_ramseyFeedbackHoursPersistence;
+            pw.println(line);
         } catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
@@ -752,6 +847,15 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         CheckForEmptyBenefitUnits,
         GarbageCollection,
         CheckForImperfectTaxDBMatches,
+        
+        // DSGE Macro Model
+        DSGEMacroUpdate,
+
+        // Re-emit SimPaths-side macro level aggregates against the post-alignment
+        // population state so that the year's MacroPaths.csv row reflects the
+        // year's official end-of-year demographics rather than the pre-alignment
+        // snapshot captured during DSGEMacroUpdate.
+        MacroEndYearCapture,
     }
 
     @Override
@@ -848,8 +952,21 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
             }
             case LabourMarketAndIncomeUpdate -> {
 
+                // Log DSGE wage adjustment summary before labor market update
+                if (macroManager.isEnabled()) {
+                    macroManager.logWageAdjustmentSummary();
+                }
+                
                 labourMarket.update(year);
                 if (commentsOn) log.info("Labour market update complete.");
+
+                if (macroManager.isRecorderActive()) {
+                    macroManager.latchBaselineFromPostLaborMarket(year, persons);
+                }
+
+                if (macroManager.isRecorderActive()) {
+                    macroManager.logLaborSupplyDiagnostics(year, persons, "post-labour-market");
+                }
             }
             case Timer -> {
                 printElapsedTime();
@@ -870,6 +987,10 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
                     double timerForSim = (System.currentTimeMillis() - timerStartSim)/1000.0/60.0;
                     System.out.println("Finished simulating population in " + timerForSim + " minutes");
                     if (commentsOn) log.info("Finished simulating population in " + timerForSim + " minutes");
+                    
+                    // Export DSGE quarterly paths (only for dynamic integration mode)
+                    macroManager.exportPaths(getEngine().getCurrentExperiment().getOutputFolder());
+                    macroManager.logDiagnosticsSummary();
                 }
                 year++;
             }
@@ -881,6 +1002,27 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
                 if (Parameters.saveImperfectTaxDBMatches) {
                     screenForImperfectTaxDbMatches();
                 }
+            }
+            case DSGEMacroUpdate -> {
+
+                if (macroManager.isRecorderActive()) {
+                    macroManager.updateEquilibrium(
+                        year, startYear, country.toString(),
+                        persons, benefitUnits,
+                        alignEmployment
+                    );
+                    if (commentsOn && macroManager.isLogMacroState()) {
+                        String mode = macroManager.isEnabled() ? "DSGE macro model" : "recorder-only";
+                        log.info(mode + " update complete.");
+                    }
+                }
+            }
+            case MacroEndYearCapture -> {
+
+                if (macroManager.isRecorderActive()) {
+                    macroManager.updateLevelAggregatesPostAlignment(year, persons);
+                }
+                macroManager.applyRamseyRecursiveFeedback(year, persons);
             }
             default -> {
                 throw new RuntimeException("failed to identify process type in SimPathsModel.onEvent");
@@ -2960,6 +3102,150 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
 
     public void setMacroShocksOn(boolean macroShocksOn) {
         this.macroShocksOn = macroShocksOn;
+    }
+
+    /**
+     * Warn about macro switches set away from their default that cannot take effect in the
+     * configured {@code mm_macroModel} mode. The mode enums make the layer combinations
+     * themselves unrepresentable; what remains are the switches whose owning layer may be
+     * absent, which the config loader would otherwise accept in silence.
+     */
+    private void warnAboutInertMacroSwitches() {
+        String mode = "mm_macroModel=" + mm_macroModel.name().toLowerCase();
+        if (mm_dsgeShockScenario != null && !mm_dsgeShockScenario.isBlank() && !mm_macroModel.usesDsge()) {
+            log.warn("mm_dsgeShockScenario='" + mm_dsgeShockScenario + "' is ignored: " + mode
+                    + " does not run the DSGE cycle.");
+        }
+        if (mm_dsgeMaxStateDeviation != DEFAULT_DSGE_MAX_STATE_DEVIATION && !mm_macroModel.usesDsge()) {
+            log.warn("mm_dsgeMaxStateDeviation=" + mm_dsgeMaxStateDeviation + " is ignored: " + mode
+                    + " does not run the DSGE cycle.");
+        }
+        if (mm_ramseyScenario != null && !mm_ramseyScenario.isBlank() && !mm_macroModel.usesRamseyTrend()) {
+            log.warn("mm_ramseyScenario='" + mm_ramseyScenario + "' is ignored: " + mode
+                    + " does not run the Ramsey trend layer.");
+        }
+        if (mm_ramseyFeedbackMargins != MacroFeedbackMargins.EMPLOYMENT_AND_HOURS
+                && !mm_macroModel.usesRamseyTrend()) {
+            log.warn("mm_ramseyFeedbackMargins=" + mm_ramseyFeedbackMargins.name().toLowerCase()
+                    + " is ignored: " + mode + " does not run the Ramsey trend layer.");
+        }
+        if (mm_ramseyFeedbackPersistence != 1.0 && !mm_ramseyFeedbackMargins.feedsEmployment()) {
+            log.warn("mm_ramseyFeedbackPersistence=" + mm_ramseyFeedbackPersistence + " is ignored:"
+                    + " mm_ramseyFeedbackMargins=" + mm_ramseyFeedbackMargins.name().toLowerCase()
+                    + " does not feed back employment.");
+        }
+        if (mm_ramseyFeedbackHoursPersistence != 1.0 && !mm_ramseyFeedbackMargins.feedsHours()) {
+            log.warn("mm_ramseyFeedbackHoursPersistence=" + mm_ramseyFeedbackHoursPersistence
+                    + " is ignored: mm_ramseyFeedbackMargins=" + mm_ramseyFeedbackMargins.name().toLowerCase()
+                    + " does not feed back hours.");
+        }
+    }
+
+    // ========== Macro Model Getters/Setters ==========
+    // These delegate to MacroModelManager to maintain backward compatibility
+    
+    public MacroModelMode getMm_macroModel() {
+        return mm_macroModel;
+    }
+
+    public void setMm_macroModel(MacroModelMode mode) {
+        this.mm_macroModel = mode;
+        macroManager.setEnabled(mode.isOn());
+        macroManager.setUseDsge(mode.usesDsge());
+        macroManager.setUseRamseyTrend(mode.usesRamseyTrend());
+        macroManager.setRecorderOnlyMode(!mode.isOn() && mm_useMacroPathRecorder);
+    }
+
+    public boolean isMm_useMacroPathRecorder() {
+        return mm_useMacroPathRecorder;
+    }
+
+    public void setMm_useMacroPathRecorder(boolean useMacroPathRecorder) {
+        this.mm_useMacroPathRecorder = useMacroPathRecorder;
+        macroManager.setPathRecordingEnabled(useMacroPathRecorder);
+        macroManager.setRecorderOnlyMode(!mm_macroModel.isOn() && useMacroPathRecorder);
+    }
+
+    public MacroLogLevel getMm_macroLogging() {
+        return mm_macroLogging;
+    }
+
+    public void setMm_macroLogging(MacroLogLevel level) {
+        this.mm_macroLogging = level;
+        macroManager.setLogMacroState(level.logsState());
+        macroManager.setVerboseMacroLogging(level.isVerbose());
+    }
+
+    public MacroFeedbackMargins getMm_ramseyFeedbackMargins() {
+        return mm_ramseyFeedbackMargins;
+    }
+
+    public void setMm_ramseyFeedbackMargins(MacroFeedbackMargins margins) {
+        this.mm_ramseyFeedbackMargins = margins;
+        macroManager.setRamseyFeedbackMargins(margins);
+    }
+
+    public String getMm_dsgeShockScenario() {
+        return macroManager.getDsgeShockScenario();
+    }
+
+    public void setMm_dsgeShockScenario(String scenario) {
+        this.mm_dsgeShockScenario = scenario;
+        macroManager.setDsgeShockScenario(scenario);
+    }
+
+    public MacroModelManager getMacroManager() {
+        return macroManager;
+    }
+
+    /**
+     * Get the macro model manager.
+     * @return MacroModelManager instance (always non-null)
+     */
+    public MacroModelManager getDsgeManager() {
+        return getMacroManager();
+    }
+    
+    /**
+     * Get current DSGE wage deviation (% from steady state).
+     * @return wage deviation in percent (e.g., 2.5 means 2.5% above steady state)
+     */
+    public double getMm_wageDeviation() {
+        return macroManager.getWageDeviation();
+    }
+    
+    /**
+     * Get current DSGE inflation deviation (percentage points from steady state).
+     * @return inflation deviation in percentage points
+     */
+    public double getMm_inflationDeviation() {
+        return macroManager.getInflationDeviation();
+    }
+    
+    /**
+     * Track a wage adjustment for logging purposes.
+     * Delegates to MacroModelManager.
+     */
+    public void trackWageAdjustment(Person person, double originalWage, double adjustedWage, double wageDeviation) {
+        macroManager.trackWageAdjustment(person, originalWage, adjustedWage, wageDeviation);
+    }
+    
+    /**
+     * Track labor supply decision for logging.
+     * Delegates to MacroModelManager.
+     */
+    public void trackLaborSupplyDecision(
+            BenefitUnit bu,
+            org.apache.commons.collections4.map.MultiKeyMap<simpaths.model.enums.Labour, Double> disposableIncomeByHours,
+            org.apache.commons.collections4.map.MultiKeyMap<simpaths.model.enums.Labour, Double> probabilitiesByHours) {
+        macroManager.trackLaborSupplyDecision(bu, disposableIncomeByHours, probabilitiesByHours);
+    }
+    
+    /**
+     * Reset labor supply log counter (call at start of each iteration).
+     */
+    public void resetLaborSupplyLogCounter() {
+        macroManager.resetLaborSupplyLogCounter();
     }
 
     public boolean getFlagDefaultToTimeSeriesAverages() { return flagDefaultToTimeSeriesAverages; }

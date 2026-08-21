@@ -1,5 +1,10 @@
 package simpaths.model;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -14,8 +19,28 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import simpaths.data.startingpop.Processed;
 import simpaths.model.enums.Country;
+import simpaths.model.enums.MacroFeedbackMargins;
+import simpaths.model.enums.MacroLogLevel;
+import simpaths.model.enums.MacroModelMode;
 
 class SimPathsModelTest {
+
+    /**
+     * The macro defaults the documentation states. mm_macroModel is off, so a plain SimPaths
+     * run has no macro layer, while the feedback margins default to on and are simply inert
+     * without a Ramsey layer to re-solve. The predecessor of this test asserted that the
+     * feedback with the macro model off was fatal, which was right only while the feedback
+     * was an explicit opt-in.
+     */
+    @Test
+    void testMacroSwitchDefaults() {
+        SimPathsModel model = new SimPathsModel(Country.PL, 2023);
+        assertEquals(MacroModelMode.OFF, model.getMm_macroModel());
+        assertEquals(MacroLogLevel.OFF, model.getMm_macroLogging());
+        assertEquals(MacroFeedbackMargins.EMPLOYMENT_AND_HOURS, model.getMm_ramseyFeedbackMargins());
+        assertFalse(model.getMm_macroModel().usesRamseyTrend());
+        assertFalse(model.getMm_macroModel().usesDsge());
+    }
 
     /**
      * getProcessed() runs a read-only transaction; closing the EntityManager while that
@@ -60,5 +85,11 @@ class SimPathsModelTest {
             emfField.set(null, previousEmf);
             emf.close();
         }
+    }
+
+    private static void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 }

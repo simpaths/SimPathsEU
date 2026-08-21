@@ -109,6 +109,41 @@ JUnit 5 + Mockito. Tests in `src/test/java/simpaths/`:
 - `data/MahalanobisDistanceTest` — Statistical matching
 - `integrationtest/RunSimPathsIntegrationTest` — End-to-end run using `config/test_create_database.yml` + `config/test_run.yml`
 
+### Cross-repository contracts with WELLSIM_SVEC (read before changing macro code)
+
+The macro layer spans two repositories: MATLAB upstream (`WELLSIM_SVEC/macromodel`)
+produces a bundle, Java downstream consumes it. Two rules, both learned the hard way.
+
+**1. Never re-derive downstream what upstream already computes.** A quantity computed
+on both sides is joined by convention, and conventions drift silently. Carry it in a
+bundle artefact instead, and make a missing artefact fail the run — never fall back to
+a local computation, because the fallback is the bug. `population_projection_*.csv` and
+`hours_projection_*.csv` work this way. This applies to test helpers as much as to
+production: the parity test assembled its own forward projection until 2026-08-18 and
+had drifted 273% from MATLAB's employment path without failing.
+
+**2. Parity fixtures are snapshots, and snapshots get refreshed.**
+`src/test/resources/macro/exogenous/` pins two different things: that MATLAB and Java
+*agree*, and that the numbers are *specific values*. Only the first is a safety
+property. The second must change whenever a bug is fixed or a parameter recalibrated,
+so freezing the file turns every legitimate fix into a rules argument — and in practice
+the fixture just went stale instead, silently, for two calibration vintages.
+
+So the rule is **not** "never regenerate". It is:
+
+- Never hand-edit a fixture, and never regenerate one to turn a red test green without
+  first understanding why it went red.
+- Regenerate only via `refresh_java_parity_fixtures('<Country>')` in the MATLAB repo,
+  which copies a coherent set from one run and writes `FIXTURE_PROVENANCE.txt`.
+- Then re-run `RamseyTrendModelTest`. **It must pass at `RELATIVE_TOLERANCE = 1e-9`.**
+  That is the gate: parity passing *after* regeneration proves both sides agree on the
+  new rule, which is strictly stronger than pinning old numbers.
+- Commit the fixture diff together with the code change that moved the numbers.
+
+`RELATIVE_TOLERANCE = 1e-9` and the `foc_parity_cases.csv` tolerance of `1e-12` must
+still never be loosened. The FOC fixture is a pinned analytical case, not a snapshot of
+a solve, and is not covered by the refresh above.
+
 ## Branch Conventions
 
 - `main` — stable release

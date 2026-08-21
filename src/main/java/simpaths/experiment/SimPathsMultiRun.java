@@ -8,6 +8,9 @@ import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Level;
 import org.apache.commons.cli.*;
 import org.yaml.snakeyaml.Yaml;
+import simpaths.model.enums.ConfigEnumValue;
+import simpaths.model.enums.MacroLogLevel;
+import simpaths.model.enums.MacroModelMode;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -224,6 +227,17 @@ public class SimPathsMultiRun extends MultiRun {
 		trainingOption.setArgName("true/false");
 		options.addOption(trainingOption);
 
+		// Macro module options
+		Option macroOption = new Option("macro", "macroModel", true,
+				"Macro layers to run: " + ConfigEnumValue.valueList(MacroModelMode.class));
+		macroOption.setArgName(ConfigEnumValue.valueList(MacroModelMode.class));
+		options.addOption(macroOption);
+
+		Option macroLogOption = new Option("macroLog", "macroLogging", true,
+				"Macro logging verbosity: " + ConfigEnumValue.valueList(MacroLogLevel.class));
+		macroLogOption.setArgName(ConfigEnumValue.valueList(MacroLogLevel.class));
+		options.addOption(macroLogOption);
+
 		Option helpOption = new Option("h", "help", false, "Print this help message");
 		options.addOption(helpOption);
 
@@ -271,6 +285,21 @@ public class SimPathsMultiRun extends MultiRun {
 			if (cmd.hasOption("p")) {
 				popSize = Integer.parseInt(cmd.getOptionValue("p"));
 			}
+
+			// Parse macro module options and add to modelArgs
+			if (cmd.hasOption("macro")) {
+				if (modelArgs == null) {
+					modelArgs = new java.util.HashMap<>();
+				}
+				modelArgs.put("mm_macroModel", MacroModelMode.fromConfigValue(cmd.getOptionValue("macro")));
+			}
+			if (cmd.hasOption("macroLog")) {
+				if (modelArgs == null) {
+					modelArgs = new java.util.HashMap<>();
+				}
+				modelArgs.put("mm_macroLogging", MacroLogLevel.fromConfigValue(cmd.getOptionValue("macroLog")));
+			}
+
 			if (cmd.hasOption("f")) {
 				outputToFile = true;
 			}
@@ -433,6 +462,14 @@ public class SimPathsMultiRun extends MultiRun {
 		}
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static Object parseConfigEnum(Class<?> targetType, Object value) {
+		Class rawType = targetType;
+		Enum[] constants = (Enum[]) targetType.getEnumConstants();
+		Enum disabled = constants.length > 0 ? constants[0] : null;
+		return ConfigEnumValue.parse(rawType, value, disabled, targetType.getSimpleName());
+	}
+
 	private static Object convertToType(Object value, Class<?> targetType) {
 		// Convert the YAML value to the target type
 		if (int.class.equals(targetType)) {
@@ -447,6 +484,10 @@ public class SimPathsMultiRun extends MultiRun {
 			return ((Number) value).doubleValue();
 		} else if (Double.class.equals(targetType)) {
 			return Double.parseDouble(value.toString());
+		} else if (targetType.isEnum()) {
+			// SnakeYAML resolves YAML 1.1 booleans first, so an unquoted `off` arrives here as
+			// Boolean.FALSE rather than "off"; ConfigEnumValue maps it to the disabled constant.
+			return parseConfigEnum(targetType, value);
 		} else {
 			// If it's none of the known types, return the value as is
 			return value;
@@ -567,6 +608,48 @@ public class SimPathsMultiRun extends MultiRun {
 	}
 
 	private static String buildRunLabel(Long seed, Long runCounter) {
-		return seed + "_" + runCounter;
+		StringBuilder label = new StringBuilder();
+		label.append(seed).append("_").append(runCounter);
+
+		String dsgeShock = extractScenarioNameWithoutCsv("mm_dsgeShockScenario");
+		if (dsgeShock != null) {
+			label.append("_").append(dsgeShock);
+		}
+
+		String ramseyScenario = extractScenarioNameWithoutCsv("mm_ramseyScenario");
+		if (ramseyScenario != null) {
+			label.append("_").append(ramseyScenario);
+		}
+
+
+		return label.toString();
+	}
+
+	private static String extractScenarioNameWithoutCsv(String key) {
+		if (modelArgs == null) {
+			return null;
+		}
+
+		Object raw = modelArgs.get(key);
+		if (raw == null) {
+			return null;
+		}
+
+		String value = raw.toString().trim();
+		if (value.isEmpty()) {
+			return null;
+		}
+
+		int slashIdx = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
+		String fileName = (slashIdx >= 0) ? value.substring(slashIdx + 1) : value;
+		if (fileName.isEmpty()) {
+			return null;
+		}
+
+		if (fileName.toLowerCase().endsWith(".csv")) {
+			fileName = fileName.substring(0, fileName.length() - 4);
+		}
+
+		return fileName.isEmpty() ? null : fileName;
 	}
 }
