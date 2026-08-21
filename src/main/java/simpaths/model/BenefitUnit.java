@@ -4780,6 +4780,8 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
     }
     public Set<Person> getMembers() {return members;}
 
+    public void setMembers(Set<Person> members) { this.members = members; }
+
     public void setProcessedId(long id) {
         key.setWorkingId(id);
     }
