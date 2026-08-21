@@ -138,6 +138,8 @@ public class Household implements EventListener, IDoubleSource {
 
     public Set<BenefitUnit> getBenefitUnits() { return benefitUnits; }
 
+    public void setBenefitUnits(Set<BenefitUnit> benefitUnits) { this.benefitUnits = benefitUnits; }
+
     public void setProcessed(Processed processed) {
         this.processed = processed;
         key.setWorkingId(processed.getId());
