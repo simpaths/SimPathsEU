@@ -25,7 +25,6 @@ import org.jetbrains.annotations.NotNull;
 import simpaths.data.IEvaluation;
 import simpaths.data.MahalanobisDistance;
 import simpaths.data.RootSearch;
-import simpaths.data.RootSearch2;
 import simpaths.data.startingpop.Processed;
 import simpaths.experiment.SimPathsCollector;
 import simpaths.model.decisions.*;
@@ -1574,12 +1573,12 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         }
 
         ActivityAlignmentV2 activityAlignment = new ActivityAlignmentV2(benefitUnits, coefficientMap, regressionCoefficientName, occupancy);
-        RootSearch2 search = getRootSearch2(utilityAdjustment, activityAlignment, 0.5, 5.0E-3, Parameters.EMPLOYMENT_ALIGNMENT_BOUND);
+        RootSearch search = getRootSearch(utilityAdjustment, activityAlignment, 0.5, 5.0E-3, Parameters.EMPLOYMENT_ALIGNMENT_BOUND);
 
         if (Parameters.LOG_ALIGNMENT_DETAILS) {
             System.out.printf("[Alignment] Activity %-20s | result=%.6f | altered=%s | iters=%d%n",
                     occupancyLabel, search.getTarget()[0], search.isTargetAltered(), search.getIterationCount());
-            for (RootSearch2.IterationInfo it : search.getIterationHistory()) {
+            for (RootSearch.IterationInfo it : search.getIterationHistory()) {
                 System.out.printf("  iter %2d | x=% .6f | f(x)=% .3e | step=% .3e | funcTol=%-5s | ordTol=%-5s%n",
                         it.getIteration(), it.getX(), it.getFx(), it.getStep(),
                         it.isFuncTolMet(), it.isOrdTolMet());
@@ -1714,23 +1713,6 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         return search;
     }
 
-
-    @NotNull
-    private static RootSearch2 getRootSearch2(double initialAdjustment, IEvaluation alignmentClass, double epsOrdinates, double epsFunction, double modifier) {
-        double minVal = initialAdjustment - modifier;
-        double maxVal = initialAdjustment + modifier;
-        return getRootSearch2(initialAdjustment, minVal, maxVal, alignmentClass, epsOrdinates, epsFunction);
-    }
-
-    @NotNull
-    private static RootSearch2 getRootSearch2(double initialAdjustment, double minVal, double maxVal, IEvaluation alignmentClass, double epsOrdinates, double epsFunction) {
-        double[] startVal = new double[] {initialAdjustment}; // Starting values for the adjustment
-        double[] lowerBound = new double[] {minVal};
-        double[] upperBound = new double[] {maxVal};
-        RootSearch2 search = new RootSearch2(lowerBound, upperBound, startVal, alignmentClass, epsOrdinates, epsFunction);
-        search.evaluate();
-        return search;
-    }
 
 
 
