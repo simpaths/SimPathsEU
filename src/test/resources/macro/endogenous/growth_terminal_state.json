@@ -1,0 +1,10 @@
+{
+  "K_terminal": 1384989.516110,
+  "A_terminal": 0.0345186083,
+  "handoff_time": "2023q1",
+  "endogenous_labor": true,
+  "l_terminal": 0.4749233005,
+  "WAP_terminal": 28161.502873,
+  "psi_terminal": 1.2968036051026861e+00,
+  "comment": "Capital stock, TFP level, and (if endogenous) labor wedge at the SimPaths handoff quarter. Use as initial values for SimPaths forward projection."
+}

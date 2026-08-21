@@ -1,0 +1,20 @@
+# Monetary Tightening Scenario (8 quarters)
+#
+# Simulates a contractionary monetary policy shock (eps_r > 0 = rate increase)
+# lasting 2 years, representing an unexpected policy tightening cycle.
+#
+# Usage:
+#   Set mm_dsgeShockScenario = "monetary_tightening_8q.csv" in config YAML
+#   Run with mm_staticIntegration = false (dynamic mode only)
+#
+# Shock units: standard-deviation units (eps_r is normalized by sigma_r)
+#
+year,quarter,eps_r
+2025,1,1.50
+2025,2,1.25
+2025,3,1.00
+2025,4,0.75
+2026,1,0.50
+2026,2,0.35
+2026,3,0.20
+2026,4,0.10

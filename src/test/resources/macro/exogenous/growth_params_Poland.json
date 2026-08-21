@@ -1,0 +1,85 @@
+{
+  "model_version": "2.0",
+  "model_type": "ramsey",
+  "country": "Poland",
+  "calibration_date": "2026-03-06",
+  "calibration_source": "PWT 11.0 (FRED LABSHPPLA156NRUG), Eurostat, NBP",
+  "parameters": {
+    "alpha_K": 0.33,
+    "delta_annual": 0.06,
+    "beta_annual": 0.96,
+    "sigma": 1.5,
+    "tfp_growth_annual": 0.015,
+    "K_override": 738546,
+    "phi": 1.35,
+    "labor_supply": "exogenous",
+    "x_comments": {
+      "alpha_K": "Capital share set to 0.33 (same as Germany) for cross-country comparability. PWT 11.0 labsh for Poland averages 0.59 (2000-2019), implying alpha=0.41, but this is likely inflated by transition-era measurement issues (volatile range 0.54-0.66). Using 0.33 also avoids excessive BGP K/Y that produces implausibly large Ramsey detrending residuals.",
+      "delta_annual": "6% annual depreciation for total-economy capital. Higher than Germany (5%) to reflect faster capital obsolescence in post-transition Poland. Tested 6.5% and 7% but these depressed the trend too much (y corr dropped from 0.79 to 0.60). Combined with the K_override below, 6% gives the best balance across Y, C, and investment detrending.",
+      "beta_annual": "Discount factor: 0.96 annual. It pins the terminal modified-golden-rule BGP real rate together with sigma and the terminal TFP growth; the resulting r* is written to documentation_data/ramsey/ramsey_summary_Poland.json (structural.r_star_annual) rather than quoted here, because it is derived and would go stale.",
+      "sigma": "Inverse IES (CRRA coefficient). sigma=1.5 is mid-range consensus (1=log, 2=high risk aversion).",
+      "tfp_growth_annual": "1.5% annual TFP growth during the historical in-sample period. Poland is a catch-up economy with higher TFP growth than Germany (0.5%). The forward extension and terminal BGP instead converge to terminal_growth.g_A_terminal_annual (see that block) to avoid imposing permanent catch-up growth.",
+      "K_override": "Override initial capital stock K_0 (million EUR, chain-linked 2015) at the base year. PIM gives K/Y=2.0 (K=509k) and PWT 11.0 cross-validates at K/Y=2.21; both understate the stock because housing and informal capital are unmeasured, so K_0 is set above them. The implied K/Y and the BGP K/Y it is judged against are derived quantities — read them from documentation_data/ramsey/ramsey_summary_Poland.json (base_year_values.K0 / base_year_values.Y0_annual) instead of from a number written here. Set to 0 to disable the override and use PIM.",
+      "phi": "Inverse Frisch elasticity on extensive margin. Current Poland calibration is phi=1.35. This remains provisional and should be re-estimated from dedicated Polish SimPaths experiments when available.",
+      "labor_supply": "Default Ramsey labor-supply mode. calibrate_growth_model.m copies this template into simpaths_export and writes the calibrated runtime fields there."
+    }
+  },
+  "base_year": 2005,
+  "base_quarter": "2005Q1",
+  "base_year_values": {
+    "WAP": 26824,
+    "WAP_comment": "Working-age population (15-64), thousands. Source: World Bank SP.POP.1564.TO (UN WPP), Poland 2005. Must match build_population_projection.m age range.",
+    "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into simpaths_export/Poland/growth_params_Poland.json.",
+    "K": 738546,
+    "Y": 295418.3,
+    "N": 10468,
+    "h": 514.8739325,
+    "A_implied": 0.02640368344364517,
+    "L": 17113.5,
+    "G": 60579.3,
+    "NX": 1332.7
+  },
+  "inflation_target": {
+    "pi_star_annual": 2.5,
+    "convergence_rho": 0.95,
+    "x_comment": "NBP (National Bank of Poland) inflation target is 2.5% (+/- 1pp). Differs from ECB 2% target used for Germany."
+  },
+  "labor_trends": {
+    "nawru_source": "AMECO",
+    "nawru_file": "nawru_poland.csv",
+    "demographic_L_source": "Eurostat population projections + GUS labor force participation",
+    "demographic_L_file": "demographic_L_poland.csv",
+    "hours_trend_method": "log_linear",
+    "x_comment": "NAWRU from AMECO (or OECD). L_demo from Eurostat/GUS. Hours: log-linear trend fitted to observed."
+  },
+  "solver": {
+    "method": "stacked_newton_lbj",
+    "terminal_tail_quarters": 600,
+    "newton_tolerance": 1E-10,
+    "max_newton_iterations": 200,
+    "finite_difference_step_scale": 1E-7,
+    "jacobian_half_bandwidth": 1,
+    "line_search": "armijo_backtracking",
+    "x_comment": "Stacked-time Newton (LBJ) perfect-foresight solver with terminal K/Y closure. The solve runs over the observed sample plus a terminal tail of 600 quarters (~150 years); Newton convergence requires ||F||_inf <= 1.0e-10 within 200 iterations."
+  },
+  "terminal_growth": {
+    "enabled": true,
+    "g_A_terminal_annual": 0.005,
+    "rho_quarterly": 0.985,
+    "x_comment": "In-sample detrending uses tfp_growth_annual = 1.5%; the forward extension converges quarter-by-quarter toward g_A_terminal_annual. 0.5% is the long-run anchor consistent with completion of EU income convergence (AMECO/AWG long-run productivity assumptions for converged member states), and is also chosen to align the Ramsey forward wage trend with the vanilla SimPaths wage trend (~1.5%/yr), enabling clean treatment-effect comparisons. rho_quarterly = 0.985 (~12yr half-life) speeds up convergence relative to the previous 0.99 (~17yr half-life)."
+  },
+  "expenditure_shares": {
+    "CY_base": 0.61188152528127071,
+    "IY_base": 0.1602920333642161,
+    "GY_base": 0.2050627872410071,
+    "NXY_base": 0.0045112303469351765
+  },
+  "derived": {
+    "beta_quarterly": 0.989846400767953,
+    "delta_quarterly": 0.015349822788181422,
+    "tfp_growth_annual_terminal": 0.005,
+    "KY_bgp_quarterly": 11.607123478305446,
+    "r_star_bgp_annual": 0.053359632608890095,
+    "Y_quarterly_base": 73854.575
+  }
+}

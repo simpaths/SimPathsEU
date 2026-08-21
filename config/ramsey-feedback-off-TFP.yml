@@ -1,0 +1,39 @@
+# Recursive Ramsey feedback experiment - arm 1: feedback OFF (current top-down behavior)
+maxNumberOfRuns: 8
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation:   true
+    alignRetirement:   true
+    alignDisability:   true
+    alignEducation:    true
+    alignInSchool:     true
+    alignCohabitation: true
+    # Inert for startYear >= 2023: LabourMarket gates employment alignment on
+    # year <= EMPLOYMENT_ALIGNMENT_END_YEAR (=2023), and the labour market first
+    # runs in startYear+1. Kept only for parity with the other config files.
+    # alignRetirement/alignDisability above have NO end year and do run to 2060.
+    alignEmployment:   true
+    alignFertility:    true
+
+    # Macro Model
+    mm_macroModel: ramsey
+    # off | ramsey | dsge | ramsey_dsge   (dsge alone is diagnostic: the cycle was
+    # estimated on Ramsey-detrended data, so without the trend layer it deviates
+    # around SimPaths' own wage trend instead)
+    mm_macroLogging: state          # off | state | verbose (verbose implies state)
+
+    mm_ramseyFeedbackMargins: none
+    # none | employment | hours | employment_and_hours
+    mm_ramseyFeedbackPersistence: 1.0
+    mm_ramseyFeedbackHoursPersistence: 1.0
+
+    mm_ramseyScenario: "_macroScenario_ramsey_high_gA_0_5pp.csv"
+
+
+collector_args:
+    exportToCSV: true
