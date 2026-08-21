@@ -3221,7 +3221,10 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
                 processed.setHouseholds(households);
             }
 
-            // close database connection
+            // Committing (even though read-only) is what releases the pooled JDBC connection:
+            // closing an EntityManager with an active transaction defers the physical close,
+            // and emfStartingPopulation's pool is shared by every run of a multi-run.
+            txn.commit();
             em.close();
         } catch (Exception e) {
             if (txn != null) {
