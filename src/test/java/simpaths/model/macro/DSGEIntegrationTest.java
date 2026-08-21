@@ -154,21 +154,29 @@ class DSGEIntegrationTest {
     }
 
     /**
-     * Test fallback when Ramsey files are missing.
+     * A missing Ramsey bundle is fatal, not a soft fallback.
+     *
+     * <p>This test previously asserted the opposite: that the manager quietly cleared
+     * {@code useRamseyTrend} and carried on. That behaviour was removed deliberately,
+     * because a silent fallback means a run configured for the Ramsey layer produces
+     * non-Ramsey numbers that look exactly like Ramsey numbers. The same reasoning
+     * removed the legacy population-projection fallback. The test kept asserting the
+     * old contract only because it never ran &mdash; surefire excludes
+     * {@code *IntegrationTest} and CI failed earlier in the build.</p>
      */
     @Test
-    void testManagerFallbackWithoutRamseyFiles() throws IOException {
+    void testManagerRefusesToRunWithoutRamseyFiles() {
         MacroModelManager manager = new MacroModelManager();
         manager.setUseRamseyTrend(true);
 
-        // Point to a directory without growth_params files
-        manager.initializeRamseyTrend("input/nonexistent_country/MacroModel");
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> manager.initializeRamseyTrend("input/nonexistent_country/MacroModel"),
+                "A missing bundle must fail the run, not silently disable the trend layer");
 
-        // Should fall back gracefully
-        assertFalse(manager.isUseRamseyTrend(),
-                "Should fall back when files not found");
-        assertNull(manager.getRamseyTrend(),
-                "Ramsey model should be null after fallback");
+        assertTrue(ex.getMessage().contains("growth_params_"),
+                "Message should name the artefact that is missing, got: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("fatal"),
+                "Message should say the run cannot continue, got: " + ex.getMessage());
     }
     
     // ========== Export-bundle contract validation ==========
