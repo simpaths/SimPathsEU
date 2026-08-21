@@ -149,7 +149,11 @@ For multiple runs, `multirun.jar` takes the following options:
 - `-e` end year of runs
 - `-g` [true/false] show/hide gui
 - `-f` write console output and logs to file (in 'output/logs/run_[seed].txt')
-- `-config <file>` use a custom YAML config from `config/` instead of `default.yml`
+- `-config <file>` use a custom YAML config from `config/` instead of `default.yml`. `<file>` is a bare
+  filename resolved *relative to* `config/` (e.g. `-config ramsey-feedback-persistent.yml`) — the loader
+  prepends `config/` itself, so passing a path that already includes it (`-config config/foo.yml`) looks
+  for `config/config/foo.yml`, prints one "Config file ... not found" line to stderr, and returns **without
+  running a simulation, exiting 0**. A script that only checks the exit code will not notice.
 - `-DBSetup` build the input population database for the configured country/start year, then exit
 - `-t` [true/false] use training data subset (same semantics as for `singlerun`). Overrides `parameter_args.trainingFlag` from the YAML config. The same caveat applies: if you switch `-t`, also rebuild the DB with `-DBSetup` before running the multirun.
 
