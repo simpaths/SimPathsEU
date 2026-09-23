@@ -9,20 +9,20 @@
 * LAST UPDATE:          Jan 2025
 ********************************************************************************
 * NOTE:					This is a formatted, extended (to include 2023 data) 
-* 						and organized version of the procedure constrcuted by 
+* 						and organised version of the procedure constructed by 
 * 						GESIS to combine the SILC longitudinal data panels in a 
-* 						systematic way to idenitfy individuals across 
+* 						systematic way to identify individuals across 
 * 						observations. 
 * 
-* 						In addition to the included do-files you will need to 
+* 						In addition to the included do-files, you will need to 
 * 						obtain the set-up files that transform csv files 
 * 						containing the SILC data from GESIS. They can be found 
 * 						here:  https://www.gesis.org/en/missy/materials/EU-SILC/setups#:~:text=Routines%20to%20transform%20*.csv%20to,document%20of%20every%20data%20release.
 * 
 * 						The version of the set-up files used should coincide 
-* 						with the data release being use. 
+* 						with the data release being used. 
 * 
-* 						Population files merged added in "05_weights" need to be
+* 						Population files merged and added in "05_weights" need to be
 * 						uploaded into the input_data subfolder. The 2005-2020 
 * 						information was obtained from GESIS, whilst the 
 * 						2021-2023 information was obtained from EUROSTAT. 
