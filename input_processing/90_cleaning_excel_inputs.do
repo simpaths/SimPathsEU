@@ -44,9 +44,9 @@ end
 /****************************************************
 * USER SETTINGS
 ****************************************************/
-local country    "PL"
-local INPUT_DIR  "/Users/pineapple/IdeaProjects/SimPathsEU_APR/input_processing/reg_estimates_`country'_toClean"
-local OUTPUT_DIR "/Users/pineapple/IdeaProjects/SimPathsEU_APR/input_processing/reg_estimates_`country'_Cleaned"
+local country    "ES"
+local INPUT_DIR  "~/IdeaProjects/SimPathsEU_AUG/input_processing/reg_estimates_`country'_toClean"
+local OUTPUT_DIR "~/IdeaProjects/SimPathsEU_AUG/input_processing/reg_estimates_`country'_Cleaned"
 local EXT        "xlsx"
 
 capture mkdir "`OUTPUT_DIR'"

@@ -128,6 +128,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
     @Enumerated(EnumType.STRING) private Indicator eduExitSampleFlag;    // year left education
     @Transient private Boolean demGiveBirthFlag;
     @Transient private Boolean labToRetire;
+    @Transient private Boolean demLeaveHome;
     @Transient private Boolean eduLeaveSchoolFlag;
     @Transient private Boolean demBePartnerFlag;
     @Transient private Boolean demAlignPartnerProcess;
@@ -663,6 +664,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         Cohabitation,
         ConsiderMortality,
         ConsiderRetirement,
+        ConsiderLeavingHome,
         Fertility,
         GiveBirth,
         Health,
@@ -709,6 +711,10 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             case ConsiderRetirement -> {
                 considerRetirement();
                 retire();
+            }
+            case ConsiderLeavingHome -> {
+                considerLeavingHome();
+                leaveHome();
             }
             case Fertility -> {
                 fertility();
@@ -835,10 +841,8 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         demAge++;
         if (demAge == Parameters.AGE_TO_BECOME_RESPONSIBLE) {
             setupNewBenefitUnit(true);
-            considerLeavingHome();
-        } else if (demAge > Parameters.AGE_TO_BECOME_RESPONSIBLE && Indicator.True.equals(demAdultChildFlag)) {
-            considerLeavingHome();
         }
+        // Leaving the parental home is evaluated by Processes.ConsiderLeavingHome, scheduled after the education module
         updateAgeGroup();   //Update ageGroup as person ages
      }
 
@@ -858,74 +862,6 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         }
         if (flagDies || demAge > Parameters.maxAge)
             demExitSample = SampleExit.Death;
-    }
-
-    // This process should be applied to those at the age to become responsible / leave home OR above if they have the adultChildFlag set to True (i.e. people can move out, but not move back in).
-    /// Adult child: an adult who lives with parents who are not yet in need of care
-    /// (e.g. at least one parent is below pension age and not yet retired)
-    private void considerLeavingHome() {
-
-        //For those who are moving out, evaluate whether they should have stayed with parents and if yes, set the adultchildflag to true
-        double prob = Parameters.getRegLeaveHomeP1().getProbability(this, Person.DoublesVariables.class);
-        boolean toLeaveHome = (innovations.getDoubleDraw(21) < prob);
-
-        // Students are assumed not to leave the parental home
-        if (Les_c4.Student.equals(labC4) && !(eduLeftEduFlag == true)) {demAdultChildFlag = Indicator.True;}
-
-        if ((!Les_c4.Student.equals(labC4) || (eduLeftEduFlag == true)) && (demAge>=AGE_LEAVE_PARENTAL_HOME-1)) {
-
-            if (!toLeaveHome) { //If at the age to leave home but regression outcome is negative, person has adultchildflag set to true (although they still set up a new benefitUnit in the simulation, it's treated differently in the labour supply)
-                demAdultChildFlag = Indicator.True;
-            } else {
-                demAdultChildFlag = Indicator.False;
-                setupNewHousehold(); //If person leaves home, they set up a new household
-            }
-
-            if (demAdultChildFlag.equals(Indicator.True)){
-
-
-                // --- Parent existence checks
-                Person iDad = null;
-                Person iMom = null;
-
-                boolean dadExist = (getFatherImmutable() != null);
-                boolean momExist = (getMotherImmutable() != null);
-
-                if (dadExist) {iDad = getFatherImmutable();}
-                if (momExist) {iMom = getMotherImmutable();}
-
-                // Compute state pension ages for parents if they exist
-                int iDadPSA = -9;
-                int iMomPSA = -9;
-
-                if (dadExist) {
-                    iDadPSA = Parameters.getStatePensionAge(model.getYear(), iDad.getDgn());
-                }
-                if (momExist) {
-                    iMomPSA = Parameters.getStatePensionAge(model.getYear(), iMom.getDgn());
-                }
-
-                // Identify whether each parent is at/above pension age or already retired
-                boolean dadNeedsCare = false;
-                boolean momNeedsCare = false;
-
-                if (dadExist) {dadNeedsCare = (iDad.getDag() >= iDadPSA || iDad.getRetired() == 1.0);}
-                if (momExist) {momNeedsCare = (iMom.getDag() >= iMomPSA || iMom.getRetired() == 1.0);}
-
-                // Check if there is effectively no non-retired / sub-PSA parent available
-                boolean noParentAvailable =
-                        (!dadExist && !momExist) ||                       // no parents
-                        (!dadExist && momNeedsCare) ||                    // only mother exists and she’s at/above PSA or retired
-                        (!momExist && dadNeedsCare) ||                    // only father exists and he’s at/above PSA or retired
-                        (dadExist && momExist && dadNeedsCare && momNeedsCare); // both exist and both at/above PSA or retired
-
-                if (noParentAvailable) {
-                    demAdultChildFlag = Indicator.False; // If no eligible parent is available then the person is no longer considered an adult child and will not consider leaving parental home in future
-                }
-
-
-            }
-        }
     }
 
     public boolean considerRetirement() {
@@ -962,6 +898,59 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             healthDsblLongtermFlag = Indicator.False;
         }
     }
+
+
+    // This process should be applied to those at the age to become responsible / leave home OR above if they have the adultChildFlag set to True (i.e. people can move out, but not move back in).
+    /// Adult child: an adult who lives with parents and has not yet reached MAX_AGE_ADULT_CHILD
+    public boolean considerLeavingHome() {
+
+        demLeaveHome = false;
+
+        // Exclude those below the age of maturity, and adults who have already left the parental home
+        // Everyone is considered in the year they reach the age of maturity, because the flag carried over from childhood says nothing about living with parents as an adult.
+        if (demAge < AGE_TO_BECOME_RESPONSIBLE ||
+                (demAge > AGE_TO_BECOME_RESPONSIBLE && Indicator.False.equals(demAdultChildFlag))) {
+            return demLeaveHome;
+        }
+
+        // Students are assumed not to leave the parental home
+        if (Les_c4.Student.equals(labC4) && !Boolean.TRUE.equals(eduLeftEduFlag)) {
+            demAdultChildFlag = Indicator.True;
+            return demLeaveHome;
+        }
+
+        // Person above MAX_AGE_ADULT_CHILD stops being an A.C. and does not consider leaving parental home
+        if (demAge > MAX_AGE_ADULT_CHILD) {
+            demAdultChildFlag = Indicator.False;
+            return demLeaveHome;
+        }
+
+        // Adult, but not yet old enough to leave: remains an adult child and is reconsidered next year
+        if (demAge < MIN_AGE_LEAVE_PH) {
+            demAdultChildFlag = Indicator.True;
+            return demLeaveHome;
+        }
+
+        //For those who are eligible evaluate whether they should have stayed with parents and if yes, set the adultchildflag to true
+        double prob = Parameters.getRegLeaveHomeP1().getProbability(this, Person.DoublesVariables.class);
+        demLeaveHome = (innovations.getDoubleDraw(21) < prob);
+
+        if (!demLeaveHome) { //If at the age to leave home but regression outcome is negative, person has adultchildflag set to true
+            demAdultChildFlag = Indicator.True;
+        } else {
+            demAdultChildFlag = Indicator.False;
+        }
+
+        return demLeaveHome;
+    }
+
+
+    public void leaveHome() {
+        if (Boolean.TRUE.equals(demLeaveHome)) {
+            setupNewHousehold(); //If person leaves home, they set up a new household
+        }
+    }
+
 
     
     /*
@@ -2103,6 +2092,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         Dhh_owned_L1,
         Dag,
         Dag_sq,
+        Dag16,                          //Indicator: aged exactly 16
         Dag_knot17,
         Dag_knot23,
         Dag_knot26,
@@ -2137,6 +2127,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         Ded_Yplgrs_dv_L1,
         Ded_Yplgrs_dv_L2,
         Ded_Ypncp_L1,
+        Ded_Dehsp_c4_Low_L1,
 
         Ded_Dnc_L1,
         Ded_Dnc02_L1,
@@ -2219,7 +2210,11 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         Dlltsdsp_L1,
         Dnc_L1, 						//Lag(1) of number of children of all ages in the benefitUnit
         Dnc02_L1, 						//Lag(1) of number of children aged 0-2 in the benefitUnit
+        Dnc02_yes_L1, 					//Lag(1) indicator: one or more children aged 0-2 in the benefitUnit
         Dnc017, 						//Number of children aged 0-17 in the benefitUnit
+        Dnc1_L1, 						//Lag(1) indicator: exactly one dependent child in the benefitUnit
+        Dnc1_plus_L1, 					//Lag(1) indicator: one or more dependent children in the benefitUnit
+        Dnc2_plus_L1, 					//Lag(1) indicator: two or more dependent children in the benefitUnit
         EmployedToUnemployed,
         EquivalisedConsumptionYearly,
         EquivalisedIncomeYearly, 							//Equivalised income for use with the security index
@@ -2228,6 +2223,13 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         GrossEarningsYearly,
         GrossLabourIncomeMonthly,
         InverseMillsRatio,
+        ES1, // Spain
+        ES2,
+        ES3,
+        ES4,
+        ES5,
+        ES6,
+        ES7,
         HUA, // Hungary
         HUB,
         HUC,
@@ -2239,13 +2241,13 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         L1_hourly_wage,
         L1_log_hourly_wage,
         L1_log_hourly_wage_sq,
-        Ld_children_2under,
         Ld_children_3under,
         Ld_children_4_12,
         Lemployed,
         Lhw_L1,
         Les_c3_Employed_L1,
         Les_c3_NotEmployed_L1,
+        Les_c2_NotEmployed_L1,          //Lag(1) indicator: student or not employed (Stata lesnr_c2 = les_c4 in {2,3})
         Les_c3_Sick_L1,					//This is based on dlltsd
         Les_c3_Student_L1,
         Les_c4_Student_L1,
@@ -2285,11 +2287,16 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         Pt,
         Reached_Retirement_Age,						//Indicator whether individual is at or above retirement age
         Reached_Retirement_Age_Les_c3_NotEmployed_L1, //Interaction term for being at or above retirement age and not employed in the previous year
+        Reached_Retirement_Age_Les_c2_NotEmployed_L1, //Interaction term for being at or above retirement age and student or not employed in the previous year
         Reached_Retirement_Age_Sp,					//Indicator whether spouse is at or above retirement age
+        Reached_Retirement_Age_Sp_L1,				//Lag(1) indicator: partner was at or above state pension age
         Elig_pen,     // Age == state retirement age
         Elig_pen_L1, // Age == state retirement age +1
         Elig_pen_Sp, // Partner's age == state retirement age
+        Elig_pen_Sp_L1, // Lag(1) indicator: partner was at state pension age
         Elig_pen_L1_Sp, // // Partner's age == state retirement age +1
+        Elig_pen_L1_Sp_L1, // Lag(1) indicator: partner was one year past state pension age.
+                           // Inner _L1 is the age offset (SPA+1), outer _L1 is the one-year time lag
         RealGDPGrowth,
         RealIncomeChange, //Note: the above return a 0 or 1 value, but income variables will return the change in income or 0
         RealIncomeDecrease_D,
@@ -2456,6 +2463,9 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             }
 
 
+            case Dag16 -> {
+                return (demAge == 16) ? 1. : 0.;
+            }
             case Dag_knot17 -> {
                 return (double) Math.max(0, demAge - 17);
             }
@@ -2589,6 +2599,9 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             case Ded_Ypncp_L1 -> {
                 return Indicator.True.equals(eduSpellFlag) ? yCapitalPersMonthL1 : 0;
             }
+            case Ded_Dehsp_c4_Low_L1 -> {
+                return (Indicator.True.equals(eduSpellFlag) && Education.Low.equals(eduDehspC4L1)) ? 1.0 : 0.0;
+            }
 
             case Ded_Dnc_L1 -> {
                 return Indicator.True.equals(eduSpellFlag) ? getNumberChildrenAll_lag1() : 0;
@@ -2680,8 +2693,20 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             case Dnc_L1 -> {
                 return (double) getNumberChildrenAll_lag1();
             }
+            case Dnc1_L1 -> { // exactly one dependent child last year
+                return (getNumberChildrenAll_lag1() == 1) ? 1. : 0.;
+            }
+            case Dnc1_plus_L1 -> { // one or more dependent children last year; equivalent to D_Children_L1
+                return (getNumberChildrenAll_lag1() > 0) ? 1. : 0.;
+            }
+            case Dnc2_plus_L1 -> { // two or more dependent children last year
+                return (getNumberChildrenAll_lag1() >= 2) ? 1. : 0.;
+            }
             case Dnc02_L1 -> {
                 return (double) getNumberChildren02_lag1();
+            }
+            case Dnc02_yes_L1 -> { // one or more children aged 0-2 last year
+                return (getNumberChildren02_lag1() > 0) ? 1. : 0.;
             }
             case Dnc017 -> {
                 return (double) getNumberChildren017();
@@ -2866,9 +2891,6 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             case InverseMillsRatio -> {
                 return getInverseMillsRatio();
             }
-            case Ld_children_2under -> {
-                return (getNumberChildren02_lag1() > 0) ? 1.0 : 0.0;
-            }
             case Ld_children_3under -> {
                 return benefitUnit.getIndicatorChildren03_lag1().ordinal();
             }
@@ -2925,6 +2947,11 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             }
             case Les_c3_NotEmployed_L1 -> {
                 return ((Les_c4.NotEmployed.equals(labC4L1)) || (Les_c4.Retired.equals(labC4L1))) ? 1.0 : 0.0;
+            }
+            case Les_c2_NotEmployed_L1 -> {
+                // Stata lesnr_c2 (07_reg_retirement_ES.do): 1 if les_c4 in {Student, NotEmployed}, 0 if employed.
+                // Retired is missing there, so retired person-years never enter the estimation sample.
+                return isNotEmployedC2Lag1() ? 1.0 : 0.0;
             }
             case Les_c3_Employed_L1 -> {
                 return (Les_c4.EmployedOrSelfEmployed.equals(labC4L1)) ? 1.0 : 0.0;
@@ -3424,10 +3451,29 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                     } else {
                         retirementAgePartner += (int) Parameters.getTimeSeriesValue(getYear(), Gender.Male.toString(), TimeSeriesVariable.FixedRetirementAge);
                     }
-                    return (partner.demAge >= retirementAgePartner) ? 1. : 0.;
+                    return (partner.demAge == retirementAgePartner) ? 1. : 0.;
                 } else {
                     return 0.;
                 }
+            }
+            case Reached_Retirement_Age_Sp_L1 -> { // Partner was at or above state retirement age in the previous year
+                Person partner = getPartner();
+                if (partner == null)
+                    return 0.;
+                return (partner.demAge - 1 >= getFixedRetirementAge(partner, getYear() - 1)) ? 1. : 0.;
+            }
+            case Elig_pen_Sp_L1 -> { // Partner's age == state retirement age in the previous year
+                Person partner = getPartner();
+                if (partner == null)
+                    return 0.;
+                return (partner.demAge - 1 == getFixedRetirementAge(partner, getYear() - 1)) ? 1. : 0.;
+            }
+            case Elig_pen_L1_Sp_L1 -> { // Partner's age == state retirement age +1 in the previous year.
+                                        // Inner _L1 is the age offset (SPA+1), outer _L1 is the one-year time lag
+                Person partner = getPartner();
+                if (partner == null)
+                    return 0.;
+                return (partner.demAge - 1 == getFixedRetirementAge(partner, getYear() - 1) + 1) ? 1. : 0.;
             }
             case Reached_Retirement_Age_Les_c3_NotEmployed_L1 -> { //Reached retirement age and was not employed in the previous year
                 int retirementAge;
@@ -3437,6 +3483,11 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                     retirementAge = (int) Parameters.getTimeSeriesValue(getYear(), Gender.Male.toString(), TimeSeriesVariable.FixedRetirementAge);
                 }
                 return ((demAge >= retirementAge) && (labC4L1.equals(Les_c4.NotEmployed) || labC4L1.equals(Les_c4.Retired))) ? 1. : 0.;
+            }
+            case Reached_Retirement_Age_Les_c2_NotEmployed_L1 -> {
+                // Stata Reached_Retirement_Age * l.Les_c3_NotEmployed, where Reached_Retirement_Age = dagpns
+                // (at or above state pension age this year) and Les_c3_NotEmployed = lesnr_c2
+                return (demAge >= getFixedRetirementAge(this, getYear()) && isNotEmployedC2Lag1()) ? 1. : 0.;
             }
             case EquivalisedIncomeYearly -> {
                 return getBenefitUnit().getEquivalisedDisposableIncomeYearly();
@@ -3532,6 +3583,28 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             }
             case Deh_c4_Medium_Dag -> {
                 return (Education.Medium.equals(eduHighestC4)) ? demAge : 0.0;
+            }
+            // Spain
+            case ES1 -> {
+                return Region.ES1.equals(getRegion()) ? 1.0 : 0.0;
+            }
+            case ES2 -> {
+                return Region.ES2.equals(getRegion()) ? 1.0 : 0.0;
+            }
+            case ES3 -> {
+                return Region.ES3.equals(getRegion()) ? 1.0 : 0.0;
+            }
+            case ES4 -> {
+                return Region.ES4.equals(getRegion()) ? 1.0 : 0.0;
+            }
+            case ES5 -> {
+                return Region.ES5.equals(getRegion()) ? 1.0 : 0.0;
+            }
+            case ES6 -> {
+                return Region.ES6.equals(getRegion()) ? 1.0 : 0.0;
+            }
+            case ES7 -> {
+                return Region.ES7.equals(getRegion()) ? 1.0 : 0.0;
             }
             // Hungary
             case HUA -> {
@@ -4760,6 +4833,24 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
     public void setDhhtp_c4_lag1Local(Dhhtp_c4 dhhtp_c4_lag1) {
         i_demCompHhC4L1 = dhhtp_c4_lag1;
+    }
+
+    /**
+     * State pension age applying to a person in a given year, as used by the retirement regressors.
+     * Lagged regressors pass getYear()-1 to obtain the schedule that was in force the previous year.
+     */
+    private static int getFixedRetirementAge(Person person, int year) {
+        Gender gender = Gender.Female.equals(person.demMaleFlag) ? Gender.Female : Gender.Male;
+        return (int) Parameters.getTimeSeriesValue(year, gender.toString(), TimeSeriesVariable.FixedRetirementAge);
+    }
+
+    /**
+     * Two-category non-employment in the previous year, as Stata's lesnr_c2 in 07_reg_retirement_ES.do:
+     * student or not employed. Retired is excluded (missing in Stata), which is immaterial for the
+     * retirement process because retirement is absorbing and only non-retired persons are at risk.
+     */
+    private boolean isNotEmployedC2Lag1() {
+        return Les_c4.Student.equals(labC4L1) || Les_c4.NotEmployed.equals(labC4L1);
     }
 
     private Integer getNumberChildrenAll_lag1() {

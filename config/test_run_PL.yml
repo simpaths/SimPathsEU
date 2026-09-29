@@ -1,0 +1,34 @@
+# FOR TESTING
+# CONFIG FILE FOR A DETERMINISTIC, SHORT-HORIZON SIMULATION RUN
+#
+# Used by RunSimPathsPLIntegrationTest. Settings mirror the SimPathsUK
+# integration test so that golden-output diffs behave the same way: fixed seed,
+# small population, 3-year horizon, GUI off, integrationTest flag on (redirects
+# output to output/INTEGRATION_TESTS[_TRAINING]_PL).
+#
+# This file can be used to override defaults for multirun arguments.
+# Arguments of the SimPathsMultiRun object overridden by the command-line.
+
+countryString: "Poland"
+maxNumberOfRuns: 2
+executeWithGui: false
+randomSeed: 100
+startYear: 2019
+endYear: 2022
+popSize: 20000
+integrationTest: true
+
+parameter_args:
+  trainingFlag: true    # → INTEGRATION_TESTS_TRAINING_PL/ + expected_training_PL/ (committed)
+  # trainingFlag: false # → INTEGRATION_TESTS_PL/          + expected_PL/          (not committed)
+
+collector_args:
+    persistWealthIncomeStatistics: true
+    persistDemographicStatistics: true
+    persistAlignmentStatistics: true
+    persistLabourStatistics: true
+    persistHealthStatistics: true
+    persistHealthByGender: true
+    persistPersons: false
+    persistBenefitUnits: false
+    persistHouseholds: false

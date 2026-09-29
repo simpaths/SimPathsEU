@@ -5,28 +5,20 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 
 import microsim.data.db.PanelEntityKey;
-import microsim.statistics.ICollectionFilter;
-
-import simpaths.data.filters.AgeGroupCSfilter;
-import simpaths.data.filters.FemaleAgeGroupCSfilter;
-import simpaths.data.filters.MaleAgeGroupCSfilter;
-import simpaths.model.Person;
-import simpaths.model.SimPathsModel;
-import simpaths.model.enums.Dhe;
-import simpaths.model.enums.Indicator;
 
 /**
- * EU-adapted health statistics entity.
+ * Health statistics by age band: mean self-rated health score and the share long-term
+ * sick or disabled. One row per simulated year, exported to {@code HealthStatistics.csv}.
  *
- * For the working-age adult population (16-64), records proportions of:
- *   - self-reported health category (Dhe: Poor / Fair / Good / VeryGood / Excellent)
- *   - long-term sick or disabled (Dlltsd == True)
- * broken down by {Total, Male, Female} (one row per gender per time-step).
+ * <p>These six columns came out of the omnibus {@code Statistics2} (see
+ * {@link DemographicStatistics}) and are fed from the shared {@link AgeBandAggregates}.
  *
- * Diverges from the UK version: UK tracks continuous measures
- * (DHM, MCS, PCS, DLS, QALYs, WELLBYs) that do not exist in the EU Person model,
- * so the EU version uses the available ordinal self-rated health enum and the
- * binary disability indicator.
+ * <p>They could not simply be added to the pre-existing {@code HealthStatistics}, which is
+ * written three times per year — once each for Total, Male and Female — and so is stacked
+ * long, whereas these are one wide row per year; as plain columns they would repeat one
+ * value across all three gender rows. That long output was therefore renamed
+ * {@link HealthByGender}, its contents untouched, and this wide class created for the
+ * incoming fields.
  */
 @Entity
 public class HealthStatistics {
@@ -34,135 +26,84 @@ public class HealthStatistics {
     @Id
     private PanelEntityKey key = new PanelEntityKey(1L);
 
-    @Column(name = "gender")
-    private String demSex;
+    //average health
+    @Column(name = "health_18_29")
+    private double healthScore18to29Avg;
 
-    // self-reported health (Dhe) category proportions
-    @Column(name = "prop_dhe_poor")
-    private double propDhePoor;
+    @Column(name = "health_30_54")
+    private double healthScore30to54Avg;
 
-    @Column(name = "prop_dhe_fair")
-    private double propDheFair;
+    @Column(name = "health_55_74")
+    private double healthScore55to74Avg;
 
-    @Column(name = "prop_dhe_good")
-    private double propDheGood;
+    //population shares disabled
+    @Column(name = "pr_disabled_18_29")
+    private double demDsbl18to29Share;
 
-    @Column(name = "prop_dhe_verygood")
-    private double propDheVeryGood;
+    @Column(name = "pr_disabled_30_54")
+    private double demDsbl30to54Share;
 
-    @Column(name = "prop_dhe_excellent")
-    private double propDheExcellent;
-
-    // disability (dlltsd) proportion
-    @Column(name = "prop_disabled")
-    private double propDisabled;
-
-    // observation counts
-    @Column(name = "N_total")
-    private int nObsTotal;
-
-    @Column(name = "N_validDhe")
-    private int nObsValidDhe;
-
-    @Column(name = "N_validDlltsd")
-    private int nObsValidDlltsd;
+    @Column(name = "pr_disabled_55_74")
+    private double demDsbl55to74Share;
 
 
-    // Getters / setters
+    public double getHealth18to29() {
+        return healthScore18to29Avg;
+    }
 
-    public String getGender() { return demSex; }
-    public void setGender(String demSex) { this.demSex = demSex; }
+    public void setHealth18to29(double healthScore18to29Avg) {
+        this.healthScore18to29Avg = healthScore18to29Avg;
+    }
 
-    public double getPropDhePoor() { return propDhePoor; }
-    public void setPropDhePoor(double v) { this.propDhePoor = v; }
+    public double getHealth30to54() {
+        return healthScore30to54Avg;
+    }
 
-    public double getPropDheFair() { return propDheFair; }
-    public void setPropDheFair(double v) { this.propDheFair = v; }
+    public void setHealth30to54(double healthScore30to54Avg) {
+        this.healthScore30to54Avg = healthScore30to54Avg;
+    }
 
-    public double getPropDheGood() { return propDheGood; }
-    public void setPropDheGood(double v) { this.propDheGood = v; }
+    public double getHealth55to74() {
+        return healthScore55to74Avg;
+    }
 
-    public double getPropDheVeryGood() { return propDheVeryGood; }
-    public void setPropDheVeryGood(double v) { this.propDheVeryGood = v; }
+    public void setHealth55to74(double healthScore55to74Avg) {
+        this.healthScore55to74Avg = healthScore55to74Avg;
+    }
 
-    public double getPropDheExcellent() { return propDheExcellent; }
-    public void setPropDheExcellent(double v) { this.propDheExcellent = v; }
+    public double getPrDisabled18to29() {
+        return demDsbl18to29Share;
+    }
 
-    public double getPropDisabled() { return propDisabled; }
-    public void setPropDisabled(double v) { this.propDisabled = v; }
+    public void setPrDisabled18to29(double demDsbl18to29Share) {
+        this.demDsbl18to29Share = demDsbl18to29Share;
+    }
 
-    public int getN_total() { return nObsTotal; }
-    public void setN_total(int n) { this.nObsTotal = n; }
+    public double getPrDisabled30to54() {
+        return demDsbl30to54Share;
+    }
 
-    public int getN_validDhe() { return nObsValidDhe; }
-    public void setN_validDhe(int n) { this.nObsValidDhe = n; }
+    public void setPrDisabled30to54(double demDsbl30to54Share) {
+        this.demDsbl30to54Share = demDsbl30to54Share;
+    }
 
-    public int getN_validDlltsd() { return nObsValidDlltsd; }
-    public void setN_validDlltsd(int n) { this.nObsValidDlltsd = n; }
+    public double getPrDisabled55to74() {
+        return demDsbl55to74Share;
+    }
 
+    public void setPrDisabled55to74(double demDsbl55to74Share) {
+        this.demDsbl55to74Share = demDsbl55to74Share;
+    }
 
-    /**
-     * Recompute all statistics for the requested gender subgroup.
-     *
-     * @param model      the simulation model
-     * @param gender_s   one of "Total", "Male", "Female"
-     */
-    public void update(SimPathsModel model, String gender_s) {
+    /** Map the shared age-band aggregates onto this output. */
+    public void update(AgeBandAggregates agg) {
 
-        setGender(gender_s);
+        setHealth18to29(agg.healthScore(0));
+        setHealth30to54(agg.healthScore(1));
+        setHealth55to74(agg.healthScore(2));
 
-        // Select working-age filter for the requested gender subgroup.
-        // EU has no AgeGenderCSfilter; compose from existing gender-specific age filters.
-        final ICollectionFilter filter;
-        if ("Male".equals(gender_s)) {
-            filter = new MaleAgeGroupCSfilter(16, 64);
-        } else if ("Female".equals(gender_s)) {
-            filter = new FemaleAgeGroupCSfilter(16, 64);
-        } else {
-            filter = new AgeGroupCSfilter(16, 64);
-        }
-
-        int nTotal = 0;
-        int nValidDhe = 0;
-        int nValidDlltsd = 0;
-        int nPoor = 0, nFair = 0, nGood = 0, nVeryGood = 0, nExcellent = 0;
-        int nDisabled = 0;
-
-        for (Person person : model.getPersons()) {
-            if (!filter.isFiltered(person)) continue;
-            nTotal++;
-
-            Dhe dhe = person.getDhe();
-            if (dhe != null) {
-                nValidDhe++;
-                switch (dhe) {
-                    case Poor:      nPoor++;      break;
-                    case Fair:      nFair++;      break;
-                    case Good:      nGood++;      break;
-                    case VeryGood:  nVeryGood++;  break;
-                    case Excellent: nExcellent++; break;
-                }
-            }
-
-            Indicator dlltsd = person.getDlltsd();
-            if (dlltsd != null) {
-                nValidDlltsd++;
-                if (Indicator.True.equals(dlltsd)) {
-                    nDisabled++;
-                }
-            }
-        }
-
-        setN_total(nTotal);
-        setN_validDhe(nValidDhe);
-        setN_validDlltsd(nValidDlltsd);
-
-        // Proportions: NaN when denominator is zero (makes missing-data states visible in CSV).
-        setPropDhePoor(      nValidDhe > 0 ? (double) nPoor      / nValidDhe : Double.NaN);
-        setPropDheFair(      nValidDhe > 0 ? (double) nFair      / nValidDhe : Double.NaN);
-        setPropDheGood(      nValidDhe > 0 ? (double) nGood      / nValidDhe : Double.NaN);
-        setPropDheVeryGood(  nValidDhe > 0 ? (double) nVeryGood  / nValidDhe : Double.NaN);
-        setPropDheExcellent( nValidDhe > 0 ? (double) nExcellent / nValidDhe : Double.NaN);
-        setPropDisabled(     nValidDlltsd > 0 ? (double) nDisabled / nValidDlltsd : Double.NaN);
+        setPrDisabled18to29(agg.prDisabled(0));
+        setPrDisabled30to54(agg.prDisabled(1));
+        setPrDisabled55to74(agg.prDisabled(2));
     }
 }

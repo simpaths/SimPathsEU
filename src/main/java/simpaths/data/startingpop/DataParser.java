@@ -154,7 +154,15 @@ public class DataParser {
 
 				//Labour Market Economic Status
 				+ "ALTER TABLE " + personTable + " ADD activity_status VARCHAR_IGNORECASE;"
+				+ marginalEmploymentRecode(country, personTable)
 				+ "UPDATE " + personTable + " SET labC4 = 3 WHERE labC4 = 1 AND CAST(labWageHrly AS FLOAT)<0.01;"
+
+				//not employed means no hours, whichever rule above decided it. The labour band is built from
+				//labHrsWorkWeek, so anyone left holding hours here would be put straight back to employed by
+				//BenefitUnit.updateActivity(). Students and the retired are left alone: they may work, and
+				//updateActivity() does not touch them.
+				+ "UPDATE " + personTable + " SET labHrsWorkWeek = 0 WHERE labC4 = 3;"
+
 				+ "UPDATE " + personTable + " SET activity_status = 'EmployedOrSelfEmployed' WHERE labC4 = 1;"
 				+ "UPDATE " + personTable + " SET activity_status = 'Student' WHERE labC4 = 2;"
 				+ "UPDATE " + personTable + " SET activity_status = 'NotEmployed' WHERE labC4 = 3;"
@@ -354,6 +362,37 @@ public class DataParser {
 				e.printStackTrace();
 			}
 		}
+	}
+
+	/**
+	 * SQL recoding persons reported as employed on fewer than Parameters.MIN_HOURS_EMPLOYED hours a week
+	 * to not-employed on zero hours, or an empty string where the recode does not apply.
+	 *
+	 * <p>Spain's lowest positive labour-supply band, Labour.CATEGORY_ES_1, starts at six hours a week, so
+	 * Labour.convertHoursToLabour() maps anyone reported as employed on 0 to 5 hours to Labour.ZERO. Such
+	 * a person enters the simulation employed on zero hours, and stays in that state until
+	 * BenefitUnit.updateActivity() recodes them after the first labour-supply update. Dropping the
+	 * marginal employment here instead keeps activity status, hours and labour band consistent from the
+	 * first simulated year. Only the status is set here; the hours are cleared by the shared
+	 * "not employed means no hours" statement that follows every such rule in parse().
+	 *
+	 * <p>The lagged status labC4L1 is recoded on the same persons, so that a person the model treats as
+	 * not-employed in the start year does not enter the transition regressions as someone who was employed
+	 * the year before. The initial populations carry no lagged hours, so current marginal attachment is
+	 * the only evidence available for the lag.
+	 *
+	 * <p>Every other country's first band starts at one hour, so no positive number of hours converts to
+	 * Labour.ZERO and there is nothing to recode; the empty string leaves those populations untouched.
+	 */
+	private static String marginalEmploymentRecode(Country country, String personTable) {
+
+		if (!Country.ES.equals(country))
+			return "";
+
+		//the lag is recoded first, while labC4 still identifies the persons concerned
+		String marginal = "labC4 = 1 AND CAST(labHrsWorkWeek AS FLOAT) < " + Parameters.MIN_HOURS_EMPLOYED;
+		return "UPDATE " + personTable + " SET labC4L1 = 3 WHERE labC4L1 = 1 AND " + marginal + ";"
+				+ "UPDATE " + personTable + " SET labC4 = 3 WHERE " + marginal + ";";
 	}
 
 	public static String stringAppender(Collection<String> strings) {

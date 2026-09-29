@@ -2,7 +2,7 @@
 * PROJECT:        SimPaths EU
 * DO-FILE NAME:   01_key_function_income_thresholds_from_EUROMOD_2018.do
 * DESCRIPTION:    Calculate clean 2018 KEY_FUNCTION income thresholds directly
-*                 from raw EUROMOD output for PL, EL, HU and IT.
+*                 from raw EUROMOD output for PL, EL, HU, IT and ES.
 *
 *                 Rule implemented:
 *                   1. Import raw 2018 EUROMOD person-level file
@@ -20,6 +20,8 @@
 *                                   family vs. extended cohabiting family), used
 *                                   here for comparison to assess how the choice
 *                                   of benefit-unit definition affects thresholds
+*                                   (not available for ES, which only ships a
+*                                   single tu_nucfam_HeadID definition)
 *
 * OUTPUTS:        documentation/key_function_income_thresholds_clean2018.dta
 *                 documentation/key_function_income_thresholds_clean2018.xlsx
@@ -40,14 +42,14 @@ set type double
 *******************************************************************************/
 
 local dir_w "`c(pwd)'"
-capture confirm file "`dir_w'/input/PL/EUROMODoutput/pl_2018_std.txt"
+capture confirm file "`dir_w'/input/DatabaseCountryYear.xlsx"
 if _rc {
-    local dir_w "/Users/pineapple/IdeaProjects/SimPathsEU_APR"
+    local dir_w "/Users/pineapple/IdeaProjects/SimPathsEU_AUG"
 }
 
-capture confirm file "`dir_w'/input/PL/EUROMODoutput/pl_2018_std.txt"
+capture confirm file "`dir_w'/input/DatabaseCountryYear.xlsx"
 if _rc {
-    di as error "Project root not found. Set local dir_w to the SimPathsEU_APR root."
+    di as error "Project root not found. Set local dir_w to the SimPathsEU_AUG root."
     exit 601
 }
 
@@ -109,16 +111,16 @@ postfile `post_handle' ///
     double hi_monthly ///
     double lo_weekly ///
     double hi_weekly ///
-    int lo_weekly_rounded ///
-    int hi_weekly_rounded ///
+    long lo_weekly_rounded ///
+    long hi_weekly_rounded ///
     using `results_tmp', replace
 
 
 /*******************************************************************************
 * LOOP OVER COUNTRIES
 *******************************************************************************/
+foreach country in PL EL HU IT ES {
 
-foreach country in PL EL HU IT {
 
     if "`country'" == "PL" {
         local iso_code   "pl"
@@ -144,6 +146,12 @@ foreach country in PL EL HU IT {
         local model_bu   "tu_bu_it_HeadID"
         local alt_bu     "tu_fa_family_it_HeadID"
     }
+    else if "`country'" == "ES" {
+        local iso_code   "es"
+        local currency   "EUR"
+        local model_bu   "tu_nucfam_HeadID"
+        local alt_bu     ""
+    }
 
     local euromod_file "`dir_w'/input/`country'/EUROMODoutput/`iso_code'_`ref_year'_std.txt"
     capture confirm file "`euromod_file'"
@@ -156,10 +164,20 @@ foreach country in PL EL HU IT {
 
     import delimited using "`euromod_file'", clear delim(tab) stringcols(_all) varnames(1) case(preserve)
 
-    keep `model_bu' `alt_bu' dag ils_origy
+    if "`alt_bu'" == "" {
+        keep `model_bu' dag ils_origy
+    }
+    else {
+        keep `model_bu' `alt_bu' dag ils_origy
+    }
     destring dag ils_origy, replace force
 
-    foreach approach in model_bu alternate_bu {
+    local approach_list "model_bu"
+    if "`alt_bu'" != "" {
+        local approach_list "model_bu alternate_bu"
+    }
+
+    foreach approach of local approach_list {
 
         preserve
 
@@ -259,8 +277,8 @@ putexcel A5=("Sample rule")      B5=("Keep only benefit units with 1 or 2 adults
 putexcel A6=("Percentiles")      B6=("33rd and 67th")
 putexcel A7=("Weighting")        B7=("Unweighted")
 putexcel A8=("Time conversion")  B8=("Weekly = monthly / (365.25 / (7 * 12))")
-putexcel A9=("Approaches")       B9=("model_bu = model benefit-unit ID; alternate_bu = plausible raw EUROMOD alternative")
-putexcel A10=("Countries")       B10=("PL, EL, HU, IT")
+putexcel A9=("Approaches")       B9=("model_bu = model benefit-unit ID; alternate_bu = plausible raw EUROMOD alternative (not available for ES)")
+putexcel A10=("Countries")       B10=("PL, EL, HU, IT, ES")
 putexcel A11=("Output values")   B11=("Local currency per week, exact and rounded")
 putexcel A12=("Do-file")         B12=("01_key_function_income_thresholds_from_EUROMOD_2018.do")
 

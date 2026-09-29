@@ -174,7 +174,7 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
     private boolean alignPopulation = true; // routine fails to replicate results for minor variations between simulations
 
     private boolean alignFertility = false; // Align births to fertility targets.
-    private boolean alignCohabitation = true; // Align couple/cohabitation shares.
+    private boolean alignCohabitation = false; // Align couple/cohabitation shares.
     private boolean alignInSchool = false; // Align student shares within the 16-29 age group.
     private boolean alignEmployment = false; // Align employment prevalence to target employment shares.
 
@@ -507,6 +507,10 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
 
         // Align the level of education if required
         addEventToAllYears(Processes.EducationLevelAlignment);
+
+        // Consider leaving home process
+        // Scheduled after Education module, because it applies to those who are not in continuous education
+        yearlySchedule.addCollectionEvent(persons, Person.Processes.ConsiderLeavingHome);
 
         // Homeownership status
         yearlySchedule.addCollectionEvent(benefitUnits, BenefitUnit.Processes.Homeownership);
@@ -2838,12 +2842,20 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
         saveImperfectTaxDBMatches = flag;
     }
 
+    public boolean isAlignPopulation() {
+        return alignPopulation;
+    }
+
     public void setAlignPopulation(boolean flag) {
         alignPopulation = flag;
     }
 
     public void setAlignCohabitation(boolean flag) {
         alignCohabitation = flag;
+    }
+
+    public boolean isAlignEducation() {
+        return alignEducation;
     }
 
     public void setAlignEducation(boolean flag) {

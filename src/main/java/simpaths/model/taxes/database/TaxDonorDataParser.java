@@ -349,14 +349,12 @@ public class TaxDonorDataParser {
             //---------------------------------------------------------------------------
             String	taxUnitTableName = "DONORTAXUNIT_" + country;
             stat.execute(
-                // make copy of person table, using tuid
-                "DROP TABLE IF EXISTS TEMP CASCADE;"
-                + "CREATE TABLE TEMP AS (SELECT TUID, WEIGHT FROM " + personTableName + ");"
-
-                // extract only unique values of tuid
-                +"DROP TABLE IF EXISTS " + taxUnitTableName + " CASCADE;"
-                + "CREATE TABLE " + taxUnitTableName + " AS SELECT DISTINCT * FROM TEMP ORDER BY TUID;"
-                + "DROP TABLE IF EXISTS TEMP CASCADE;"
+                // one row per tuid, carrying the tax unit's weight.
+                // EUROMOD output normally holds a household-level weight in dwt, which is constant within a tax
+                // unit; some country datasets (e.g. ES) supply a person-level weight instead, so the weight is
+                // averaged over the members of the tax unit rather than assumed unique.
+                "DROP TABLE IF EXISTS " + taxUnitTableName + " CASCADE;"
+                + "CREATE TABLE " + taxUnitTableName + " AS (SELECT TUID, AVG(WEIGHT) AS WEIGHT FROM " + personTableName + " GROUP BY TUID ORDER BY TUID);"
 
                 // establish primary key
                 + "ALTER TABLE " + taxUnitTableName + " ALTER COLUMN TUID RENAME TO ID;"

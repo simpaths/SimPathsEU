@@ -7,7 +7,7 @@
 * COUNTRY: 			Poland
 ********************************************************************************
 * NOTES: 			Refactored to use the new SimPaths EU variable names from
-*					AlignmentAdjustmentFactors1.csv (align* prefix).
+*					AlignmentStatistics.csv (align* prefix).
 *******************************************************************************/
 
 * Ensure output folder exists
@@ -17,7 +17,7 @@ capture mkdir "$dir_output_files/alignment_targets"
 * IMPORT & PREPARE DATA
 *******************************************************************************/
 
-import delimited "$dir_simulated_data/AlignmentAdjustmentFactors1.csv", ///
+import delimited "$dir_simulated_data/AlignmentStatistics.csv", ///
 	clear varnames(1) case(preserve)
 
 * Restrict sample years
@@ -26,7 +26,7 @@ keep if time <= ${max_year}
 rename time year
 
 * Drop row id (not needed)
-capture drop id_AlignmentAdjustmentFactors1
+capture drop id_AlignmentStatistics
 
 save "$dir_data/alignment_targets_raw.dta", replace
 

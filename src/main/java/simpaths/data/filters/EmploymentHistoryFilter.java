@@ -6,7 +6,7 @@ import simpaths.model.enums.Les_c4;
 
 /**
  * Filter that keeps only persons whose previous-period (lag1) labour status
- * matches the supplied {@link Les_c4} value. Used by {@link simpaths.data.statistics.EmploymentStatistics}
+ * matches the supplied {@link Les_c4} value. Used by {@link simpaths.data.statistics.LabourStatistics}
  * to compute labour-market transition rates.
  */
 public class EmploymentHistoryFilter implements ICollectionFilter {

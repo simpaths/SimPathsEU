@@ -1,0 +1,29 @@
+# FOR TESTING — SPAIN (ES)
+# CONFIG FILE FOR A DETERMINISTIC, SHORT-HORIZON SIMULATION RUN
+#
+# Used by RunSimPathsESIntegrationTest. Identical to config/test_run_PL.yml
+# apart from the country.
+
+countryString: "Spain"
+maxNumberOfRuns: 2
+executeWithGui: false
+randomSeed: 100
+startYear: 2019
+endYear: 2022
+popSize: 20000
+integrationTest: true
+
+parameter_args:
+  trainingFlag: true    # → INTEGRATION_TESTS_TRAINING_ES/ + expected_training_ES/ (committed)
+  # trainingFlag: false # → INTEGRATION_TESTS_ES/          + expected_ES/          (not committed)
+
+collector_args:
+    persistWealthIncomeStatistics: true
+    persistDemographicStatistics: true
+    persistAlignmentStatistics: true
+    persistLabourStatistics: true
+    persistHealthStatistics: true
+    persistHealthByGender: true
+    persistPersons: false
+    persistBenefitUnits: false
+    persistHouseholds: false

@@ -42,4 +42,8 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: actual-simulation-results
-        path: output/INTEGRATION_TESTS_TRAINING/csv/
+        # One folder per country. Default if-no-files-found: warn is wanted here —
+        # no output at all means the run died before simulating.
+        path: |
+          output/INTEGRATION_TESTS_TRAINING_PL/csv/
+          output/INTEGRATION_TESTS_TRAINING_ES/csv/

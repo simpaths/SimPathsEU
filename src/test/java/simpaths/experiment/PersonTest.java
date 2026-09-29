@@ -10,7 +10,9 @@ import simpaths.model.enums.Dcpst;
 import simpaths.model.enums.Education;
 import simpaths.model.enums.EducationLevel;
 import simpaths.model.enums.Indicator;
+import simpaths.model.enums.Gender;
 import simpaths.model.enums.Les_c4;
+import simpaths.model.enums.TimeSeriesVariable;
 import simpaths.model.Innovations;
 
 import microsim.statistics.regression.BinomialRegression;
@@ -193,6 +195,70 @@ public class PersonTest {
 
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.D_Children));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.D_Children_L1));
+        }
+
+        @Test
+        @DisplayName("Les_c2_NotEmployed_L1 flags lagged student or not employed, as Stata lesnr_c2")
+        public void lesC2NotEmployedLagMatchesLesnrC2() {
+            testPerson.setLes_c4_lag1(Les_c4.NotEmployed);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Les_c2_NotEmployed_L1));
+            testPerson.setLes_c4_lag1(Les_c4.Student);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Les_c2_NotEmployed_L1));
+            testPerson.setLes_c4_lag1(Les_c4.EmployedOrSelfEmployed);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Les_c2_NotEmployed_L1));
+            testPerson.setLes_c4_lag1(Les_c4.Retired);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Les_c2_NotEmployed_L1));
+        }
+
+        @Test
+        @DisplayName("Reached_Retirement_Age_Les_c2_NotEmployed_L1 needs pension age this year and lagged non-employment")
+        public void reachedRetirementAgeLesC2Interaction() {
+            parametersMock.when(() -> Parameters.getTimeSeriesValue(Mockito.anyInt(), Mockito.anyString(),
+                    Mockito.eq(TimeSeriesVariable.FixedRetirementAge))).thenReturn(65.0);
+            testPerson.setDgn(Gender.Male);
+
+            testPerson.setDag(65);
+            testPerson.setLes_c4_lag1(Les_c4.NotEmployed);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Reached_Retirement_Age_Les_c2_NotEmployed_L1));
+            testPerson.setLes_c4_lag1(Les_c4.EmployedOrSelfEmployed);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Reached_Retirement_Age_Les_c2_NotEmployed_L1));
+
+            testPerson.setDag(64);
+            testPerson.setLes_c4_lag1(Les_c4.NotEmployed);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Reached_Retirement_Age_Les_c2_NotEmployed_L1));
+        }
+
+        @Test
+        @DisplayName("Dnc parity dummies split the lagged child count at zero, one and two")
+        public void dncParityDummiesSplitLaggedChildCount() {
+            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(0);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc2_plus_L1));
+
+            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(1);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc2_plus_L1));
+
+            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(3);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc2_plus_L1));
+        }
+
+        @Test
+        @DisplayName("Dnc1_plus_L1 matches D_Children_L1; Dnc02_yes_L1 flags any child aged 0-2")
+        public void dncPresenceDummiesBehaveAsExpected() {
+            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(2);
+            Mockito.when(mockBenefitUnit.getNumberChildren02_lag1()).thenReturn(0);
+
+            assertEquals(testPerson.getDoubleValue(Person.DoublesVariables.D_Children_L1),
+                    testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc02_yes_L1));
+
+            Mockito.when(mockBenefitUnit.getNumberChildren02_lag1()).thenReturn(1);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc02_yes_L1));
         }
 
         @Test

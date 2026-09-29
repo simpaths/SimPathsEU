@@ -194,6 +194,8 @@ input/~$scenario_uprating_factor.xlsx
 /input/PL/InitialPopulations/*.csv
 /input/EL/EUROMODoutput/*.txt
 /input/EL/InitialPopulations/*.csv
+/input/ES/EUROMODoutput/*.txt
+/input/ES/InitialPopulations/*.csv
 /input/*/EUROMODoutput/training/.DS_Store
 /input/*/InitialPopulations/training/.DS_Store
 !/input/*/EUROMODoutput/training/*.txt
@@ -245,10 +247,13 @@ input/tax_donor_population_HU.csv
 input/tax_donor_population_PL.csv
 input/tax_donor_population_IT.csv
 input/tax_donor_population_EL.csv
+input/tax_donor_population_ES.csv
 
-# Integration-test golden CSVs for the REAL-DATA baseline — generated locally
+# Integration-test golden CSVs for the REAL-DATA baselines — generated locally
 # per developer because real EUROMOD input data is not shareable. Do not commit.
-# The TRAINING-DATA baseline under expected_training/ IS committed. See
-# expected/README.md and expected_training/README.md for details.
-src/test/java/simpaths/integrationtest/expected/*.csv
-!src/test/java/simpaths/integrationtest/expected_training/*.csv
+# The TRAINING-DATA baselines under expected_training_<CC>/ ARE committed and are
+# what CI diffs against. See each folder's README.md for details.
+src/test/java/simpaths/integrationtest/expected_PL/*.csv
+src/test/java/simpaths/integrationtest/expected_ES/*.csv
+!src/test/java/simpaths/integrationtest/expected_training_PL/*.csv
+!src/test/java/simpaths/integrationtest/expected_training_ES/*.csv

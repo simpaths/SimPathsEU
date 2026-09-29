@@ -114,12 +114,14 @@ public class SimPathsStart implements ExperimentBuilder {
 				country = Country.EL;
 			} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[IT]"))) {
 				country = Country.IT;
+			} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[ES]"))) {
+				country = Country.ES;
 			} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[HU]"))) {
 				country = Country.HU;
 			} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[PL]"))) {
 				country = Country.PL;
 			} else {
-				throw new IllegalArgumentException("Country not recognised in Excel file. Please select one of the available countries (EL, IT, HU, PL).");
+				throw new IllegalArgumentException("Country not recognised in Excel file. Please select one of the available countries (EL, IT, ES, HU, PL).");
 			}
 
 			// Set startYear from Excel

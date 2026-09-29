@@ -4,6 +4,7 @@ public enum Country {
 
     EL("Greece", 7),
     IT("Italy", 9),
+    ES("Spain", 13),
     HU("Hungary", 17),
     PL("Poland", 18);
 	

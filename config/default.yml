@@ -1,7 +1,7 @@
 # This file can be used to override defaults for multirun arguments.
 # Arguments of the SimPathsMultiRun object overridden by the command-line
 
-maxNumberOfRuns: 5
+maxNumberOfRuns: 1
 executeWithGui: false
 randomSeed: 1821
 startYear: 2011
@@ -53,8 +53,12 @@ collector_args:
 #    calculateGiniCoefficients: false
 #    exportToDatabase: false
 #    exportToCSV: true
-#    persistStatistics: true
-#    persistStatistics2: true
+#    persistWealthIncomeStatistics: true
+#    persistDemographicStatistics: true
+#    persistHealthStatistics: true
+#    persistHealthByGender: true
+#    persistLabourStatistics: true
+#    persistAlignmentStatistics: true
 #    persistPersons: false
 #    persistBenefitUnits: false
 #    persistHouseholds: false

@@ -18,6 +18,17 @@ public enum Region implements IntegerValuedEnum {
 	PL6("Polnocny", 6),
 	PL10("Centralno-Wschodni", 10), // "Centralno-Wschodni" =  Central + East = Centralny (1->7) + Wschodni (3->8)+ Województwo Mazowieckie (9)
 
+	// Spain (NUTS-1); drgn1 codes 1-7 taken from the genuine ES initial-population data (input/ES/InitialPopulations/ES_TBC).
+	// TODO: the code<->region correspondence below is still unverified - confirm it against the EUROMOD ES country report.
+	// The ES regression workbooks are estimated with ES1-ES6 as dummies and ES7 (Canarias) as the omitted category.
+	ES1("Noroeste", 1),
+	ES2("Noreste", 2),
+	ES3("Comunidad de Madrid", 3),
+	ES4("Centro", 4),
+	ES5("Este", 5),
+	ES6("Sur", 6),
+	ES7("Canarias", 7),
+
 
 	//Hungary					//Name										//EUROMOD drgn1 value
 	HUC("Central Hungary", 1), // HU1
@@ -49,14 +60,7 @@ public enum Region implements IntegerValuedEnum {
 //	See https://www.iser.essex.ac.uk/files/euromod/country-reports/CR_UK2006-11_final_13-12-11.pdf, table on pg 59 for EUROMOD variable drgn1 definition for UK:
 		
 	
-//	//Uses NUTS Level 1 codes for each country
-//	ES1,				//Spain
-//	ES2,
-//	ES3,
-//	ES4,
-//	ES5,
-//	ES6,
-//	ES7,
+//	//Uses NUTS Level 1 codes for each country (ES1-ES7 now defined above)
 //	GR1,				//Greece
 //	GR2,
 //	GR3,

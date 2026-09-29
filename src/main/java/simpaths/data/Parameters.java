@@ -166,7 +166,9 @@ public class Parameters {
 
     public static int AGE_TO_BECOME_RESPONSIBLE = 18;            // Age become reference person of own benefit unit
     public static int AGE_TO_BECOME_SEMI_RESPONSIBLE = 16;      //Age used in health processes H1, H2
-    public static int AGE_LEAVE_PARENTAL_HOME = 18;
+    public static int MIN_AGE_LEAVE_PH = 18;                // Minimum age to leave the parental home (Stata: age_leave_parental_home)
+    public static int MAX_AGE_ADULT_CHILD = 45;             // Maximum age at which a person can still be considered as an Adult Child;
+                                                            // demAdultChildFlag is reset to 0 above this age
     public static int MIN_AGE_TO_LEAVE_EDUCATION = 16;        // Minimum age for a person to leave (full-time) education
     public static int MAX_AGE_TO_STAY_IN_CONTINUOUS_EDUCATION = 29;
 
@@ -180,6 +182,8 @@ public class Parameters {
     public static double ANNUITY_RATE_OF_RETURN = 0.015;
 
     public static int MIN_HOURS_FULL_TIME_EMPLOYED = 25;    // used to distinguish full-time from part-time employment (needs to be consistent with Labour enum)
+    public static int MIN_HOURS_EMPLOYED = 6;    // minimum weekly hours to count as employed in the initial population; must equal the lower
+                                                // bound of the first positive Labour band, so that no employed person converts to Labour.ZERO
     public static double MIN_HOURLY_WAGE_RATE = 0.0;
     public static double MAX_HOURLY_WAGE_RATE = 75.0;
     public static double MAX_HOURS_WEEKLY_FORMAL_CARE = 150.0;
@@ -2034,7 +2038,17 @@ public class Parameters {
         rebaseIndexMap(TimeSeriesVariable.WageGrowth);
 
         // load year-specific fiscal policy parameters
-        socialCarePolicy = ExcelAssistant.loadCoefficientMap(resolveCountryFile(country, "social_care_parameters.xlsx"), "social care", 1);
+        // Social care is optional: the workbook is only consulted when flagSocialCare is on
+        // (TaxEvaluation -> SocialCareExpenditureSupport -> getSocialCarePolicyValue), and countries
+        // that do not model it need not ship the file. The guard tests for the file rather than the
+        // flag because this method runs before flagSocialCare is assigned in loadParameters, and is
+        // also called standalone from SimPathsStart where the flag is not set at all.
+        String socialCareParametersFile = resolveCountryFile(country, "social_care_parameters.xlsx");
+        if (new File(socialCareParametersFile).exists()) {
+            socialCarePolicy = ExcelAssistant.loadCoefficientMap(socialCareParametersFile, "social care", 1);
+        } else {
+            socialCarePolicy = null;
+        }
         partneredShare = ExcelAssistant.loadCoefficientMap(resolveCountryFile(country, "alignment_targets_partnered_share.xlsx"), "partnered", 1);
         retiredShare = ExcelAssistant.loadCoefficientMap(resolveCountryFile(country, "alignment_targets_retirement.xlsx"), "retirement", 1);
         disabledShare = ExcelAssistant.loadCoefficientMap(resolveCountryFile(country, "alignment_targets_disability.xlsx"), "disability", 1);
@@ -2571,6 +2585,9 @@ public static void putPrevOrNewTarget(int year, Object newTarget, TimeSeriesVari
 
     public static double getSocialCarePolicyValue(int year, String param) {
 
+        if (socialCarePolicy == null)
+            throw new RuntimeException("social care projection is enabled, but input/" + COUNTRY_STRING
+                    + "/social_care_parameters.xlsx was not found - supply the workbook or disable projectSocialCare");
         Object val = socialCarePolicy.getRowColumnValue(year, param);
         if (val == null)
             val = extendSocialCarePolicy(year, param);
@@ -2693,10 +2710,11 @@ public static void putPrevOrNewTarget(int year, Object newTarget, TimeSeriesVari
     private static void setMapBounds(MapBounds map, String countryString) {
 
         String rgn = switch (countryString) {
-            case "EL" -> countryString + "3";
-            case "HU" -> countryString + "C";
-            case "IT" -> countryString + "C";
-            case "PL" -> countryString + "2";
+            case "EL" -> "EL3";
+            case "HU" -> "HUC";
+            case "IT" -> "ITC";
+            case "PL" -> "PL2";
+            case "ES" -> "ES5";
             default -> null;
         };
 
@@ -2813,6 +2831,21 @@ public static void putPrevOrNewTarget(int year, Object newTarget, TimeSeriesVari
                     else if (year >= 2016 && year < 2018)   spa = 61;
                     else if (year >= 2018 )                 spa = 60;
                 }
+                break;
+
+            case "ES":                                      // Spain
+                // Men and women: ordinary pension age gradually rises
+                // from 65 before 2013 to 67 from 2027.
+                //
+                // Spain's statutory ages are specified in years and months.
+                // As spa stores integer years, ages are rounded to the
+                // nearest whole year:
+                // 2005–2017: 65
+                // 2018–2023: 66
+                // 2024+:     67
+                if      (year >= 2005 && year < 2018)       spa = 65;
+                else if (year >= 2018 && year < 2024)       spa = 66;
+                else if (year >= 2024)                      spa = 67;
                 break;
 
             case "EL":                                      // Greece

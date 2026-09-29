@@ -14,7 +14,7 @@
 * 					Adds a new "Plot alignment targets" section that calls
 * 					06_18_plot_alignment_targets.do to produce simulated-vs-
 * 					target time-series plots (with run variability shown as a
-* 					shaded area band) based on AlignmentAdjustmentFactors1.csv.
+* 					shaded area band) based on AlignmentStatistics.csv.
 *					The corresponding output folder alignment_targets is also
 *					created.
 *

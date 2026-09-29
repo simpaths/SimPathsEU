@@ -85,7 +85,8 @@ $ mvn clean package -DskipTests
 Unit tests run by default as part of the `test` / `package` phases. Integration tests (which exercise a full end-to-end simulation) are bound to the `verify` phase:
 ```
 $ mvn verify                                          # run unit + integration tests
-$ mvn verify -Dit.test=RunSimPathsIntegrationTest     # run just the integration test
+$ mvn verify -Dit.test=RunSimPathsPLIntegrationTest   # run just the Polish integration test
+$ mvn verify -Dit.test=RunSimPathsESIntegrationTest   # run just the Spanish integration test
 ```
 
 #### Single run

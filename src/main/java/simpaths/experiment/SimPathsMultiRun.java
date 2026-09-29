@@ -54,6 +54,11 @@ public class SimPathsMultiRun extends MultiRun {
 	// EU runs the integration test against real input data until a training set exists.
 	private static boolean integrationTest = false;
 
+	// true once main() has run, i.e. this JVM is executing a multi-run rather than a
+	// single run through SimPathsStart. Read by OutputReadme, which reports how many runs
+	// the output folder is expected to hold.
+	private static boolean multiRunMode = false;
+
 	// passing args for config file
 	private static Map<String, Object> modelArgs;
 	private static Map<String, Object> innovationArgs;
@@ -75,6 +80,8 @@ public class SimPathsMultiRun extends MultiRun {
 	 */
 	public static void main(String[] args) {
 
+		multiRunMode = true;
+
 		// set default values for country and start year
 		MultiKeyCoefficientMap lastDatabaseCountryAndYear = ExcelAssistant.loadCoefficientMap("input" + File.separator + Parameters.DatabaseCountryYearFilename + ".xlsx", "Data", 1);
 		if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[EL]"))) {
@@ -83,11 +90,13 @@ public class SimPathsMultiRun extends MultiRun {
 			countryString = "Hungary";
 		} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[IT]"))) {
 			countryString = "Italy";
+		} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[ES]"))) {
+			countryString = "Spain";
 		} else if (lastDatabaseCountryAndYear.keySet().stream().anyMatch(key -> key.toString().equals("MultiKey[PL]"))) {
 			countryString = "Poland";
 		} else {
 			throw new IllegalArgumentException(
-					"Country not recognised. Restart the simulation and choose one of the available countries (EL, HU, IT, PL)."
+					"Country not recognised. Restart the simulation and choose one of the available countries (EL, HU, IT, ES, PL)."
 			);
 		}
 
@@ -141,22 +150,16 @@ public class SimPathsMultiRun extends MultiRun {
 			engine.setup();		//This is needed to update model attributes (from model_args in config file)
 
 			if (integrationTest) {
-				// Redirect all output into a fixed, well-known folder so the
-				// integration test can locate results deterministically. The folder
-				// name depends on Parameters.trainingFlag (set from parameter_args
-				// in YAML before this block runs) so the real-data and training-data
-				// baselines never collide.
-				String integrationSubFolder = Parameters.trainingFlag
-						? "INTEGRATION_TESTS_TRAINING"
-						: "INTEGRATION_TESTS";
-				String integrationOutputFolder = "." + File.separator + "output"
-						+ File.separator + integrationSubFolder;
-				Experiment.testOutputFolder = integrationOutputFolder;
+				// Write to a predictable folder the integration test can find, named per
+				// country and data mode so no two baselines collide. Wiped first so the
+				// diff never sees stale results.
+				File outputFolder = new File("." + File.separator + "output" + File.separator
+						+ "INTEGRATION_TESTS" + (Parameters.trainingFlag ? "_TRAINING" : "") + "_" + country);
+				Experiment.testOutputFolder = outputFolder.getPath();
 
 				try {
-					File folder = new File(integrationOutputFolder);
-					if (FileUtils.isDirectory(folder)) {
-						FileUtils.deleteDirectory(folder);
+					if (FileUtils.isDirectory(outputFolder)) {
+						FileUtils.deleteDirectory(outputFolder);
 					}
 				} catch (IOException e) {
 					throw new RuntimeException(e);
@@ -508,6 +511,21 @@ public class SimPathsMultiRun extends MultiRun {
 		}
 	}
 	
+	/** Whether this JVM is executing a multi-run (as opposed to a single run). */
+	public static boolean isMultiRunMode() {
+		return multiRunMode;
+	}
+
+	/** Whether the random seed is incremented by one for each run after the first. */
+	public static boolean isRandomSeedInnov() {
+		return randomSeedInnov;
+	}
+
+	/** Number of runs this experiment will execute. */
+	public static int getMaxNumberOfRuns() {
+		return maxNumberOfRuns;
+	}
+
 	@Override
 	public boolean nextModel() {
 		counter++;
