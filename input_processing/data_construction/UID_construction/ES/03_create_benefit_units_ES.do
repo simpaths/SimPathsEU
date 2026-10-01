@@ -1,41 +1,71 @@
 /*******************************************************************************
 * PROJECT:              SimPaths EU
 * DO-FILE NAME:         03_create_benefit_units.do
-* DESCRIPTION:          Screens data and creates benefit units 
+* DESCRIPTION:          Screens data and creates benefit units.
 * COUNTRY:              ES
-* DATA:         	    EU-SILC panel dataset  
-* AUTHORS: 				Daria Popova, Ashley Burdett
-* LAST UPDATE:          May 2026 
+* DATA:                 EU-SILC panel dataset
+* AUTHORS:              Daria Popova, Ashley Burdett
+* LAST UPDATE:          1 October 2026
 ********************************************************************************
-* NOTE:					
-* 						This do-file: 
-* 							1. Creates benefit units ensuring the 
-*							characteristics are consistent with the simulation
-* 							assumptions.
-* 								Multigenerational hhs treated as distinct BU
-* 								Addresses orphans by trying to attribute them to 
-* 								the mostly parent in the hh based on age. 
-* 								Ensures not orphans.
-* 								If teenage parents live with parents make them 
-* 								a sibling of their child and delete their live 
-* 								in partner.
+* NOTES:
 *
-* 							2. Identifies household to be dropped in the sample 
-* 							due to missing values. 
-* 								Drop if:	- missing variables 
-*											- an unmatched orphan
-* 											- benefit of an underage couple
-* 											  (will save if have a child and
-* 									          lives with parents, other partner
-* 											  dropped) 								
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+*   This do-file creates benefit units from the SILC household structure,
+*   imposing consistency with simulation assumptions as noted in the master
+*   file. The file also screens observations for issues that prevent the
+*   construction of valid benefit units.
 *
-* 							3. Creates benefit unit level homeownership 
-* 							variable. 					
+*   -----------------------------------------------------------------------
+*    Benefit unit construction
+*   -----------------------------------------------------------------------
+*   Benefit units are constructed based on family relationships within the
+*   household. In particular, the file:
+*
+*   - Treats multiple benefit units within multigenerational households as
+*     distinct benefit units
+*   - Identifies orphaned children and, where possible, assigns them to the
+*     most plausible parent in the household based on age
+*   - Checks and imposes consistency between parent, partner and benefit
+*     unit relationships
+*   - Handles teenage parents living with their own parents, including cases
+*     where the teenage parent also has a live-in partner
+*
+*   -----------------------------------------------------------------------
+*    Sample screening
+*   -----------------------------------------------------------------------
+*   Households/benefit units that cannot be consistently represented in
+*   SimPaths are identified for exclusion. This includes cases with:
+*
+*   - Missing variables required for benefit unit construction
+*   - Orphaned children who cannot be matched to a plausible parent
+*   - Underage couples that cannot be represented consistently within the
+*     benefit unit structure
+*
+*   Where an underage parent has a child and lives with their own parents,
+*   the household is retained where possible and the benefit unit
+*   relationships are adjusted accordingly.
+*
+*   -----------------------------------------------------------------------
+*    Benefit unit variables
+*   -----------------------------------------------------------------------
+*   - Benefit unit identifiers and family relationships
+*   - Benefit unit-level home ownership
+*
+*   -----------------------------------------------------------------------
+*    Final checks & save
+*   -----------------------------------------------------------------------
+*   Check the consistency of benefit unit and family relationships and save
+*   the resulting dataset for subsequent initial population construction.
+*
+* TO DO:
 *******************************************************************************/
 
 cap log close 
-//log using "$dir_log/03_drop_hholds_create_benefit_units.log", replace
+log using "$dir_log/03_drop_hholds_create_benefit_units.log", replace
 
+* Load data
 use "$dir_data/${country}-SILC_pooled_all_obs_02.dta", clear 
 
 fre swv 
@@ -561,7 +591,7 @@ replace idbupartner = -9 if idbupartner == .
 assert idbupartner != idbenefitunit
 
 
-/************ IDENITFY REMAINING NON-STANDARD BENEFIT UNITS *******************/
+/************ IDENTITFY REMAINING NON-STANDARD BENEFIT UNITS ******************/
 /*
 Remaining to benefit units necessary to make consistent with simluation 
 	assumptions: 
@@ -791,6 +821,11 @@ replace dehsp_c4 = -9 if partner1 == 1
 
 replace partnered = 0 if partner1 == 1
 
+* Correct underage partner 
+replace idpartner = -9 if dag < ${age_form_partnership}
+
+tab dcpst if dag < ${age_form_partnership}
+
 drop partner1 partner1_bu
 
 
@@ -841,6 +876,13 @@ drop part1adult part1adult_bu
 
 /**************************** UPDATE VARIABLES ********************************/
 
+/*
+24/09/2026: Agreed to update number of children variable to align with SimPaths 
+imputation so counts the number of children in the benefit unit, rather than 
+using the the parent ID variables.  
+*/
+
+/*
 * Number of children variables 
 rename dnc dncold 
 rename dnc02 dnc02old 
@@ -921,6 +963,41 @@ drop dnc_* dnc02_*
 drop dncold dnc02old
 
 // not updated new born variable 
+*/
+
+cap drop dnc dnc02
+
+* Identify children
+gen byte temp_depChild = dag <= ${age_max_dep_child}
+
+gen byte temp_depChild02 = inrange(dag, 0, 2)
+
+* Count children within benefit unit
+bysort swv idbenefitunit: egen dnc = total(temp_depChild)
+bysort swv idbenefitunit: egen dnc02 = total(temp_depChild02)
+
+lab var dnc ///
+    "Number of children 0-${age_max_dep_child} in benefit unit"
+
+lab var dnc02 ///
+    "Number of children aged 0-2 in benefit unit"
+
+* Children themselves are assigned zero children, consistent with SimPaths
+replace dnc = 0 if dag <= ${age_max_dep_child}	
+replace dnc02 = 0 if dag <= ${age_max_dep_child}
+	
+drop temp_depChild temp_depChild02
+
+* Consistency checks
+assert dnc >= 0 & dnc < .
+assert dnc02 >= 0 & dnc02 < .
+
+* Number aged 0-2 cannot exceed total number of children
+assert dnc02 <= dnc
+
+* Individuals classified as children should not themselves have children
+assert dnc == 0 if dag <= ${age_max_dep_child}
+assert dnc02 == 0 if dag <= ${age_max_dep_child}
 
 
 * OECD Equivalence Scale  
@@ -959,12 +1036,12 @@ cap drop dhhtp_c4
 cap drop dhhtp_c8
 
 gen dhhtp_c4 = -9
-replace dhhtp_c4 = 1 if dcpst == 1 & dnc == 0 //Coupled, no children
-replace dhhtp_c4 = 2 if dcpst == 1 & dnc > 0 //Coupled, children
+replace dhhtp_c4 = 1 if dcpst == 1 & dnc == 0 // Coupled, no children
+replace dhhtp_c4 = 2 if dcpst == 1 & dnc > 0 // Coupled, children
 replace dhhtp_c4 = 3 if dcpst == 2 & dnc == 0  // | adultchildflag == 1) 
-	//Not partnered, no children 
+	// Not partnered, no children 
 replace dhhtp_c4 = 4 if dcpst == 2 & dnc > 0 & dhhtp_c4 != 3 
-	//Not partnered, children
+	// Not partnered, children
 
 lab val dhhtp_c4 dhhtp_c4_lb
 lab var dhhtp_c4 "Household composition"
@@ -1298,21 +1375,19 @@ putexcel D85 = ("All")
 /*********************************** SAVE *************************************/
 
 sort idperson swv 
-
-//cf _all using "$dir_data/${country}-SILC_pooled_all_obs_03.dta"
  
 save "$dir_data/${country}-SILC_pooled_all_obs_03.dta", replace  
-cap log close 
+
+//cf _all using "$dir_data/${country}-SILC_pooled_all_obs_03.dta"
 
 
 /***************************** CLEAN UP AND EXIT ******************************/
+cap log close 
 
 #delimit ;
 local files_to_drop
 	hh_lookup.dta
 	orphans.dta
-	temp_depChild_mother.dta
-	temp_depChild_father.dta
 	temp_dhh_owned.dta
 	;
 #delimit cr // cr stands for carriage return

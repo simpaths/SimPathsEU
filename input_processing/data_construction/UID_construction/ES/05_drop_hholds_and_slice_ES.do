@@ -1,19 +1,40 @@
-********************************************************************************
+/*******************************************************************************
 * PROJECT:              SimPaths EU
 * DO-FILE NAME:         05_drop_hhold_an_slice_ES.do
-* DESCRIPTION:          This file generates data for importing into SimPaths
+* DESCRIPTION:          Creates the initial population file for SimPaths.
 * COUNTRY:              ES
-* DATA:         	    EU-SILC panel dataset  
-* AUTHORS: 				Daria Popova, AShley Burdett
-* LAST UPDATE:         	May 2026
+* DATA:                 EU-SILC panel dataset
+* AUTHORS:              Daria Popova, Ashley Burdett
+* LAST UPDATE:          1 October 2026
 ********************************************************************************
-* NOTE:					Called from 00_master.do - see master file for further 
-* 						details
-*						Use -9 for missing values 
-********************************************************************************
+* NOTES:
+*
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+*   This do-file performs the final processing required to create the initial
+*   population file for import into SimPaths.
+*
+*   -----------------------------------------------------------------------
+*    Sample selection
+*   -----------------------------------------------------------------------
+*   - Drops households identified for exclusion during the preceding data
+*     construction and screening steps
+*   - Selects the required cross-sectional year from the SILC panel
+*
+*   -----------------------------------------------------------------------
+*    Final processing & save
+*   -----------------------------------------------------------------------
+*   - Retains and orders the variables required by SimPaths
+*   - Recodes missing values to -9 where required
+* 	- Renmaes variable to SimPaths naming convention 
+*   - Saves the final initial population dataset for import into SimPaths
+*
+* TO DO:
+*******************************************************************************/
 
 cap log close 
-//log using "${dir_log}/05_finalise_input_data.log", replace
+log using "${dir_log}/05_finalise_input_data.log", replace
 
 * Load data
 use "$dir_data/${country}-SILC_pooled_all_obs_04.dta", clear
@@ -128,7 +149,7 @@ save "$dir_data/${country}_pooled_ipop.dta", replace
 // our unique data set :)
 
 
-/*********************** SLICE UP DATA INTO CROSS SECTIONS *******************/
+/*************** SLICE UP DATA INTO CROSS SECTIONS AND RENAME *****************/
 forvalues yy = $first_sim_year/$last_sim_year {
 	
 	* Load pooled data with missing values removed  
@@ -317,11 +338,12 @@ forvalues yy = $first_sim_year/$last_sim_year {
 
 	export delimited using ///
 		"$dir_data/population_initial_${country}_${year}.csv", nolabel replace
+		
 }
 
-cap log close
 
 /***************************** CLEAN UP AND EXIT ******************************/
+cap log close
 
 #delimit ;
 local files_to_drop 

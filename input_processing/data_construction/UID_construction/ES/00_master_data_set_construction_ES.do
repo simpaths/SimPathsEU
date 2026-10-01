@@ -4,13 +4,11 @@
 * DESCRIPTION:         	Main do-file to set the main parameters (country, paths)
 *  						and call sub-scripts to construct dataset for 
 * 						analysis of Spain. 
-********************************************************************************
 * COUNTRY:              ES
 * DATA:         	    Longitudinal EU-SILC UDB version, 2005 - 2020 
 * AUTHORS: 				Clare Fenwick, Daria Popova, Ashley Burdett, 
 * 						Aleksandra Kolndrekaj
-* LAST UPDATE:          24 August 2026
-* 
+* LAST UPDATE:          1 October 2026
 ********************************************************************************
 * NOTES:
 *
@@ -235,7 +233,7 @@ do "$dir_ind/CeMPA shared area/_SimPaths/_SimPathsEU/input_processing/00_master_
 /*******************************************************************************
 * EXECUTE FILES
 *******************************************************************************/
-//do "$dir_do/01_prepare_pooled_data_${country}.do"
+do "$dir_do/01_prepare_pooled_data_${country}.do"
 
 do "$dir_do/02_create_variables_${country}.do"
 
