@@ -63,18 +63,19 @@ global silc_UDB = "UDB_c"
 *******************************************************************************/
 
 * Individual path
-global dir_ind "/Users/ashleyburdett/Library/CloudStorage/Box-Box/CeMPA shared area/_SimPaths/_SimPathsEU"
+global dir_ind "/Users/pineapple/Library/CloudStorage/OneDrive-UniversityofEssex/WorkCEMPA/SimPathsEU"
 
 * Main folder path
-global path "${dir_ind}/validation/02_simulation_output_validation/PL/longitudinal_SILC"
+global path "${dir_ind}/validation_MV_refactored"
 
-global dir_do_files "$path/do_files_refactored"  //folder where do-files are stored
+global dir_do_files "$path/do_files"  //folder where do-files are stored
 
 global dir_work "$path/data"
 global dir_data "$path/data"
 
-global dir_init_pop_data "$dir_ind/input_processing/initial_populations/PL/data"
-
+//global dir_init_pop_data "$dir_ind/input_processing/initial_populations/PL/data"
+global dir_init_pop_data "$path/initpop_data"
+global dir_simulated_data "$path/simulated_data"
 
 /*******************************************************************************
 * DEFINE SAMPLE PARAMETERS
@@ -121,6 +122,8 @@ do "${dir_do_files}/03_create_EU_SILC_validation_targets.do"
 *******************************************************************************/
 
 * List of SimPath Set ups to loop through
+//local alignments "alignment_02b_population_cohabitation"
+
 global alignments "alignment_00_populationOFF alignment_01_population alignment_02a_population_fertility alignment_02b_population_cohabitation alignment_02c_population_disability alignment_02d_population_inschool alignment_02e_population_retirement alignment_03_population_fertility_cohabitation alignment_04_population_fertility_cohabitation_employment"
 
 foreach align in $alignments {

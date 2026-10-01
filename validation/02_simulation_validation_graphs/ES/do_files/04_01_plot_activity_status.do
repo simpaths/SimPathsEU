@@ -25,13 +25,13 @@ program define make_activity_plot
 
     twoway ///
     (rarea sim_employed_high sim_employed_low year, sort color(green%20) legend(label(1 "Employed, SimPaths"))) ///
-    (line valid_employed year, sort color(green) legend(label(2 "Employed, UKHLS"))) ///
+    (line valid_employed year, sort color(green) legend(label(2 "Employed, SILC"))) ///
     (rarea sim_student_high sim_student_low year, sort color(blue%20) legend(label(3 "Students, SimPaths"))) ///
-    (line valid_student year, sort color(blue) legend(label(4 "Students, UKHLS"))) ///
+    (line valid_student year, sort color(blue) legend(label(4 "Students, SILC"))) ///
     (rarea sim_inactive_high sim_inactive_low year, sort color(red%20) legend(label(5 "Non-employed, SimPaths"))) ///
-    (line valid_inactive year, sort color(red) legend(label(6 "Non-employed, UKHLS"))) ///
+    (line valid_inactive year, sort color(red) legend(label(6 "Non-employed, SILC"))) ///
     (rarea sim_retired_high sim_retired_low year, sort color(grey%20) legend(label(7 "Retired, SimPaths"))) ///
-    (line valid_retired year, sort color(grey) legend(label(8 "Retired, UKHLS"))), ///
+    (line valid_retired year, sort color(grey) legend(label(8 "Retired, SILC"))), ///
         title("Economic Activity Status") ///
 		subtitle("`subtitle'") ///
         xtitle("Year", size(small)) ///
@@ -56,11 +56,11 @@ program define make_activity_ne_plot
 
     twoway ///
     (rarea sim_student_high sim_student_low year, sort color(blue%20) legend(label(1 "Students, SimPaths"))) ///
-    (line valid_student year, sort color(blue) legend(label(2 "Students, UKHLS"))) ///
+    (line valid_student year, sort color(blue) legend(label(2 "Students, SILC"))) ///
     (rarea sim_inactive_high sim_inactive_low year, sort color(red%20) legend(label(3 "Non-employed, SimPaths"))) ///
-    (line valid_inactive year, sort color(red) legend(label(4 "Non-employed, UKHLS"))) ///
+    (line valid_inactive year, sort color(red) legend(label(4 "Non-employed, SILC"))) ///
     (rarea sim_retired_high sim_retired_low year, sort color(grey%20) legend(label(5 "Retired, SimPaths"))) ///
-    (line valid_retired year, sort color(grey) legend(label(6 "Retired, UKHLS"))), ///
+    (line valid_retired year, sort color(grey) legend(label(6 "Retired, SILC"))), ///
         title("Non-Employed Economic Activity Status") ///
 		subtitle("`subtitle'") ///
         xtitle("Year", size(small)) ///
@@ -957,7 +957,7 @@ foreach vble in "employed_f" "employed_m" {
             sort color(green%20) ///
             legend(label(1 "SimPaths") position(6) rows(1))) ///
         (line `vble'_`i'_valid year, sort color(green) ///
-            legend(label(2 "UKHLS"))), ///
+            legend(label(2 "SILC"))), ///
             title("Age `title'") ///
             name(`vble'_`i', replace) ///
             ylabel(0.2(0.4)1) ///  
@@ -1627,7 +1627,7 @@ forvalues i = 1/6 {
         sort color(blue%20) ///
         legend(label(1 "SimPaths") position(6) rows(1))) ///
         (line student_`i'_valid year, sort color(blue) ///
-        legend(label(2 "UKHLS"))), ///
+        legend(label(2 "SILC"))), ///
         title("Age `title'") ///
         name(student_`i', replace) ///
         ylabel(0(0.4)0.8) ///  // Note: Standard Stata syntax is 0(step)max
@@ -1759,7 +1759,7 @@ twoway ///
 (rarea sim_ptnr_inactive_high sim_ptnr_inactive_low year, sort ///
 	color(green%20) legend(label(1 "SimPaths"))) ///
 (line valid_ptnr_inactive year, sort color(green) ///
-	legend(label(2 " UKHLS"))), ///
+	legend(label(2 " SILC"))), ///
 	title("Economic Activity Status") ///
 	subtitle("Share of LF non-employed partnered & partner LF non-employed") ///
 	xtitle("Year", size(small)) ///
@@ -1888,7 +1888,7 @@ twoway ///
 (rarea sim_partner_nlf_high sim_partner_nlf_low year, sort ///
 	color(green%20) legend(label(1 "SimPaths"))) ///
 (line valid_partner_nlf year, sort color(green) ///
-	legend(label(2 " UKHLS"))), ///
+	legend(label(2 " SILC"))), ///
 	title("Economic Activity Status") ///
 	subtitle("Share of LF non-employed partnered & partner not LF") ///
 	xtitle("Year", size(small)) ///
@@ -2010,7 +2010,7 @@ twoway ///
 (rarea sim_ptnr_employed_high sim_ptnr_employed_low year, sort ///
 	color(green%20) legend(label(1 "SimPaths"))) ///
 (line valid_ptnr_employed year, sort color(green) ///
-	legend(label(2 " UKHLS"))), ///
+	legend(label(2 " SILC"))), ///
 	title("Economic Activity Status") ///
 	subtitle("Share of employed partnered whose partner is also employed") ///
 	xtitle("Year", size(small)) ///
@@ -2135,7 +2135,7 @@ twoway ///
 (rarea sim_ptnr_inactive_high sim_ptnr_inactive_low year, sort ///
 	color(green%20) legend(label(1 "SimPaths"))) ///
 (line valid_ptnr_inactive year, sort color(green) ///
-	legend(label(2 " UKHLS"))), ///
+	legend(label(2 " SILC"))), ///
 	title("Economic Activity Status") ///
 	subtitle("Share of employed partnered & partner is non-employed") ///
 	xtitle("Year", size(small)) ///
@@ -2266,7 +2266,7 @@ twoway ///
 (rarea sim_ptnr_out_high sim_ptnr_out_low year, sort ///
 	color(green%20) legend(label(1 "SimPaths"))) ///
 (line valid_ptnr_out year, sort color(green) ///
-	legend(label(2 " UKHLS"))), ///
+	legend(label(2 " SILC"))), ///
 	title("Economic Activity Status") ///
 	subtitle("Share of employed partnered & partner is not LF") ///
 	xtitle("Year", size(small)) ///
