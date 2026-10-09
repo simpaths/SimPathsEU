@@ -66,7 +66,7 @@
 *   Remaining disparities between initial populations and simulation rules:
 *   -----------------------------------------------------------------------
 *
-*   - Ages at which females can have a child. [Be informed by the sample?]
+*   - Ages at which females can have a child. 
 *	  Permit teenage mothers in this script (deal with in 03_ )
 *   - A few higher/older education spells (30+) that last multiple years 
 *     in the simulation, can only return to education for single year spells. 
