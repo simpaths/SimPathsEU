@@ -13,7 +13,7 @@
 *    What this file does
 *   -----------------------------------------------------------------------
 *   This processing file compiles the EU-SILC panel for PL for years 2005-2020
-*	The files is consistent with 01_prepare_pooled_data_PL. See that file for 
+*	The file is consistent with 01_prepare_pooled_data_PL. See that file for 
 * 	further information. 
 *
 *******************************************************************************/
