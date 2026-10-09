@@ -32,7 +32,7 @@
 *      (data/, log/, and graphs/ are created as siblings of it
 *      automatically).
 *   3. The path globals below (e.g. dir_ind, dir_long_eusilc,
-*      dir_long_eusilc_05_20) set to point at wherever those GESIS output
+*      dir_long_eusilc_05_20) are set to point at wherever those GESIS output
 *      files live on your machine.
 *   4. 00_master_conditions_PL.do must exist at the path below (lives
 *      outside this folder, shared across countries). It sets
