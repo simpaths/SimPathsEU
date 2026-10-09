@@ -33,7 +33,7 @@
 *   - Leaving the parental home:
 *       - Can leave from a specified minimum age
 * 		- Become the effective head of hh even when living with parents when 
-* 			paretns retire or reach state retirment age
+* 			parents retire or reach state retirement age
 *
 *   - Home ownership:
 *       - Can own a home from a specified minimum age
@@ -46,7 +46,7 @@
 *
 *   The relevant age thresholds are defined in globals defined in "DEFINE 
 * 	PARAMETERS" section below. 
-* 	Throughout also construct relevant flags and produce a log file 
+* 	Throughout, also construct relevant flags and produce a log file 
 * 	"flag_descriptives.xlsx" to see the extent of the adjustments to the raw 
 * 	data. 
 *
@@ -54,12 +54,12 @@
 *    Additional notes on implementation: 
 *   -----------------------------------------------------------------------
 *
-*   - Impute health score (generalized ordered logit model).
-*   - Constructing age is not straight forward as not directly reported in the 
-* 	  data, therefore: 
+*   - Impute health score (generalised ordered logit model).
+*   - Constructing age is not straightforward as it is not directly reported 
+* 	  in the data, therefore: 
 *       → Use interview age (RX010) where available
 *       → Otherwise use age at end of interview year (PX020). This results in 
-* 			upward bias of age.
+* 			upward bias in age.
 *   - Set education = 0 (na) while in initial education spell. 
 *
 *   -----------------------------------------------------------------------
@@ -69,7 +69,7 @@
 *   - Ages at which females can have a child. [Be informed by the sample?]
 *	  Permit teenage mothers in this script (deal with in 03_ )
 *   - A few higher/older education spells (30+) that last multiple years 
-*     in the simulation can only return to education for single year spells. 
+*     in the simulation, can only return to education for single year spells. 
 * 	- Number of children vars (all ages or 0-2) don't account for feasibility 
 * 		of age at birth of the mother. 
 *
@@ -96,7 +96,7 @@ or enforced within the model. These limits reflect both modelling conventions
 and empirical considerations drawn from observed data.
 */
  	
-* Age become an adult in various dimensions	
+* Age becomes an adult in various dimensions	
 global age_becomes_responsible 18 
 
 global age_becomes_semi_responsible 16 
