@@ -1,35 +1,57 @@
-********************************************************************************
+/*******************************************************************************
 * PROJECT:              SimPaths EU
-* DO-FILE NAME:         04_reweight_PL.do
-* DESCRIPTION:          Weight adjustment to account for using households 
-* 						without missing values. 
+* DO-FILE NAME:         04_reweight_ES.do
+* DESCRIPTION:          Adjusts survey weights to account for sample screening.
+* COUNTRY:              ES
+* DATA:                 EU-SILC panel dataset
+* AUTHORS:              Daria Popova, Ashley Burdett
+* LAST UPDATE:          1 October 2026
 ********************************************************************************
-* COUNTRY:              PL
-* DATA:         	    EU-SILC panel dataset  
-* AUTHORS: 				Daria Popova 
-* LAST UPDATE:          Jan 2025
-* NOTE:					Called from 00_master.do - see master file for further 
-* 						details
-*						Use -9 for missing values 
-* 						Adjust weights using the inverse probability of not 
-* 						having missing data at the household level. 
-* 						HH mean individual weights, shared across hh? 
-********************************************************************************
+* NOTES:
+*
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+*   This do-file adjusts the SILC survey weights to account for the exclusion
+*   of households with missing data during the initial population construction.
+*
+*   -----------------------------------------------------------------------
+*    Weight adjustment
+*   -----------------------------------------------------------------------
+*   The probability that a household remains in the sample following
+*   screening is estimated using observed household characteristics. Survey
+*   weights are then adjusted using the inverse probability of remaining in
+*   the sample.
+*
+*   The adjustment is performed at the household level so that individuals
+*   within the same household receive a common adjustment.
+*
+*   -----------------------------------------------------------------------
+*    Final processing
+*   -----------------------------------------------------------------------
+*   Missing values are recoded to -9 where required for SimPaths.
+*
+* TO DO:
+*******************************************************************************/
 
 cap log close 
 //log using "$dir_log/06_reweight_and_slice.log", replace
 
 use "$dir_data/${country}-SILC_pooled_all_obs_03.dta", clear
 
-* 1. Adjust weights by estimating a probit model for inclusion in the 
-* restricted sample of households without missing values.
+
+/****************************** ADJUST WEIGHTS ********************************/
+/*
+Adjust weights by estimating a probit model for inclusion in the 
+restricted sample of households without missing values.
+*/
 assert stm == swv //swv = year 
 sort stm idhh
 
-* 1.1. Define a dummy variable classifying households as complete or not
+* Define a dummy variable classifying households as complete or not
 cap gen complete_hh = (dropHH != 1)
 
-* 1.2. Define independent variables for probit
+* Define independent variables for probit
 sum dgn dag drgn1
 cap gen drop_indicator = .
 replace drop_indicator = 1 if dgn < 0 | dag < 0 | drgn1 < 0
@@ -60,8 +82,10 @@ foreach var in _IdehXdag_2_20 _IdehXdag_2_30 _IdehXdag_2_40 _IdehXdag_2_50 ///
 		replace `var' = `var'*dgn
 
 }
+
+sort stm idhh idperson 
  
-* 1.3. Create hh level dataset 
+* Create hh level dataset 
 collapse (firstnm) drgn1 (max) _IdehXdag* dcpstcat* complete_hh (mean) ///
 	hh_size dwt, by(stm idhh)
 	
@@ -77,7 +101,7 @@ recode hh_size (1=1) (2=2) (3=3) (4/max=4) , gen(hhsize_cat2)
 fre hhsize_cat*
 
 
-* 1.4. Household-level probit
+* Household-level probit
 /* 
 Model probabiltiy of being a complete household conditional on presence of
 people of certain education age gender combination, marital status and region.
@@ -100,7 +124,7 @@ sample, so drop the rest
 */
 keep if complete_hh == 1 // (11,611 observations deleted)
 
-*2. Multiply ind weights by the inverse of the predicted prob of inclusion
+* Multiply ind weights by the inverse of the predicted prob of inclusion
 gen dwt_adjusted = dwt*inv_pr_comphh
 
 replace dwt_adjusted = dwt if missing(dwt_adjusted) 
@@ -125,22 +149,23 @@ merge m:1 stm idhh using "$dir_data/temp_adjusted_dwt.dta", ///
 /*
     Result                      Number of obs
     -----------------------------------------
-    Not matched                        21,228
-        from master                    21,228  (_merge==1)
+    Not matched                        20,960
+        from master                    20,960  (_merge==1)
         from using                          0  (_merge==2)
 
-    Matched                           525,931  (_merge==3)
+    Matched                           526,200  (_merge==3)
     -----------------------------------------
-
 */	
+
 keep if _merge == 1 | _merge == 3
 
-gen dwt_sampling = dwt //keep original weights before any adjustment 
+* Keep original weights before any adjustment 
+gen dwt_sampling = dwt 
 
+* Keep weights adjusted for probability of being complete hhs 
 replace dwt = dwt_adjusted if (!missing(dwt_adjusted)) 
-	//keep weights adjusted for probability of being complete hhs 
 
-	drop _merge
+drop _merge
 
 sum dwt dwt_adjusted dwt_sampling
 /*	
@@ -154,7 +179,7 @@ recode dcpyy dcpagdf ynbcpdf_dv dnc02 dnc ypnbihs_dv yptciihs_dv ypncp ///
  
 * Ensure consistency of benefit unit data
 // nto fully sorted so can result in slightly different dataset each time 
-gsort stm idbenefitunit -dag
+gsort stm idbenefitunit -dag idperson 
 
 foreach vv of varlist dwt drgn1 dhhtp_c4 ydses_c5 dnc02 dnc {
 	
@@ -162,7 +187,8 @@ foreach vv of varlist dwt drgn1 dhhtp_c4 ydses_c5 dnc02 dnc {
 
 }
 
-/*********************************** SAVE *************************************/
+
+/******************************* SAVE AND SLICE *******************************/
 sort idperson swv 
 
 //cf _all using "$dir_data/${country}-SILC_pooled_all_obs_04.dta"	
@@ -185,9 +211,9 @@ forvalues yy = $first_sim_year/$last_sim_year {
 	
 }
 
-cap log close
 
 /***************************** CLEAN UP AND EXIT ******************************/
+cap log close
 
 #delimit ;
 local files_to_drop 

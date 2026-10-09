@@ -2,27 +2,70 @@
 * PROJECT:             	SimPaths EU
 * DO-FILE NAME:        	00_master.do
 * DESCRIPTION:         	Main do-file to set the main parameters (country, paths)
-*  						and call sub-scripts to construct the dataset for the 
+*  						and call sub-scripts to construct dataset for 
 * 						analysis of Poland. 
-********************************************************************************
 * COUNTRY:              PL
-* DATA:         	    Longitudinal EU-SILC UDB version, 2005 - 2024 
+* DATA:         	    Longitudinal EU-SILC UDB version, 2005 - 2020 
 * AUTHORS: 				Clare Fenwick, Daria Popova, Ashley Burdett, 
 * 						Aleksandra Kolndrekaj
-* LAST UPDATE:          March 2026 AB
-* 
+* LAST UPDATE:          7 October 2026
 ********************************************************************************
 * NOTES:
-*	ENSURE HAVE ALREADY RUN 00_master_conditions_PL.do FILE.
-* 	This can be found in the main "input_processing" folder. Called below. 
 *
-*	The input data for this process comes from longitudinal EU-SILC. We 
-* 	follow the procedure set out in the *GESIS Papers 2022/10* to construct 
-* 	the cumulative panel for each file type (D, H, R, P). 
-* 	This process utilises the program "eusilc_2020" and the "GESIS set-ups". 
-*   Currently, compiling the master* files is done separately to avoid data  
-*   storage constraints. See the read me file in the SILC_panel subfolder
-* 	for additional information (README_SILC_panel_construction). 
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+*   Sets country/machine parameters and file paths, then runs the full
+*   pipeline below that turns the GESIS eusilcpanel cumulative output
+*   (MasterR/P/D/H) into the initial populations dataset used by SimPaths
+*   for Poland.
+*
+*   -----------------------------------------------------------------------
+*    Prerequisites (must be in place before running)
+*   -----------------------------------------------------------------------
+*   1. The GESIS eusilcpanel output (MasterR/P/D/H .dta files) available
+*      locally, in TWO vintages - one built through 2020, one through
+*      2023 (see GESIS Papers 2022/10 and the README in the SILC_panel
+*      subfolder for how these are constructed). This file reads that
+*      output; it does not construct it.
+*   2. This do_files folder saved at the location dir_work points to below
+*      (data/, log/, and graphs/ are created as siblings of it
+*      automatically).
+*   3. The path globals below (e.g. dir_ind, dir_long_eusilc,
+*      dir_long_eusilc_05_20) set to point at wherever those GESIS output
+*      files live on your machine.
+*   4. 00_master_conditions_PL.do must exist at the path below (lives
+*      outside this folder, shared across countries). It sets
+*      global country "PL" and the simulation-alignment age thresholds
+*      used throughout this pipeline.
+*   5. Stata packages installed (see block below): fre, tsspell,
+*      carryforward, outreg2, filelist.
+*
+*   -----------------------------------------------------------------------
+*    Pipeline stages (see EXECUTE FILES below, run in this order)
+*   -----------------------------------------------------------------------
+*   1. vars_05_02/prepare_pooled_data_05_20_PL.do 
+* 									   Pools the 2005-2020 vintage panel
+*                                       (one-off; produces the patch source
+*                                       read by step 3)
+*   2. 01_prepare_pooled_data_PL.do    Pools the 2005-2023 vintage panel
+*                                       into the main person-level dataset
+*   3. 02_create_variables_PL.do       Builds SimPaths model variables;
+*                                       opens by merging in patch variables
+*                                       from step 1 (pl030, pl031, rb210,
+*                                       pe040, pl051 - definitions that
+*                                       changed after 2020 and were never
+*                                       backcoded)
+*   4. 03_create_benefit_units_PL.do   Screens data, constructs benefit units
+*   5. 04_reweight_PL.do               Reweights sample for benefit-unit basis
+*   6. 05_drop_hholds_slice_and_refactoring_PL.do
+*                                       Finalises the UID dataset
+*                                       (${country}_pooled_ipop.dta) used
+*                                       for estimation, and slices the UID
+*                                       into cross-sections to use as the
+*                                       initial populations file to set
+*                                       up SimPaths.
+*   7. 06_check_yearly_data_PL.do      Checks new data against previous release
 *
 *   -----------------------------------------------------------------------
 *    Assumptions imposed to align the SILC data with simulation rules:
@@ -94,39 +137,64 @@
 *
 *******************************************************************************/
 
-/*
-* Stata packages to install 
-ssc install fre
-ssc install tsspell 
-ssc install carryforward 
-ssc install outreg2
-ssc install filelist
-*/
-
 clear all
 set more off
 set type double
 set maxvar 30000
 set matsize 1000
 
+
+/*******************************************************************************
+* INSTALL STATA PACKAGES
+*******************************************************************************/
+ssc install fre
+ssc install tsspell 
+ssc install carryforward 
+ssc install outreg2
+ssc install filelist
+ssc install gologit2, replace
+
+
 /*******************************************************************************
 * DEFINE DIRECTORIES
 *******************************************************************************/
+/*
+Globals marked >>> EDIT <<< below need adjusting for your machine/setup.
+Everything else in this section is derived from them and shouldn't need
+changing.
+*/
+
+* Individual pathway
+* >>> EDIT <<<
+/*
+Hardcoded per machine - edit this to your own local Box path before running. 
+Everything else in this file is relative to this one path.
+*/
 
 * Individual
 global dir_ind "/Users/ashleyburdett/Library/CloudStorage/Box-Box"
 
-// Ashley - /Users/ashleyburdett/Library/CloudStorage/Box-Box
-// Aleksandra - C:/Users/ak25793/Box
+
+** Output directories
 
 * Working directory
+* >>> EDIT <<<
+/*
+This country's working folder. Edit this to the folder in which the "do_files"
+folder containing this do-file is contained.
+This is the main folder that will contain the relevant UID construction data and
+log files.
+*/
 global dir_work "$dir_ind/CeMPA shared area/_SimPaths/_SimPathsEU/input_processing/initial_populations/PL"
 
-* Directory containing do files
+* Directory containing do-files
 global dir_do "$dir_work/do_files"
 
-* Directory containing data files 
+* Directory containing data output files 
 global dir_data "$dir_work/data" 
+
+* Directory containing 2005-2020 PL compiled panel 
+global dir_data_05_20 "$dir_data/orig_panel_2005_2020"
 
 * Directory containing log files 
 global dir_log "$dir_work/log"
@@ -134,17 +202,16 @@ global dir_log "$dir_work/log"
 * Directory containing graphs 
 global dir_graphs "$dir_work/graphs"
 
-* Directory containing 2005-2023 EU-SILC paneldata 
+
+** Input Directories 
+
+* Directory containing 2005-2023 EU-SILC panel data
+* >>> EDIT <<<
 global dir_long_eusilc "$dir_ind/CeMPA shared area/projects - completed/ESPON - OVERLAP/_countries/Cumulative Longitudional Dataset (all countries)/2005_2023_panel/data"
-// location the master*.dta files that make up the EU-SILC panel 
 
-//"/Users/aburdett/Library/CloudStorage/Box-Box/ESPON - OVERLAP/_countries/Cumulative Longitudional Dataset (all countries)/2005_2023_panel/data"
-
-* Directory containing 2005-2020 EU-SILC paneldata 
+* Directory containing 2005-2020 EU-SILC panel data
+* >>> EDIT <<<
 global dir_long_eusilc_05_20 "$dir_ind/CeMPA shared area/projects - completed/ESPON - OVERLAP/_countries/Cumulative Longitudional Dataset (all countries)/2005_2020_panel"
-
-* Directory containing 2005-2020 PL panel 
-global dir_data_05_20 "$dir_data/orig_panel_2005_2020"
 
 
 /*******************************************************************************

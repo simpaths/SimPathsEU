@@ -1,16 +1,37 @@
-********************************************************************************
+/*******************************************************************************
 * PROJECT:              SimPaths EU
-* DO-FILE NAME:         05_drop_hhold_an_slice_PL.do
-* DESCRIPTION:          This file generates data for importing into SimPaths
-********************************************************************************
+* DO-FILE NAME:         05_drop_hhold_an_slice.do
+* DESCRIPTION:          Creates the UID and nitial population files
 * COUNTRY:              PL
-* DATA:         	    EU-SILC panel dataset  
-* AUTHORS: 				Daria Popova
-* LAST UPDATE:         	Jan 2025
-* NOTE:					Called from 00_master.do - see master file for further 
-* 						details
-*						Use -9 for missing values 
+* DATA:                 EU-SILC panel dataset
+* AUTHORS:              Daria Popova, Ashley Burdett
+* LAST UPDATE:          8 October 2026
 ********************************************************************************
+* NOTES:
+*
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+*   This do-file performs the final processing required to create the initial
+*   population file for import into SimPaths.
+*
+*   -----------------------------------------------------------------------
+*    Sample selection
+*   -----------------------------------------------------------------------
+*   - Drops households identified for exclusion during the preceding data
+*     construction and screening steps
+*   - Selects the required cross-sectional year from the SILC panel
+*
+*   -----------------------------------------------------------------------
+*    Final processing & save
+*   -----------------------------------------------------------------------
+*   - Retains and orders the variables required by SimPaths
+*   - Recodes missing values to -9 where required
+* 	- Renmaes variable to SimPaths naming convention 
+*   - Saves the final initial population dataset for import into SimPaths
+*
+* TO DO:
+*******************************************************************************/
 
 cap log close 
 //log using "${dir_log}/05_finalise_input_data.log", replace
@@ -21,13 +42,13 @@ use "$dir_data/${country}-SILC_pooled_all_obs_04.dta", clear
 /****************************** LIMIT SAMPLE **********************************/
 
 * If any person in the household has missing values, drop the whole household:
-drop if dropHH == 1 /*(102,582 observations deleted)*/
+drop if dropHH == 1  	// 20,960 obs deleted 
 
 drop dropObs dropHH 
 	
 * Drop if hh weight = 0:
 count if dwt == 0 
-drop if dwt == 0 // 19,271
+drop if dwt == 0 // 19,271 obs
 
 * Final check for same sex households
 assert ssscp != 1 
@@ -71,10 +92,10 @@ assert duplicate == 0
 
 sort idperson swv 
 
-//cf _all using "$dir_data/${country}_pooled_ipop.dta"
+//cf _all using "$dir_data/${country}_pooled_ipop_pre.dta"
 
 save "$dir_data/${country}_pooled_ipop_pre.dta", replace 
-// panel dataset with missing values removed
+
 
 /*************************** GENERATE FREQUENCY WEIGHTS ***********************/
 /*
@@ -82,37 +103,40 @@ Total population figures for Poland from 2011 to 2023:
 https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/...
 	table?lang=en&category=demo.demo_pop
 */
-cap gen pl_pop = 0 
-replace pl_pop = 38062718 if stm == 2011 
-replace pl_pop = 38063792 if stm == 2012
-replace pl_pop = 38062535 if stm == 2013
-replace pl_pop = 38017856 if stm == 2014
-replace pl_pop = 38005614 if stm == 2015
-replace pl_pop = 37967209 if stm == 2016
-replace pl_pop = 37972964 if stm == 2017 
-replace pl_pop = 37976687 if stm == 2018
-replace pl_pop = 37972812 if stm == 2019
-replace pl_pop = 37958138 if stm == 2020
-replace pl_pop = 37073357 if stm == 2021
-replace pl_pop = 37073357 if stm == 2022
-replace pl_pop = 36753736 if stm == 2023
+cap gen ${country}_pop = 0 
+replace ${country}_pop = 38062718 if stm == 2011 
+replace ${country}_pop = 38063792 if stm == 2012
+replace ${country}_pop = 38062535 if stm == 2013
+replace ${country}_pop = 38017856 if stm == 2014
+replace ${country}_pop = 38005614 if stm == 2015
+replace ${country}_pop = 37967209 if stm == 2016
+replace ${country}_pop = 37972964 if stm == 2017 
+replace ${country}_pop = 37976687 if stm == 2018
+replace ${country}_pop = 37972812 if stm == 2019
+replace ${country}_pop = 37958138 if stm == 2020
+replace ${country}_pop = 37073357 if stm == 2021
+replace ${country}_pop = 37073357 if stm == 2022
+replace ${country}_pop = 36753736 if stm == 2023
 
 cap drop surv_pop
-//bys stm: gen surv_pop = _N //gen survey hhs population for each calendar year 
 bys stm: egen surv_pop = total(dwt_adjusted)
 bys stm: sum surv_pop
 
 cap drop multiplier
-gen multiplier = pl_pop / surv_pop 
+gen multiplier = ${country}_pop / surv_pop 
 
-cap gen dwtfq = round(dwt * multiplier)  // rounding causes some difference 
+cap gen dwtfq = round(dwt * multiplier)  
+	// rounding causes some slight difference across runs
+	
 //cap drop dwt_sampling
 //rename dwt dwt_sampling
 replace dwt = dwtfq 
 bys stm: sum dwt*
 
 preserve 
-collapse (sum) dwt, by(stm)
+	
+	collapse (sum) dwt, by(stm)
+
 restore
 
 sort idperson swv 
@@ -120,10 +144,10 @@ sort idperson swv
 //cf _all using "$dir_data/${country}_pooled_ipop.dta"
 
 save "$dir_data/${country}_pooled_ipop.dta", replace  
-// our unique data set :)
+// This is the complete UID, ready to use to estimate the SimPaths processes :) 
 
 
-/*********************** SLICE UP DATA INTO CROSS SECTIONS *******************/
+/******** SLICE UP DATA INTO CROSS SECTIONS FOR INITIAL POP AND RENAME ********/
 forvalues yy = $first_sim_year/$last_sim_year {
 	
 	* Load pooled data with missing values removed  
@@ -176,20 +200,23 @@ forvalues yy = $first_sim_year/$last_sim_year {
 	dnc02 dnc ded deh_c3 deh_c4 sedex dlltsd dhe ydses_c5 yplgrs_dv ///
 	ypnbihs_dv yptciihs_dv dcpyy dcpagdf ynbcpdf_dv der dehm_c4 dehf_c4 stm ///
 	dhh_owned lhw drgn1 dct les_c4 adultchildflag dwt obs_earnings_hourly ///
-	l1_obs_earnings_hourly ypncp ypnoab ydisp l1_les_c4 liwwh 
+	l1_obs_earnings_hourly ypncp ypnoab ydisp l1_les_c4 liwwh  ///
+	reg_birth unemp
 	
 	order idhh idbenefitunit idperson idpartner idmother idfather swv dgn ///
 	dag dnc02 dnc ded deh_c3 deh_c4 sedex dlltsd dhe ydses_c5 yplgrs_dv ///
 	ypnbihs_dv yptciihs_dv dcpyy dcpagdf ynbcpdf_dv der dehm_c4 dehf_c4 stm ///
 	dhh_owned lhw drgn1 dct les_c4 adultchildflag dwt obs_earnings_hourly ///
-	l1_obs_earnings_hourly ypncp ypnoab ydisp l1_les_c4 liwwh 
+	l1_obs_earnings_hourly ypncp ypnoab ydisp l1_les_c4 liwwh ///
+	reg_birth unemp
 	
 	recode idhh idbenefitunit idperson idpartner idmother idfather swv dgn ///
 	dag dnc02 dnc ded deh_c3 deh_c4 sedex dlltsd dhe ydses_c5 ///
 	yplgrs_dv ypnbihs_dv yptciihs_dv dcpyy dcpagdf ynbcpdf_dv der ///
 	dehm_c4 dehf_c4 stm dhh_owned lhw drgn1 dct les_c4 adultchildflag dwt ///
 	obs_earnings_hourly l1_obs_earnings_hourly ypncp ypnoab ydisp l1_les_c4 ///
-	liwwh (missing = -9)
+	liwwh reg_birth unemp	(missing = -9)
+	
 	
 	* Rename Variables following new Codebook
 	
@@ -233,6 +260,7 @@ forvalues yy = $first_sim_year/$last_sim_year {
 	//rename multiplier demPopSurveyShare
 	//rename dot demEthnC4
 	//rename dot01 demEthnC6
+	rename reg_birth demRgnBirthIntl
 
 	* Education 
 	rename deh_c3 eduHighestC3
@@ -254,6 +282,7 @@ forvalues yy = $first_sim_year/$last_sim_year {
 	//rename lesdf_c4 labStatusPartnerAndOwnC4	
 	rename lhw labHrsWorkWeek
 	//rename l1_lhw labHrsWorkWeekL1	
+	rename unemp labUnempFlag
 	
 	* Income, labour, wealth 
 	rename obs_earnings_hourly labWageHrly
@@ -299,31 +328,29 @@ forvalues yy = $first_sim_year/$last_sim_year {
 	//rename dls demLifeSatScore0to10
 	//rename financial_distress yFinDstrssFlag	
 	
-	gsort idHh idBu idPers
+	gsort idHh idBu idPers	
 	
-	save "$dir_data/refactored/population_initial_${country}_${year}.dta", ///
-		replace
+	save "$dir_data/population_initial_${country}_${year}.dta", replace
 	
 	recode demMaleFlag (-9 = 0)
-	
-	export delimited using ///
-		"$dir_data/refactored/population_initial_${country}_${year}.csv", ///
-		nolabel replace
 
+	export delimited using ///
+		"$dir_data/population_initial_${country}_${year}.csv", nolabel replace
+		
 }
 
-cap log close
 
 /***************************** CLEAN UP AND EXIT ******************************/
+cap log close
 
 #delimit ;
 local files_to_drop 
-	//was_wealthdata.dta
+	${country}_pooled_ipop_pre.dta
 	;
 #delimit cr // cr stands for carriage return
-/*
+
 foreach file of local files_to_drop { 
 	erase "$dir_data/`file'"
 }
-*/
+
 

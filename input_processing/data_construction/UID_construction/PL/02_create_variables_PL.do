@@ -1,59 +1,114 @@
 /*******************************************************************************
 * PROJECT:              SimPaths EU
 * DO-FILE NAME:         02_create_variables.do
-* DESCRIPTION:          Creates variables from SILC.  
-********************************************************************************
+* DESCRIPTION:          Creates individual and hh variables from lonigtudinal 
+* 						SILC.  
 * COUNTRY:              PL
 * DATA:         	    EU-SILC panel dataset  
 * AUTHORS: 				Claire Fenwick, Daria Popova, Ashley Burdett, 
 * 						Aleksandra Kolndrekaj
-* LAST UPDATE:          Jan 2026
+* LAST UPDATE:          7 October 2026
 ********************************************************************************
-* NOTES:				This do-file creates the main variables used in SimPaths
-*						from the variable in SILC. Impose consistency with 
-* 						simulation assumptions as noted in the master file. 
+* NOTES:				
 * 
-* 						To preserve our sample size we impute values for self-
-* 						reported health (dhe_c5) and educational attainment 
-* 						(deh_c3, deh_c4)
-* 
-* 						Impute ages of individuals top coded in SILC (78+) using 
-* 						information from SHARE dataset. Now age top-coded at 100 
-* 						to align with population projections. 
-* 
-*						-9 for missing values 
-* 						"upid uhid year" uniquely identifies observations in the 
-* 						loaded dataset
-* 
-* 						Things to change for each country: 
-* 						- CPI
-* 						- Fertility rate // UPDATE
-* 						- Check if any bugs in the rotation groups when 
-* 							constructing the weights. 
-* 						- NUTS1 regions (Check if have remained constant 
-*							throughout the observation window)
-* 						- Country code 
-* 						- Pension age
-* 						- Max age a female can have a child
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+* 	This do-file creates the main variables used in SimPaths from the 
+*	  variables in SILC. The file also imposes consistency with simulation 
+* 	  assumptions as noted in the master file. 
 *
-* TO DO: 				
+*   -----------------------------------------------------------------------
+*   Variables constructed 
+*   -----------------------------------------------------------------------
+*   Identifiers, panel setup & demographics
+*     Data collection wave, interview date, household/person IDs, set
+*     panel, deceased flag, gender, parent/partner IDs, age, region, country
+*
+*   Partnership & family relationships
+*     Union status, partner's age, enter/exit partnership, partner age
+*     difference, partnership duration
+*
+*   Health
+*     Own and partner's health status (imputed - see dhe above)
+*
+*   Economic activity, work & disability
+*     Activity status, long-term sick/disabled, unemployment, hours of
+*     work, employment experience, disability benefit
+*
+*   Education
+*     Initial education spell, educational attainment (deh_c3/deh_c4),
+*     parent's education, return to/leave education
+*
+*   Retirement & pensions
+*     Retired flag, enter retirement, pension age (own and spouse)
+*
+*   Children & household composition
+*     Fertility, number/timing of children, adult child flag, exit
+*     parental home, household composition, OECD equivalence scale
+*
+*   Income, wages & weights
+*     CPI, real hourly wages, personal/household income variables,
+*     home ownership, survey weights (line 4216)
+*
+*   Final checks & save
+*     Consistency checks, keep relevant waves/variables, recode missing
+*     values, save ${country}-SILC_pooled_all_obs_02.dta
+*
+*   -----------------------------------------------------------------------
+*    Variable imputation
+*   -----------------------------------------------------------------------
+*   To preserve our sample size, the following are imputed:
+*
+*   - Health (dhe) and partner's health - generalized ordered logit
+*   - Educational attainment (deh_c3, deh_c4) - generalized ordered logit,
+*     with deductive logic used first where monotonicity of education
+*     allows it
+*   - Partner's educational attainment - ordered probit
+*   - Age of individuals top-coded in SILC (78+) - deductive logic where
+*     possible, otherwise a regression model informed by the SHARE dataset.
+*     Now age top-coded at 100 to align with population projections
+*   - Hours of work (lhw) when missing - hot-deck imputation by donor
+*     strata
+*   - Wages (obs_earnings_hourly) when missing - carried forward from an
+*     adjacent panel cell where available, otherwise hot-deck imputation
+* 	- Years of experience in paid work 
+*
+*   Each imputed variable has a corresponding flag (e.g. flag_dhe_imp,
+*   flag_wage_hotdeck) - see the "CREATE ASSUMPTION DESCRIPTIVES" section
+*   for the full summary of imputation rates.
+*
+*   -----------------------------------------------------------------------
+*    Changes that need to be made for a new country
+*   -----------------------------------------------------------------------
+*   - CPI
+*   - Fertility rate // UPDATE
+*   - Check if any bugs in the rotation groups when constructing the weights
+*   - NUTS1 regions (check if they have remained constant throughout the
+*     observation window)
+*   - Country code
+*   - Pension age
+*   - Max age a female can have a child
+*
+* TO DO:
 *******************************************************************************/
 
+* Set off log
 cap log close 
 //log using "${dir_log}/02_create_variables.log", replace
 
-cd "${dir_data}"
 
+* Set seed 
 set seed 98765
 
-/* 
-Obtain values of variables that change between 2020 and 2023 from the 
-original panel 
-*/
- 
-do "$dir_do/extra_var_info/vars_05_20_${country}2.do"
+* Obtain values of variables that change between 2020 and 2024 from the earlier 
+* panel 
+do "$dir_do/vars_05_20/01_prepare_pooled_data_05_20_${country}.do"
 
-* Load data 
+do "$dir_do/vars_05_20/02_vars_05_20_${country}.do"
+
+
+* Load data main panel 
 use "$dir_data/${country}-SILC_pooled_all_obs_01.dta", clear
 
 lab def dummy 1 "yes" 0 "no"
@@ -96,6 +151,11 @@ replace stm = hb060 if missing(stm)
 
 fre stm
 
+tab stm swv 
+
+* To avoid duplicates force common years to be survey year (2019, 2020)
+replace stm = year if stm != swv 
+
 assert swv == stm 
 
 
@@ -136,6 +196,9 @@ In the original EU-SILC longitudinal wave files, a household is identified
 with the Household ID variable px030/db030/hb030/rb040, in this dataset - 
 created from the cumulative longitidutional dataset by GESIS - the variable 
 uhid uniquely identifies households.
+
+uhid = country + rotation_group + {enter_year+3} + hid
+
 */
 clonevar idhh = uhid 
 
@@ -153,6 +216,10 @@ In the original EU-SILC longitudinal wave files, a person is identified with
 the variable rb030/pb030 (their personal ID) in this dataset - the cumulative 
 longitidutional dataset - the created variable upid uniquely identifies 
 observations. 
+
+upid = country + rotation_group + {enter_year+3} + pid
+
+Can have multiple observations in a given year if changed living circumstances.
 */
 clonevar idperson = upid
  
@@ -173,10 +240,9 @@ Duplicates	in terms of swv	idperson
 --------------------------------------
    Copies | Observations       Surplus
 ----------+---------------------------
-        1 |       752845             0
-        2 |         2580          1290
+		1 |       752845             0
+		2 |         2580          1290
 --------------------------------------
-
 
 The unique identifier of observations is idperson idhh and year not just 
 idperson year. Therefore need a standard rule to rule out people residing in two 
@@ -189,23 +255,25 @@ dataset is generated everytime the do file is run.
 
 sort upid year uhid // AB: added to ensure drop the same duplicates each time 
 
-duplicates drop swv idperson, force //(1,290 observations deleted)
+duplicates drop swv idperson, force // (1,290 observations deleted)
+
+isid idperson swv
+
 xtset idperson swv 
 
 sort upid year 
 
 
 /***************************** DECEASED FLAG **********************************/
-
 gen flag_deceased = 0 
 replace flag_deceased = 1 if rb110 == 6 
 
-lab var flag_deceased "FLAG: Individual deied in the previous year"
+lab var flag_deceased "FLAG: Individual died in the previous year"
 
 
 /********************************* GENDER *************************************/
 gen dgn = rb090
-recode dgn 2 = 0 	//dgn = 0 is female, 1 is male
+recode dgn 2 = 0 	// dgn = 0 is female, 1 is male
 
 lab var dgn "Gender" 
 lab define dgn 1 "male" 0 "female"
@@ -214,7 +282,6 @@ lab val dgn dgn
 sort idperson swv
 
 * Impute as time invariant characteristic 
-* Individual panel max length 5 years
 forvalues i = 1/6 {
 	
 	replace dgn = l`i'.dgn if missing(dgn) & ///
@@ -243,36 +310,60 @@ Note on the variable: rb240 includes married people and partners in a
 consensual union (with or without a legal basis).
 */
 tostring rb240, replace format(%18.0g) 
+
 gen idpartner = (urtgrp + rb240)
+
 destring rb240, replace
 destring idpartner, replace ignore($country)
+
 replace idpartner = . if rb240 == .
 
 lab var idpartner "Unique cross wave identifier of partner"
+
 recode idpartner . = -9
 format idpartner %18.0g
 
 
 /**************** ID FATHER (includes natural/step/adoptive) ******************/
+/*
+Same logic applies to father id and partner id; will align with idperson if 
+combine urtgrp with the relevant id variable. 
+
+Only captures the id of parents that live in the same household. 
+*/
 tostring rb220, replace format(%18.0g)   
+
 gen idfather = (urtgrp + rb220)
+
 destring rb220, replace
 destring idfather, replace ignore($country)
+
 replace idfather = . if rb220 == .
 
 lab var idfather "Father unique identifier"
+
 format idfather %18.0g
 recode idfather . = -9
 
 
 /******************* ID MOTHER (includes natural/step/adoptive) ***************/
+/*
+Same logic applies to mother id and partner id; will align with idperson if 
+combine urtgrp with the relevant id variable. 
+
+Only captures the id of parents that live in the same household. 
+*/
 tostring rb230, replace format(%18.0f)  
+
 gen str30 idmother = (urtgrp + rb230)
+
 destring rb230, replace
 destring idmother, replace ignore($country)
+
 replace idmother = . if rb230 == .
 
 lab var idmother "Mother unique identifier"
+
 recode idmother . = -9
 format idmother %18.0g
 
@@ -317,7 +408,6 @@ randomly drawing from a gender-specific log-normal distribution, with parameters
 informed by SHARE data. Longitudinal consistency is also imposed in these 
 cases.  
 */
-
 gen dag = stm - rb080
 replace dag = rx010 if rx010 != . 
 	
@@ -344,7 +434,8 @@ gen age_dif = dag - dag[_n-1] if idperson == idperson[_n-1] & ///
 tab age_dif	
 tab rb080 if age_dif > 2 & age_dif != . 
 /*
-Almost all big jumps are due to a sudden change in birth year to be <= 1942
+Overwhelming majority of big jumps are due to a sudden change in birth year to 
+be <= 1942
 */
 
 drop age_dif 
@@ -364,21 +455,15 @@ gen age_dif = dag_new - dag_new[_n-1] if idperson == idperson[_n-1] & ///
 tab age_dif	
 
 twoway ///
-    (hist dag, color(blue%40) lcolor(blue%80)) ///
-    (hist dag_new, color(red%40) lcolor(red%80)), ///
-    legend(order(1 "dagm" 2 "dag_new" )) ///
-    title("Comparison of Age Variables") ///
-    xtitle("Age") ///
-    ytitle("Density") ///
-    graphregion(color(white))
+	(hist dag, color(blue%40) lcolor(blue%80)) ///
+	(hist dag_new, color(red%40) lcolor(red%80)), ///
+	legend(order(1 "dagm" 2 "dag_new" )) ///
+	title("Comparison of Age Variables") ///
+	xtitle("Age") ///
+	ytitle("Density") ///
+	graphregion(color(white))
 
 graph drop _all	
-
-/*
-The comparison of the distributions shows they are very close - the one 
-disparity be a slightly lower mass at the max age which is consistent with 
-the error being driven by potential mislabeling of year of birth to year <= 1942
-*/
 
 replace dag = dag_new 
 
@@ -399,6 +484,7 @@ replace turn_78 = 1 if idperson == idperson[_n-1] & turn_78[_n-1] == 1
 
 replace dag = dag[_n-1] + 1 if turn_78 == 1 
 	
+	
 * For the remaining top-coded cases
 /*
 We will impute the ages by randomly drawing from a log normal charactersized by 
@@ -406,8 +492,8 @@ parameters obtained from SHARE data.
 
 Mean and standard deviation of log age of males and females aged 78+. 
 			0. male		1. female		
-    Mean	4.4			4.4
-    SD		0.043		0.037
+	Mean	4.4			4.4
+	SD		0.043		0.037
 	 
 */	
 	
@@ -419,10 +505,10 @@ gen meanlog = .
 gen sdlog   = .
 
 replace meanlog = 4.4 if dgn == 1 & topcoded78 == 1
-replace sdlog   = 0.044 if dgn == 1 & topcoded78 == 1
+replace sdlog = 0.044 if dgn == 1 & topcoded78 == 1
 
 replace meanlog = 4.4 if dgn == 0 & topcoded78 == 1
-replace sdlog   = 0.037 if dgn == 0 & topcoded78 == 1
+replace sdlog = 0.037 if dgn == 0 & topcoded78 == 1
 
 * Simulate skewed ages imposing truncation
 
@@ -533,6 +619,7 @@ From my understanding, this includes same sex couples.
 In variable construction assume that not married if missing information unless
 partner information is missing. 
 */
+count if idpartner == . 	// no missing values 
 
 gen dun = (idpartner > 0)
 
@@ -575,12 +662,14 @@ Note, in the future may want to adjust the distributions used to draw from.
 * Merge in individual age relabelled as partner age
 preserve
 
-keep swv idperson dag turn_78 topcoded78
-rename idperson idpartner
-rename dag dagsp 
-rename turn_78 turn_78sp 
-rename topcoded78 topcoded78sp
-save "$dir_data/temp_age", replace
+	keep swv idperson dag turn_78 topcoded78
+	
+	rename idperson idpartner
+	rename dag dagsp 
+	rename turn_78 turn_78sp 
+	rename topcoded78 topcoded78sp
+	
+	save "$dir_data/temp_age", replace
 
 restore
 
@@ -603,6 +692,103 @@ hist dagsp if dgn == 1, discrete
 
 sort idperson swv 
 
+
+* Tidy up partner and parent ids
+
+* Problematic case flag 
+gen byte same_mother = (idpartner == idmother ///
+	& idpartner != -9 & idmother != -9)
+
+gen byte same_father = (idpartner == idfather ///
+	& idpartner != -9 & idfather != -9)
+
+gen same = same_mother 
+replace same = 1 if same_father == 1 
+	
+tab same 	
+tab same_mother 
+tab same_father 
+
+* Use age and persistence of response to dertmine which is correct
+sort idperson swv
+
+gen age_diff = dag - dagsp if same == 1 
+
+tab age_diff
+
+
+* Flag partner persistent (backward looking)
+gen part_pers = (same == 1 & same[_n-1] != 1 & ///
+	idpartner == idpartner[_n-1] & idperson == idperson[_n-1] & ///
+	idpartner != -9)	
+	
+* Flag mother persistent 
+gen mother_pers = (same_mother == 1 & same[_n-1] != 1 & ///
+	idmother == idmother[_n-1] & idperson == idperson[_n-1] & idmother != -9)
+
+* Flag father persistent 
+gen father_pers = (same_father == 1 & same[_n-1] != 1 & ///
+	idfather == idfather[_n-1] & idperson == idperson[_n-1] & idfather != -9) 
+
+tab part_pers
+tab mother_pers
+tab father_pers
+
+tab part_pers mother_pers
+tab part_pers father_pers
+
+/*
+If a parent id is more persistent and the age diff is reasonable assume 
+parent not partner
+*/
+
+* Mother
+tab age_diff if mother_pers == 1 & part_pers == 0 
+
+replace idpartner = -9 if mother_pers == 1 
+
+* Update partnership variable
+replace dun = 0 if mother_pers == 1  
+
+
+* Father
+tab age_diff if father_pers == 1 & part_pers == 0 
+
+replace idpartner = -9 if father_pers == 1 
+
+* Update partnership variable
+replace dun = 0 if father_pers == 1  
+
+/*
+If a partner id is more persistent and the age diff is reasonable assume 
+partner not parent
+*/
+tab age_diff if part_pers == 1 & mother_pers == 0 & father_pers == 0 
+
+replace idmother = -9 if part_pers == 1 & same_mother == 1 
+replace idfather = -9 if part_pers == 1 & same_father == 1 
+
+
+* Remaining cases 
+tab age_diff if part_pers == 0 & mother_pers == 0 & father_pers == 0 
+
+replace idmother = -9 if part_pers == 0 & mother_pers == 0 & ///
+	father_pers == 0 & same_mother == 1 
+replace idfather = -9 if part_pers == 0 & mother_pers == 0 & ///
+	father_pers == 0 & same_father == 1 
+
+drop same 
+
+* Check 
+gen same = 0 
+replace same = 1 if idpartner == idmother | idpartner == idfather 
+replace same = 0 if idpartner == -9 
+
+tab same 
+
+drop same same_mother same_father age_diff part_pers mother_pers father_pers
+
+
 * Update top-coded ages to account for empirical joint age distribution 
 /*
 Statistics related to partnership age difference for couples 
@@ -617,20 +803,13 @@ age 78+ in the SHARE data.
 
 NOTE: Could adjust parameters to be the age gap for those 70 to empirically 
 account for Cases A and B below. 
-
-Q: Is there empirical justifcation for using a normal distribution? I image it's 
-skewed distribution as males are typically older than females? 
-
 */
-
-set seed 123456
 
 * Define spouse gap parameters as variables (gap = husband age - wife age)
 gen mean_gap = 4.496
 gen sd_gap   = 4.944
 
 * Adjust imputed own age accounting for empirical distribution of age gap 
-
 gen dag_sim_orig = dag_sim 
 
 gen dag_sim2 = . 
@@ -639,21 +818,25 @@ bysort idperson (turn_78sp): gen turn_78sp_panel = (turn_78sp[_N] == 1)
 
 sort idperson swv 
 
-* Case A: Female top-coded (all obs), Male is NOT 
-* 	Update: female age = male age - gap
+
+* Case A: Female top-coded in all observations, Male is NOT
+
 /*
+Female is known to be older. Assume the age-gap distribution is symmetric and 
+apply the SHARE age-gap distribution in the opposite direction.
+
 Note, doesn't impose a lower bound of 78 to imputation update. Could create
 a loop to keep drawing until obtain 78+ or could alter the distribution drawn 
 from. 
 */
 
 * Male partner always < 78
-replace dag_sim2 = round(dagsp - rnormal(mean_gap, sd_gap)) if ///
-    topcoded78 == 1 & dgn == 0 & dun == 1 & dagsp < 78 
+replace dag_sim2 = round(dagsp + rnormal(mean_gap, sd_gap)) if ///
+	topcoded78 == 1 & dgn == 0 & dun == 1 & dagsp < 78 
 	
 * Male partner turns 78	
 replace dag_sim2 = round(dagsp + rnormal(mean_gap, sd_gap)) if ///
-    topcoded78 == 1 & dgn == 0 &  dun == 1 & dagsp == 78 & turn_78sp == 1	
+	topcoded78 == 1 & dgn == 0 &  dun == 1 & dagsp == 78 & turn_78sp == 1	
 
 * Impose lower bound, brute force
 replace dag_sim2 = 78 if topcoded78 == 1 & dgn == 0 & dun == 1 & ///
@@ -662,22 +845,17 @@ replace dag_sim2 = 78 if topcoded78 == 1 & dgn == 0 & dun == 1 & ///
 replace dag_sim2 = 78 if topcoded78 == 1 & dgn == 0 & dun == 1 & ///
 	dagsp == 78 & turn_78sp == 1 & dagsp != . & dag_sim2 < 78 	
 	
-/* 
-Q: Seems to be almost always forcing the female spouse to be younger than their 
-male partner even though we know that they aren't => use parameters of the 
-conditional distribution or run the loop as mentioned above? 
-*/
 		
 * Case B: Male top-coded, Female is NOT 
 * 	Update: male age = female age + gap
 
 * Female partner always < 78
 replace dag_sim2 = round(dagsp + rnormal(mean_gap, sd_gap)) if ///
-    topcoded78 == 1 & dgn == 1 &  dun == 1 & dagsp < 78 
+	topcoded78 == 1 & dgn == 1 &  dun == 1 & dagsp < 78 
 	
 * Female partner turns 78	
 replace dag_sim2 = round(dagsp + rnormal(mean_gap, sd_gap)) if ///
-    topcoded78 == 1 & dgn == 1 &  dun == 1 & dagsp == 78 & turn_78sp == 1
+	topcoded78 == 1 & dgn == 1 &  dun == 1 & dagsp == 78 & turn_78sp == 1
 	
 * Impose lower bound 	
 replace dag_sim2 = 78 if topcoded78 == 1 & dgn == 1 & dun == 1 & ///
@@ -719,15 +897,9 @@ replace dag_sim2 = dag_sim2[_n+4] - 4 if idperson == idperson[_n+4] & ///
 * Case C: Both all obs top-coded 78+
 * 	Take male partner's imputed age as given and update female partner's age
 replace dag_sim2 = round(dagsp - rnormal(mean_gap, sd_gap)) if ///
-    topcoded78 == 1 & topcoded78sp == 1 &  dgn == 0 &  dun == 1 & dagsp != .
+	topcoded78 == 1 & topcoded78sp == 1 &  dgn == 0 &  dun == 1 & dagsp != .
 
-/*
-Q: Again seems like we might want to use the condition distribution 
-because keeps making many of the females too young whom will be made 78 in the 
-current approach? 
-*/	
-
-* Impose ower bound 
+* Impose lower bound 
 replace dag_sim2 = 78 if topcoded78 == 1 & topcoded78sp == 1 & dgn == 0 & ///
 	dun == 1 & dagsp != . & dag_sim2 < 78 	
 
@@ -736,6 +908,16 @@ replace dag_sim2 = dag_sim2[_n-1] + 1 if idperson == idperson[_n-1] & ///
 	idpartner == idpartner[_n-1] & dag_sim2[_n-1] != . & /// 
 	topcoded78 == 1 & topcoded78sp == 1 & dgn == 0 &  dun == 1 
 
+* Impose longitudinal consistency if partnership breaks up 
+gen break_up = 1 if idperson == idperson[_n-1] & ///
+	idpartner != idpartner[_n-1] & dag_sim2[_n-1] != . & /// 
+	topcoded78[_n-1] == 1 & topcoded78sp[_n-1] == 1 & dgn == 0 & ///
+	dun[_n-1] == 1 & dun == 0 
+	
+replace break_up = 1 if break_up[_n-1] == 1 & idperson == idperson[_n-1]
+
+replace dag_sim2 = dag_sim2[_n-1] + 1 if idperson == idperson[_n-1] & ///
+	break_up == 1	
 	
 * Update spouse age information so that it is consistent with these updates
 * Repeat the above merging process using updated age variable 
@@ -744,12 +926,14 @@ replace dag = dag_sim2 if dag_sim2 != .
 
 preserve
 
-keep swv idperson dag turn_78 topcoded78
-rename idperson idpartner
-rename dag dagsp2 
-rename turn_78 turn_78sp 
-rename topcoded78 topcoded78sp
-save "$dir_data/temp_age", replace
+	keep swv idperson dag turn_78 topcoded78
+	
+	rename idperson idpartner
+	rename dag dagsp2 
+	rename turn_78 turn_78sp 
+	rename topcoded78 topcoded78sp	
+
+	save "$dir_data/temp_age", replace
 
 restore
 
@@ -762,93 +946,14 @@ drop _merge
 
 sort idperson swv 
 
-replace dagsp = dagsp2 if dagsp != . 
+replace dagsp = dagsp2 if dagsp2 != . 
 
 * Impose top-code at 100 
 replace dag = 100 if dag > 100 & dag != . 
 replace dagsp = 100 if dagsp > 100 & dagsp != . 
 
 
-/*
-
-/*
-gen couple_id = idperson + idpartner if partner != -9 
-replace couple_id = . if dun == 0
-format couple_id %-18.0g
-
-duplicates report couple_id swv if dun == 1 
-
-/*
-
---------------------------------------
-   Copies | Observations       Surplus
-----------+---------------------------
-        1 |          382             0
-        2 |       378242        189121
-        4 |          348           261
---------------------------------------
-This method doesn't seem to work universally 
-
-*/
-*/
-
-sort couple_id swv dgn
-bysort couple_id swv: gen double random_gap = rnormal(mean_gap, sd_gap) if _n == 1
-bysort couple_id swv: replace random_gap = random_gap[1]
-
-* We anchor to the Male's simulated age (dag_sim[2])
-* If dgn == 0 (Female), her age is the Male's age minus the gap
-replace dag_sim = round(dag_sim[2] - random_gap) if ///
-    dgn == 0 & topcoded78 == 1 & dagsp >= 78 & _N == 2
-	
-* 3. Ensure the floor is respected
-replace dag_sim = 78 if dag_sim < 78 & topcoded78 == 1
-bysort couple_id swv (dgn): gen sim_dagsp = dag_sim[2] if _n == 1
-
-* If I am the Husband (_n==2), my spouse's age is the age of the person in the 1st row.
-bysort couple_id swv (dgn): replace sim_dagsp = dag_sim[1] if _n == 2
-replace sim_dagsp = max(78, round(sim_dagsp)) if dagsp==78
-
-replace dagsp = sim_dagsp if sim_dagsp!=.
-
-
-* Impose panel consistency 
-sort idperson swv 
-
-replace sim_dagsp = sim_dagsp[_n-1] + 1 if idperson == idperson[_n-1] & ///
-	idpartner == idpartner[_n-1] & sim_dagsp[_n-1] != . 
-	
-* Impose top-code of 100 
-replace sim_dagsp = 100 if sim_dagsp > 100 & sim_dagsp != . 	
-	
-replace dagsp = sim_dagsp if sim_dagsp != . 
-
-* Impose panel consistency on those that are observed turning 78 in their panel 
-* Prioritize simulated partner age
-replace dagsp = sim_dagsp[_n+1] - 1 if sim_dagsp == . & turn_78[_n+1] == 1 & ///
-	sim_dagsp[_n+1] != . & idperson == idperson[_n+1]
-		
-replace dagsp = sim_dagsp[_n+1] - 1 if sim_dagsp == . & dag[_n+1] == 78 & ///
-	sim_dagsp[_n+1] != . & idperson == idperson[_n+1]			
-	
-
-replace dagsp = sim_dagsp[_n+2] - 2 if sim_dagsp == . & turn_78[_n+2] == 1 & ///
-	dag == 76 & sim_dagsp[_n+2] != . & idperson == idperson[_n+2]
-		
-replace dagsp = sim_dagsp[_n+3] - 3 if sim_dagsp == . & turn_78[_n+3] == 1 & ///
-	dag == 75 & sim_dagsp[_n+3] != . & idperson == idperson[_n+3]
-		
-replace dagsp = sim_dagsp[_n+4] - 4 if sim_dagsp == . & turn_78[_n+4] == 1 & ///
-	dag == 74 & sim_dagsp[_n+4] != . & idperson == idperson[_n+4]		
-
-replace dag_sim = dag_sim[_n-1] + 1 if idperson == idperson[_n-1] & ///
-	dag_sim[_n-1] != . 
-
-
-replace dag=dag_sim if dag_sim!=.
-replace dagsp=sim_dagsp if sim_dagsp!=.
-*/
-
+* Consistency checks 
 tab dag 
 tab dagsp 
 
@@ -858,23 +963,17 @@ hist dagsp, discrete
 hist dag if dgn == 0, discrete 
 hist dagsp if dgn == 1, discrete 
 
-/*
-Q: As suspected this approach leads to the creation of a larger mass at 78 and
-just above for females, I believe becuase we are using brute force to make them 
-78 (+1, +2...). Given our focus isn't on the elderly per se I don't think this 
-is crucial, but its not ideal. 
-*/
-
-count if dag == . 
+count if dag == . 	// 13 observations
 
 graph drop _all 
+
 
 * Age squared 
 gen dagsq = dag^2
 
 lab var dagsq "Age squared"
 				
-drop dag_sim dag_sim2 dag_sim_orig dagsp2 mean_gap sd_gap			
+drop dag_sim dag_sim2 dag_sim_orig dagsp2 mean_gap sd_gap break_up			
 
 sum dagsq
 count if dun == 1 & dagsp == .
@@ -883,14 +982,14 @@ count if dun == 1 & dagsp == .
 /************************** PARTNERSHIP STATUS ********************************/
 /* 
 Construct a variable that only indicates whether the individual is single or 
-partnered, we don't differenciate between those that have previosuly been in a 
+partnered, we don't differenciate between those that have previously been in a 
 partnership and those that have never. 
 
 For consistency utilize idpartner variable. 
 */
 gen dcpst = -9 
-replace dcpst = 1 if idpartner > 0 // partnered 
-replace dcpst = 2 if idpartner < 0 // single
+replace dcpst = 1 if idpartner > 0 
+replace dcpst = 2 if idpartner < 0 
 	
 lab var dcpst "Partnership status"
 lab def dcpst 1 "partnered" 2 "single" 
@@ -918,7 +1017,6 @@ tab dun dcpst
 
 
 /****************************** WIDOW STATUS **********************************/
-
 gen widow = 1 if pb190 == 4 
 replace widow = 0 if pb190 != . & pb190 != 4
 replace widow = -9 if pb190 == .
@@ -928,24 +1026,21 @@ lab var widow "Widow flag"
 * Check consistency 
 tab dcpst widow
 
-replace widow = 0 if dcpst == 1		// let idpartner overall widow status 
+replace widow = 0 if dcpst == 1		// let idpartner over rule widow status 
+
+tab widow stm, col
 
 
 /***************************** PARTNER'S GENDER *******************************/
-/* 
-In the cumulative longitidutional dataset created by GESIS, a unique 
-household ID (uhid) and unique personal id (upid) were created. 
-This no longer matches partner IDs/mother & father IDs/etc. 
-*/
 duplicates report idpartner swv if idpartner > 0 
-	// swv, stm or year are all equal, so any of this could be used for merging 
 
 preserve
 
-keep swv idperson dgn
-rename idperson idpartner
-rename dgn dgnsp
-save "$dir_data/temp_dgn", replace 
+	keep swv idperson dgn
+	rename idperson idpartner
+	rename dgn dgnsp
+
+	save "$dir_data/temp_dgn", replace 
 
 restore
 
@@ -955,6 +1050,9 @@ merge m:1 idpartner swv using "$dir_data/temp_dgn"
 lab var dgnsp "Partner's gender"
 keep if _merge == 1 | _merge == 3
 drop _merge
+
+* Impose partnership age restriction 
+replace dgnsp = . if dag < ${age_form_partnership}
 
 lab values dgnsp dgn
 recode dgnsp (. = -9)
@@ -967,22 +1065,20 @@ tab dgnsp year, col
 fre ph010
 /* Use ph010 (general health) variable: 
 -----------------------------------------------------------------
-                    |      Freq.    Percent      Valid       Cum.
+					|      Freq.    Percent      Valid       Cum.
 --------------------+--------------------------------------------
 Valid   1 Very good |      80935      10.73      14.54      14.54
-        2 Good      |     225104      29.85      40.43      54.96
-        3 Fair      |     164207      21.77      29.49      84.46
-        4 Bad       |      71059       9.42      12.76      97.22
-        5 Very bad  |      15491       2.05       2.78     100.00
-        Total       |     556796      73.83     100.00           
+		2 Good      |     225104      29.85      40.43      54.96
+		3 Fair      |     164207      21.77      29.49      84.46
+		4 Bad       |      71059       9.42      12.76      97.22
+		5 Very bad  |      15491       2.05       2.78     100.00
+		Total       |     556796      73.83     100.00           
 Missing .           |     197339      26.17                      
 Total               |     754135     100.00                      
 -----------------------------------------------------------------
 
-Reverse code so 5 = excellent and higher number means better health
-
-Have many missing values so (stochastically) impute using an ordered probit
-model.
+Have many missing values so (stochastically) impute using an generalized ordered 
+logit model.
 */
 
 * Reverse code
@@ -1026,39 +1122,41 @@ sum imp_dhe if !missing(dhe) & dag > 0 & dag < 16
 sum imp_dhe if missing(dhe) & dag >= 16
 sum imp_dhe if !missing(dhe) & dag >= 16
 
-* Comparison plot
+* Comparison plots
 * Observed vs predicted of those with observations
 twoway ///
-    (hist dhe if dag >= 16, color(blue%40) lcolor(blue%80)) ///
-    (hist imp_dhe if dag >= 16 & dhe !=., color(red%40) lcolor(red%80)), ///
-    legend(order(1 "dhe" 2 "imputed dhe" )) ///
-    title("Comparison of Health Variables") ///
-    xtitle("Age") ///
-    ytitle("Density") ///
-    graphregion(color(white))
+	(hist dhe if dag >= 16, color(blue%40) lcolor(blue%80)) ///
+	(hist imp_dhe if dag >= 16 & dhe !=., color(red%40) lcolor(red%80)), ///
+	legend(order(1 "dhe" 2 "imputed dhe" )) ///
+	title("Comparison of Health Variables") ///
+	xtitle("Age") ///
+	ytitle("Density") ///
+	graphregion(color(white))
 	
 * Observed vs predicted all adults	
 twoway ///
-    (hist dhe if dag >= 16, color(blue%40) lcolor(blue%80)) ///
-    (hist imp_dhe if dag >= 16, color(red%40) lcolor(red%80)), ///
-    legend(order(1 "dhe" 2 "imputed dhe" )) ///
-    title("Comparison of Health Variables") ///
-    xtitle("Age") ///
-    ytitle("Density") ///
-    graphregion(color(white))	
+	(hist dhe if dag >= 16, color(blue%40) lcolor(blue%80)) ///
+	(hist imp_dhe if dag >= 16, color(red%40) lcolor(red%80)), ///
+	legend(order(1 "dhe" 2 "imputed dhe" )) ///
+	title("Comparison of Health Variables") ///
+	xtitle("Age") ///
+	ytitle("Density") ///
+	graphregion(color(white))	
 
 graph drop _all
 
 * Add imputation flag 
 gen flag_dhe_imp = missing(dhe)
 lab var flag_dhe_imp "FLAG: =1 if dhe is imputed"
+
+* Add imputed values 
 replace dhe = round(imp_dhe) if missing(dhe) & dag >= 16
 replace dhe = -9 if dag < 16
 
+drop dgn2 dag2 dagsq2 drgn12 _Idgn2_1 _Iswv_* p1* p2 p3 p4 p5 rnd imp_dhe
+
 bys flag_dhe_imp: fre dhe if dag <= 16
 bys flag_dhe_imp: fre dhe if dag > 16 
-
-drop dgn2 dag2 dagsq2 drgn12 _Idgn2_1 _Iswv_* p1* p2 p3 p4 p5 rnd imp_dhe
 
 fre dhe 
 tab dhe year, col 
@@ -1068,13 +1166,13 @@ bys swv: sum dhe
 /************************** PARTNER'S HEALTH STATUS ***************************/
 preserve
 
-keep swv idperson dhe flag_dhe_imp
+	keep swv idperson dhe flag_dhe_imp
 
-rename idperson idpartner
-rename dhe dhesp
-rename flag_dhe_imp flag_dhesp_imp
+	rename idperson idpartner
+	rename dhe dhesp
+	rename flag_dhe_imp flag_dhesp_imp
 
-save "$dir_data/temp_dhe", replace
+	save "$dir_data/temp_dhe", replace
 
 restore
 
@@ -1086,6 +1184,9 @@ drop _merge
 
 cap lab define dhe 1 "Poor" 2 "Fair" 3 "Good" 4 "Very good" 5 "Excellent"
 lab values dhesp dhe 
+
+* Impose partnership age restriction 
+replace dhesp = . if dag < ${age_form_partnership}
 
 replace dhesp = -9 if missing(dhesp) & idpartner > 0
 
@@ -1104,29 +1205,17 @@ xtset idperson swv
 gen dcpen = -9
 replace dcpen = 0 if (l.dcpst == 2)
 replace dcpen = 1 if (dcpst == 1 & l.dcpst == 2)
-replace dcpen = 1 if dcpst == 1 & dag == ${age_form_partnership}	// added
+replace dcpen = 1 if dcpst == 1 & dag == ${age_form_partnership}
 
 lab val dcpen dummy
-lab var dcpen "Enter partnership"
+lab var dcpen "Enter partnership, only populated if eligible"
 
-fre dcpen // 67% missing
+* Impose partnership age restriction 
+replace dcpen = -9 if dag < ${age_form_partnership}
+
+fre dcpen 
 tab dcpen year, col
 bys swv: sum dcpen if dcpen >= 0 
-
-/*
-* Check why there are so many missing values : all good  
-preserve 
-xtset idperson swv
-bysoplrt idperson: egen interview_count = count(swv)
-bysort idperson (swv): gen first_appearance = (swv == swv[1])
-
-tab2 dcpst dcpen if swv>=2011, m
-tab2 dcpst dcpen if swv>=2011, m r nof 
-tab2 dcpst dcpen if swv>=2011 & interview_count>=2 & first_appearance!=1, m
-tab2 dcpst dcpen if swv>=2011 & interview_count>=2 & first_appearance!=1, ///
-	m r nof
-restore 
-*/
 
 
 /****************************** NEW PARTNERSHIP *******************************/
@@ -1134,6 +1223,9 @@ gen new_rel = 0 if dcpst == 1
 replace new_rel = 1 if dcpen == 1
 
 lab var new_rel "Partnership in first year"
+
+* Impose partnership age restriction 
+replace new_rel = 0 if dag < ${age_form_partnership}
 
 tab new_rel year, col 
 bys swv: sum new_rel if new_rel >= 0 
@@ -1150,9 +1242,9 @@ xtset idperson swv
 gen dcpex = -9
 replace dcpex = 0 if l.dcpst == 1
 replace dcpex = 1 if dcpst == 2 & l.dcpst == 1 
-replace dcpex = -9 if widow == 1 & dcpex == 1 & pb190[_n-1] != 4
+replace dcpex = -9 if widow == 1 & dcpex == 1 & l.pb190 != 4
 
-// are there old people that remains married but there partner disappears? 
+* Are there old people that remains married but there partner disappears? 
 count if dag >= 65 & pb190 == 2 & idpartner == -9 
 count if dag >= 65 & pb200 == 1 & idpartner == -9 
 count if dag >= 65 & pb200 == 2 & idpartner == -9 
@@ -1161,25 +1253,18 @@ count if dag >= 65 & pb190 == 2 & idpartner == -9 & dcpex == 1
 count if dag >= 65 & pb200 == 1 & idpartner == -9 & dcpex == 1 
 count if dag >= 65 & pb200 == 2 & idpartner == -9 & dcpex == 1 
 
-count if dag >= 65 & pb190 == 2 & idpartner == -9 & dcpex == 1 
-count if dag >= 65 & pb200 == 1 & idpartner == -9 & dcpex == 1 
-count if dag >= 65 & pb200 == 2 & idpartner == -9 & dcpex == 1 
-
-// but these tabs also apply to other age groups
-// is there a way to distinguish the destination of a partner? 
 
 preserve 
 
-keep idperson swv rb120 flag_deceased
+	keep idperson swv rb120 flag_deceased
 
-rename idperson idpartner 
-rename flag_deceased flag_deceased_sp
-rename rb120 sp_movee_to 
+	rename idperson idpartner 
+	rename flag_deceased flag_deceased_sp
+	rename rb120 sp_movee_to 
 
-replace swv = swv - 1
+	replace swv = swv - 1
 
-save "$dir_data/temp_rel_end", replace 
-
+	save "$dir_data/temp_rel_end", replace 
 
 restore 
 
@@ -1187,17 +1272,25 @@ merge m:1 idpartner swv using "$dir_data/temp_rel_end"
  
 sort idperson swv 
 
-drop if _m == 2 
+drop if _merge == 2 
 
 * Eliminate incorrect exits due to deceased partner entry 
 replace dcpex = -9 if flag_deceased_sp[_n-1] == 1 & idperson == idperson[_n-1] 
 
-drop _m
+drop _merge
+
+* Check for decreasing pattern at later stage in life
+hist dag if dcpex == 1
+
+graph drop _all 
 
 lab val dcpex dummy
-lab var dcpex "Exit partnership" 
+lab var dcpex "Exit partnership, only populated if eligible"
 
-fre dcpex //65% missing 
+* Impose partnership age restriction 
+replace dcpex = -9 if dag < ${age_form_partnership} 
+
+fre dcpex 
 tab dcpex year, col
 bys swv: sum dcpex if dcpex >= 0 
 
@@ -1210,9 +1303,18 @@ gen dcpagdf = dag - dagsp if dagsp != . & idpartner != -9
 
 lab var dcpagdf "Partnership age difference"
 
+* Impose partnership age restriction 
+replace dcpagdf = . if dag < ${age_form_partnership}
+
 fre dcpagdf // 
 tab dcpagdf year, col
 bys swv: sum dcpagdf
+
+hist dcpagdf
+
+graph drop _all 
+
+tab dag if dcpagdf > 20 & dcpagdf != . 
 
 
 /************************ ECONOMIC ACTIVITY STATUS ****************************/
@@ -1274,14 +1376,17 @@ PL040A - Status in employement
 	4	Family worker (unpaid)
 */
 
-* Add in values of variables from 2020 and before 
+/*
+Add in values of variables from 2005-2020 for individuals where post-2021
+setup files do not carry forward pl031/rb210 under old variable names.
+*/
 merge 1:1 pid hid year using "$dir_data/temp_orig_econ_status"
 
 replace pl031 = pl031_orig if pl031 == . & pl031_orig != . 
 replace rb210 = rb210_orig if rb210 == . & rb210_orig != . 
 
-drop if _m == 2 
-drop _m *_orig
+drop if _merge == 2 
+drop _merge *_orig
 
 * 2009-2020
 recode pl031 (1 2 3 4 = 1 "Employed or self-employed") ///
@@ -1324,11 +1429,16 @@ replace les_c3 = 2 if dag < ${age_leave_school}
 tab year if !missing(les_c3) 
 tab year if missing(les_c3) 
 
+tab rotation_group if missing(les_c3) & year == 2020 & ///
+	dag >= ${age_leave_school} 	
+
 fre les_c3 // 1.6% missing 
 tab les_c3 year, col
 bys swv: sum les_c3
 
 replace les_c3 = -9 if les_c3 == . 
+tab les_c3 year, col
+tab rotation_group if les_c3 == -9 & year == 2020
 
 
 /******************** ECONOMIC ACTIVITY STATUS WITH RETIREMENT ****************/ 
@@ -1368,7 +1478,8 @@ gen flag_no_retire_young = (dag < ${age_can_retire} & les_c4 == 4)
 lab var flag_no_retire_young ///
 	"FLAG: Made non-employed because stated to retire before the age of 50"
 
-replace les_c4 = 3 if dag < ${age_can_retire} & les_c4 == 4 	// 888 changes
+replace les_c4 = 3 if dag < ${age_can_retire} & les_c4 == 4 	
+
 
 * Make retirement an absorbing state - primarily eliminates returning to 
 * education among the retired 
@@ -1393,7 +1504,7 @@ replace flag_retire_force = 1 if dag >= ${age_force_retire} & les_c4 != 4
 	// 6,440 changes
 
 lab var flag_retire_force ///
-	"FLAG: Forced into retirement due to age (after absorbign assumption)"
+	"FLAG: Forced into retirement due to age (after absorbing assumption)"
 
 replace les_c3 = 3 if dag >= ${age_force_retire}	
 replace les_c4 = 4 if dag >= ${age_force_retire}	
@@ -1413,10 +1524,9 @@ replace les_c4 = -9 if les_c4 == .
 
 /************************ LONG-TERM SICK OR DISABLED **************************/
 /*
-Effectively treat disabled/long-term sick as a mututlly exclusive activity 
+Effectively treat disabled/long-term sick as a mutually exclusive activity 
 status.
 */
-
 gen dlltsd = 0
 replace dlltsd = 1 if pl030 == 6 | pl031 == 8 | pl032 == 4
 
@@ -1433,6 +1543,7 @@ replace dlltsd = -9 if les_c3 == -9
 * Assume mutual exclusivity, retirement and disabled
 tab dlltsd les_c4
 
+* Create flag 
 gen flag_disabled_to_retire = (les_c4 == 4 & dlltsd == 1)
 
 lab var flag_disabled_to_retire ///
@@ -1446,18 +1557,18 @@ fre dlltsd
 tab dlltsd year, col 
 bys swv: sum dlltsd
 
-tab les_c3 dll 
-tab les_c4 dll
+tab les_c3 dlltsd 
+tab les_c4 dlltsd
 
 
 /******************* PARTNER LONG-TERM SICK OR DISABLED ***********************/
 preserve
 
-keep swv idperson dlltsd
-rename idperson idpartner
-rename dlltsd dlltsd_sp
+	keep swv idperson dlltsd
+	rename idperson idpartner
+	rename dlltsd dlltsd_sp
 
-save "$dir_data/temp_dlltsd", replace
+	save "$dir_data/temp_dlltsd", replace
 
 restore
 
@@ -1468,6 +1579,9 @@ lab var dlltsd_sp "Partner's long-term sick"
 keep if _merge == 1 | _merge == 3
 drop _merge
 
+* Impose partnership age restriction 
+replace dlltsd_sp = . if dag < ${age_form_partnership}
+
 fre dlltsd_sp if idpartner > 0 
 tab dlltsd_sp year, col 
 
@@ -1476,13 +1590,14 @@ tab dlltsd_sp year, col
 fre pl020 pl031
 
 gen unemp = (pl030 == 3 | pl031 == 5 | pl032 == 2)
+replace unemp = 1 if rb211 == 2 | rb210 == 2
+
+* Impose priority to the pl variable 
+replace unemp = 0 if les_c3 != 3
 
 replace unemp = -9 if les_c3 == -9
-replace unemp = -9 if dag < $age_seek_employment 
 
 lab var unemp "Unemployed dummy"
-
-replace unemp = -9 if les_c3 == -9 
  
 fre unemp
 tab unemp year, col 
@@ -1498,7 +1613,7 @@ gen flag_unemp_to_retire = (les_c4 == 4  & unemp == 1)
 lab var flag_unemp_to_retire ///
 	"FLAG: Replaced unemployed with 0 due to retirement status enforcement"
 
-replace unemp = 0 if les_c4 == 4 & unemp == 1 	// 65 changes
+replace unemp = 0 if les_c4 == 4 & unemp == 1 
 
 tab unemp dlltsd
 
@@ -1526,18 +1641,6 @@ la var ded "DEMOGRAPHIC : In Continuous Education"
 //fre ded
 //bys ded: fre dag 
 */
-
-/*
-Decision 25/10/2024: We opted to revise this variable to ensure that individuals 
-who are observed out of thei initial education spell in one year, aren't 
-recorded as being in initial education spell in future years. 
-We include current students who were not observed in the previous wave if 
-they are aged <= 25  because the average age of graduates in HU after Master's  
-is 25.2 years 
-(https://gpseducation.oecd.org/...
-CountryProfile?primaryCountry=HUN&treshold=10&topic=EO) 
-SImilar figures found for PL. 
-*/
 sort idperson swv 
 xtset idperson swv
 
@@ -1556,14 +1659,11 @@ replace ded = 1 if l.ded == 1 & pl032 == 5
 replace ded = 1 if l.ded == 1 & pl032 == . & rb211 == 5 
 
 * Cannot be in initial education spell above a specific age in simulation
-//replace les_c3 = 3 if ded == 1 & dag >= ${age_force_leave_spell1_edu}
-//replace les_c4 = 3 if ded == 1 & dag >= ${age_force_leave_spell1_edu}
-
 replace ded = 0 if dag >= ${age_force_leave_spell1_edu}
 
 lab var ded "In initial education spell"
 
-fre ded // 22% obs 
+fre ded // 21% obs 
 tab ded year, col 
 tab dag ded, row
 bys swv: sum ded
@@ -1611,6 +1711,9 @@ replace lhw = 0 if dag < ${age_seek_employment}
 * Cannot work above a certain age
 replace lhw = 0 if dag >= ${age_force_retire}	
 
+* Check missing 
+count if missing(lhw) & les_c3 == 1
+
 * Check consistency - how many non-workers report positive hours? 
 bys les_c3: fre lhw 
 bys les_c4: fre lhw 
@@ -1630,7 +1733,6 @@ additional rule.
 
 Impute hours using surrounding observations for longitudinal consistency and 
 then use hot deck imputation by age group and sex. 
-
 */	
 	
 * Consistency of zero hours cases
@@ -1640,7 +1742,8 @@ tab les_c4 if lhw == 0
 sum lhw if les_c3 == 2	
 sum lhw if les_c3 == 4	
 	
-* Overwrite hours work if report not working 
+* Overwrite hours work if report not working (les)
+* Create flag 
 gen flag_impose_zero_hours_ne = (lhw > 0 & lhw != . & les_c4 == 3)
 gen flag_impose_zero_hours_retire = (lhw > 0 & lhw != . & les_c4 == 4)
 gen flag_impose_zero_hours_student = (lhw > 0 & lhw != . & les_c3 == 2)
@@ -1652,22 +1755,29 @@ lab var flag_impose_zero_hours_retire ///
 lab var flag_impose_zero_hours_student ///
 	"FLAG: Replaced +ive hours of work with 0 as report student"
 
+* Consistency of missing hours cases 	
 replace lhw = 0 if les_c3 == 3	
 replace lhw = 0 if les_c3 == 2	
 
-* Overwrite activity status if report zero hours 
+
+* Overwrite activity status (les) if report zero hours (lhw)
+* Create flag 
 gen flag_not_work_hours = (lhw  == 0 & les_c3 == 1)
 
 lab var flag_not_work_hours ///
 	"FLAG: Replaced activity status with non-employed as report 0 hours"
 
 replace les_c3 = 3 if lhw  == 0 & les_c3 == 1 
+replace les_c4 = 3 if lhw  == 0 & les_c4 == 1 
 
+
+* Overwrite activity status (les) if report +ive hours but missing activity 
+* 	status information
 * Consistency of missing hours cases 
 tab les_c3 if lhw == .
 tab les_c4 if lhw == . 
 		
-* Overwrite les_c* if report hours but missing activity status information
+* Create flag 		
 gen flag_missing_act_hours = (lhw > 0 & lhw != . & les_c3 == -9)
 
 lab var flag_missing_act_hours ///
@@ -1676,20 +1786,23 @@ lab var flag_missing_act_hours ///
 replace les_c3 = 1 if lhw > 0 & lhw != . & les_c3 == -9		
 replace les_c4 = 1 if lhw > 0 & lhw != . & les_c3 == 1 & les_c4 == -9		
 		
-* Investigate the characteristics of those missing hours and reporting to work
+		
+* Impute hours if report working (les) but missing hours
+		
+* Investigate the characteristics 
 gen x = (lhw == .)
 tab swv x if les_c4 == 1, row // up to 20% missing in a year 
 
 tab dag if les_c4 == 1 & lhw == . // distributed across all ages (16-74)
 
 tab pl040 if les_c4 == 1 & lhw == .  // most employees (69%)
-count if pl040 == . & les_c4 == 1 & lhw == . & dag >= 16	//34,038
+count if pl040 == . & les_c4 == 1 & lhw == . & dag >= 16	// 34,038
 
 tab pl145 if les_c4 == 1 & lhw == .  // most full time workers (88%)
-count if pl145 == . & les_c4 == 1 & lhw == . & dag >= 16	//33,475
+count if pl145 == . & les_c4 == 1 & lhw == . & dag >= 16	// 33,475
 
 tab pl141 if les_c4 == 1 & lhw == .  // most have perm written contract (57%)
-count if pl141 == . & les_c4 == 1 & lhw == . & dag >= 16	//33,732
+count if pl141 == . & les_c4 == 1 & lhw == . & dag >= 16	// 33,732
 
 count if les_c4 == 1 & lhw == . & dag >= 16 & pl030 == . & pl031 == . & ///
 	pl032 ==.  	// 33,112 of 34,132 missing pl* variable information 
@@ -1713,9 +1826,10 @@ For the remaining observations use empirical hot deck imputation within strata.
 */		
 		
 * Longitudinal consistency 
-sort idperson swv
 
 * Backwards
+sort idperson swv
+
 * Direct 
 gen flag_missing_hours_act_adj = (lhw == . & les_c3 == 1 & ///
 	les_c3[_n-1] == 1 & lhw[_n-1] != . & idperson == idperson[_n-1] & ///
@@ -1730,87 +1844,129 @@ replace lhw = lhw[_n-1] if lhw == . & les_c3 == 1 & les_c3[_n-1] == 1 & ///
 	lhw[_n-1] != . & idperson == idperson[_n-1] & swv == swv[_n-1] + 1
 		// 6,074 changes 
 		
-count if lhw == . & les_c4 == 1  	// 28,061	
+count if lhw == . & les_c4 == 1  	// 28,058	
 
 * Forwards
-* Direct
-replace	flag_missing_hours_act_adj = 1 if lhw == . & les_c3 == 1 & ///
-	les_c3[_n+1] == 1 & lhw[_n+1] != . & idperson == idperson[_n+1] & ///
-	swv == swv[_n+1] - 1
-	
+gsort idperson -swv 
+
+*Direct
+replace flag_missing_hours_act_adj = 1 if lhw == . & les_c3 == 1 & ///
+	les_c3[_n-1] == 1 & lhw[_n-1] != . & idperson == idperson[_n-1] & ///
+	swv == swv[_n-1] - 1
+
 * Fill 	
 replace flag_missing_hours_act_adj = 1 if lhw == . & les_c3 == 1 & ///
-	flag_missing_hours_act_adj[_n+1] == 1   & idperson == idperson[_n+1] & ///
-	swv == swv[_n-1] - 1		
+	flag_missing_hours_act_adj[_n-1] == 1 & idperson == idperson[_n-1] & ///
+	swv == swv[_n-1] - 1	
 
-replace lhw = lhw[_n+1] if lhw == . & les_c3 == 1 & les_c3[_n+1] == 1 & ///
-	lhw[_n+1] != . & idperson == idperson[_n+1] & swv == swv[_n+1] - 1
-		// 2,573
+replace lhw = lhw[_n-1] if lhw == . & les_c3 == 1 & les_c3[_n-1] == 1 & ///
+	lhw[_n-1] != . & idperson == idperson[_n-1] & swv == swv[_n-1] - 1 
+		// 3,466 changes
 		
+sort idperson swv 			
+	
 lab var flag_missing_hours_act_adj ///
 "FLAG: Replaced missing hours with positive amount using info from adjacent cells as report working "
 
-count if lhw == . & les_c4 == 1  	// 25,483
+count if lhw == . & les_c4 == 1  	// 24,592
 
-* Imputation 
-set seed 102345
 
+/*
+Hot-deck imputation of missing hours for individuals classified as employed
+
+The imputation sample consists of individuals with les_c4 == 1 but missing 
+weekly hours (lhw). Donors are restricted to individuals who are also classified
+as employed and report positive, non-missing hours.
+
+Donors are matched within strata defined by:
+    - 10-year age band
+    - gender
+
+Within each stratum, all eligible donor observations are numbered. For each
+observation requiring imputation, a donor is selected at random (with
+replacement) from the available donors in the same stratum. The selected
+donor's reported weekly hours are then assigned to the recipient.
+
+A fixed random-number seed is used to ensure that the imputation is
+reproducible. Observations are explicitly sorted before the random draw so that
+the assignment of random numbers is also reproducible with respect to the
+ordering of the data.
+*/
 sort idperson swv
 
-* Observations to be imputed 
+* Identify recipients: employed individuals with missing weekly hours
 gen need_imp = (les_c4 == 1 & lhw == .)
  
-* Strata
+* Define imputation strata: 10-year age bands by gender
 gen ageband = floor(dag/10)*10
 
 egen stratum = group(ageband dgn), label   
 
-* Donor pool 
+* Construct donor pool: employed individuals reporting positive hours 
 preserve 
 
-keep if les_c4 == 1 & lhw > 0 & lhw != .
-keep lhw stratum idperson swv
-bys stratum (idperson swv): gen draw = _n
-bys stratum (idperson swv): gen n_donors  = _N
-rename lhw donor_lhw
-drop idperson
-save "$dir_data/temp_lhw_donors", replace
+	keep if les_c4 == 1 & lhw > 0 & lhw != .
+	keep lhw stratum idperson swv
+	
+	* Give each donor a unique number within its stratum
+	bys stratum (idperson swv): gen draw = _n
+	 
+	* Record the number of available donors in each stratum
+	bys stratum (idperson swv): gen n_donors  = _N
+	
+	rename lhw donor_lhw
+	drop idperson
+	
+	save "$dir_data/temp_lhw_donors", replace
 
-* Counts lookup (one row per stratum)
-keep stratum n_donors
-bys stratum: keep if _n == 1
-save "$dir_data/temp_donorsN", replace
+	* Create lookup containing the number of available donors in each stratum
+	keep stratum n_donors
+	bys stratum: keep if _n == 1
+	
+	save "$dir_data/temp_donorsN", replace
 
 restore
 
 merge m:1 stratum using "$dir_data/temp_donorsN", nogen
 
-* Assign random donor 
+* Randomly select one donor (with replacement) from the recipient's stratum
+set seed 9876
+
 gen draw = . 
 
+* Fix observation order before generating random numbers for reproducibility
 sort stratum idperson swv
 
 bys stratum (idperson swv): replace draw = ceil(runiform()*n_donors[1]) if ///
 	need_imp == 1 & n_donors > 0 
 
+* Merge the selected donor's hours onto each recipient	
 merge m:1 stratum draw using "$dir_data/temp_lhw_donors", ///
 	keepusing(donor_lhw draw) 
 
-drop if _m == 2 
-drop _m
+drop if _merge == 2 
+drop _merge
 	
+* Impute weekly hours from the selected donor	
 replace lhw = donor_lhw if need_imp == 1 
 
 tab lhw if need_imp == 1
+
+count if need_imp == 1 & n_donors == 0		// check
 		 		
 rename need_imp	flag_missing_hours_act_imp
 
 lab var flag_missing_hours_act_imp	///
 "FLAG: Replaced hours from missing to positive amount using hot deck imputation"	
 			
-drop x donor_lhw n_donor draw 			
+drop x donor_lhw n_donors draw 			
 			
 count if lhw == . & les_c3 == -9 	// 8,461 cases
+		
+* Update other variables		
+replace dlltsd = 0 if les_c3 == 1 
+replace unemp = 0 if les_c3 == 1 				
+		
 		
 * Check consistency - how many workers do not report hours? 
 tab les_c3 if lhw == . 
@@ -1858,10 +2014,11 @@ lab var l1_les_c4 "LABOUR MARKET: Activity status, inc retirement, t-1"
 * Without retirement 
 preserve
 
-keep swv idperson idhh les_c3
-rename les_c3 lessp_c3
-rename idperson idpartner
-save "$dir_data/temp_lesc3", replace
+	keep swv idperson idhh les_c3
+	rename les_c3 lessp_c3
+	rename idperson idpartner
+
+	save "$dir_data/temp_lesc3", replace
 
 restore
 
@@ -1871,16 +2028,20 @@ keep if _merge == 1 | _merge == 3
 lab var lessp_c3 "Partner's activity status"
 drop _merge
 
+* Impose partnership age restriction 
+replace lessp_c3 = . if dag < ${age_form_partnership}
+
 fre lessp_c3
 tab lessp_c3 year, col 
 
 * With retirement
 preserve
 
-keep swv idperson idhh les_c4
-rename les_c4 lessp_c4
-rename idperson idpartner
-save "$dir_data/temp_lesc4", replace
+	keep swv idperson idhh les_c4
+	rename les_c4 lessp_c4
+	rename idperson idpartner
+
+	save "$dir_data/temp_lesc4", replace
 
 restore
 
@@ -1891,26 +2052,39 @@ lab var lessp_c4 "LABOUR MARKET: Partner's activity status"
 lab val lessp_c4 les_c4
 drop _merge
 
+* Impose partnership age restriction 
+replace lessp_c4 = . if dag < ${age_form_partnership}
+
 fre lessp_c4
 tab lessp_c4 year, col 
 
 
 /********************** OWN AND SPOUSE ACTIVITY LEVELS ************************/
 gen lesdf_c4 = -9
+
+* Both employed
 replace lesdf_c4 = 1 if les_c3 == 1 & lessp_c3 == 1 & dcpst == 1 
-	// Both employed
+	
+* Employed, spouse not employed	
 replace lesdf_c4 = 2 if les_c3 == 1 & (lessp_c3 == 2 | lessp_c3 == 3) & ///
-	dcpst == 1 // Employed, spouse not employed
+	dcpst == 1 
+
+* Not employed, and spouse employed	
 replace lesdf_c4 = 3 if (les_c3 == 2 | les_c3 == 3) & lessp_c3 == 1 & ///
-	dcpst == 1 // Not employed, and spouse employed
+	dcpst == 1 
+
+* Both not employed	
 replace lesdf_c4 = 4 if (les_c3 == 2 | les_c3 == 3) & ///
-	(lessp_c3 == 2 | lessp_c3 == 3) & dcpst == 1 //Both not employed
+	(lessp_c3 == 2 | lessp_c3 == 3) & dcpst == 1 
 
 lab def lesdf_c4 1 "Both employed" 2 "Employed and spouse not employed" ///
 	3 "Not employed and spouse employed" 4 "Both not employed" -9 "Missing"
 lab val lesdf_c4 lesdf_c4
 
 lab var lesdf_c4 "LABOUR MARKET: Own and spouse activity status"
+
+* Correct underage partnerships 
+replace lesdf_c4 = -9 if dag < ${age_form_partnership}
 
 fre lesdf_c4
 tab lesdf_c4 year, col
@@ -1920,13 +2094,15 @@ bys swv: sum lesdf_c4 if lesdf_c4 >= 0
 /*************************** EMPLOYMENT EXPERIENCE ****************************/
 gen liwwh = -9
 replace liwwh = pl200 if pl200 >= 0 & pl200 != . 
-replace liwwh = 55 if pl200 > 55 & pl200 != . //make upper censoring consistent
+replace liwwh = 55 if pl200 > 55 & pl200 != . // make upper censoring consistent
 
 lab var liwwh "LABOUR MARKET: Number of years spent in paid work"
 
 fre liwwh 
 tab liwwh year, col 
 bys swv: sum liwwh if liwwh >= 0
+
+// missing values imputed below
 
 
 /************************* EDUCATIONAL ATTAINMENT *****************************/
@@ -1968,12 +2144,6 @@ PE041- Highest ISCED evel attained
 			- level completion, w/ direct access to tertiary education 
 	450		ISCED 4 Post-secondary non-tertiary education - vocational	
 	500		IT: ISCED 5 
-	
-AB: In 2021 pe041 replaced pe040. However for HU the values for earlier years 
-in which pe040 was collected have not been converted into pe041 and pe040 is not 
-in the dataset. Therefore many values for 2018-2020 missing for the later 
-panels. For now merging observations from Clare's original panel which only goes 
-up to 2020 and therefore doesn't have this problem because only includes pe040. 
 */
 
 replace pe040 = . if pe040 < 0
@@ -1984,8 +2154,8 @@ merge 1:1 year pid hid using "$dir_data/temp_orig_edu"
 
 replace pe040 = pe040_orig if pe040 == . & pe040_orig != . 
 
-drop if _m == 2 
-drop _m pe040_orig
+drop if _merge == 2 
+drop _merge pe040_orig
 
 * 2005-2020
 gen deh_c3 = .
@@ -2040,10 +2210,9 @@ gen imp_deh_mono = deh_c3 if deh_c3 > 0
 
 bysort idperson (swv): gen count = _n
 
-sort idperson swv
 
 * Looking backwards 
-forvalues i = 2/5 {
+forvalues i = 2/6 {
 	
 	* High in the past, high today (max and monotonic)
 	replace imp_deh_mono = imp_deh_mono[_n-1] if ///
@@ -2089,7 +2258,7 @@ forvalues i = 2/5 {
 * Reverse sort
 gsort idperson -swv 
 
-forvalues i = 4(-1)1 {
+forvalues i = 5(-1)1 {
 	
 	* Low in the future, low today (min and monotonicity)
 	replace imp_deh_mono = imp_deh_mono[_n-1] if ///
@@ -2218,15 +2387,19 @@ gen dehmf_c4 = .
 
 /*
 preserve
-keep swv idperson idhh deh_c3
-drop if missing(deh_c3)
-rename idperson idmother
-rename deh_c3 mother_educ
-save "$dir_data/mother_edu", replace
 
-rename idmother idfather
-rename mother_educ father_educ
-save "$dir_data/father_edu", replace
+	keep swv idperson idhh deh_c3
+	drop if missing(deh_c3)
+	rename idperson idmother
+	rename deh_c3 mother_educ
+
+	save "$dir_data/mother_edu", replace
+
+	rename idmother idfather
+	rename mother_educ father_educ
+
+	save "$dir_data/father_edu", replace
+
 restore
 
 merge m:1 swv idmother idhh using "$dir_data/mother_edu" 
@@ -2321,7 +2494,7 @@ replace der = -9 if les_c3 == -9
 lab val der dummy
 lab var der "Return to education"
 
-fre der // 51% of observation missing value 
+fre der // 48% of observation missing value 
 tab der year, col 
 bys swv: sum der if der >= 0
 
@@ -2352,14 +2525,15 @@ replace sedex = 1 if les_c3 != 2 & sedex == 0 & les_c3 != -9
 * Make consistent with the simulation 
 * Cannot leave school before turnign 16
 replace sedex = -9 if dag < ${age_leave_school}
+
 * Do not have the choice to leave school after the age of 29 (1 year only)
 replace sedex = -9 if dag >= ${age_force_leave_spell1_edu}
 	
 lab val sedex dummy
 lab var sedex "Transition out of education"
 
-fre sedex // 84% missing
-fre sedex if sedex > -9 // 29% leave
+fre sedex // 95% missing
+fre sedex if sedex > -9 // 27% leave
 tab sedex year, col
 
 * Check consistency 
@@ -2380,7 +2554,7 @@ sort idperson swv
 
 lab var dlrtrd "DEMOGRAPHIC : Retired"
 
-fre dlrtrd // 31.36% retired
+fre dlrtrd 
 tab dlrtrd year, col
 
 tab les_c3 dlrtrd
@@ -2392,26 +2566,27 @@ tab les_c4 dlrtrd
 Only populated if at risk of transition.
 */
 sort idperson swv 
+xtset idperson swv 
+
 gen drtren = -9 
 
-replace drtren = 0 if l.dlrtrd == 0
+replace drtren = 0 if l.dlrtrd == 0 & dlrtrd != -9 
 replace drtren = 1 if dlrtrd == 1 & drtren == 0 
 
 * Impose simulation eligability 
-replace drtren = -9 if dag < $age_can_retire
+replace drtren = -9 if dag < ${age_can_retire}
 
 lab val drtren dummy
-lab var drtren "DEMOGRAPHIC: Enter retirement"
+lab var drtren "DEMOGRAPHIC: Enter retirement, only populated if eligible"
 
-fre drtren //54.5% missing
+fre drtren 
 tab drtren year, col
 
+tab drtren les_c3
 tab drtren les_c4
 
 
 /**************************** PENSION AGE *************************************/
-/*cap gen bdt = mdy(1, 15, birthy) /*no month of birth available in /EU-SILC*/
-*/
 /*State Retirement Ages for Men in the POLAND (2009-2024):
 
 2008-2009: 65
@@ -2463,9 +2638,9 @@ replace dagpns = 1 if dgn == 0 & dag >= 60 & stm >= 2005 & stm < 2016
 replace dagpns = 1 if dgn == 0 & dag >= 61 & stm >= 2016 & stm < 2018
 replace dagpns = 1 if dgn == 0 & dag >= 60 & stm >= 2018 & stm <= 2024
 
-fre dagpns // 20% of retirement age 
+fre dagpns // 23% of retirement age 
 
-* Become eligable for the state pension dummy 
+* Become eligible for the state pension dummy 
 gen dagpns_y = 0 
 
 * Men 
@@ -2478,7 +2653,7 @@ replace dagpns_y = 1 if dgn == 0 & dag == 60 & stm >= 2006 & stm < 2016
 replace dagpns_y = 1 if dgn == 0 & dag == 61 & stm >= 2016 & stm < 2018 
 replace dagpns_y = 1 if dgn == 0 & dag == 60 & stm >= 2018 & stm <= 2024 
 
-* Became eligable for state pension last year 
+* Became eligible for state pension last year 
 gen dagpns_y1 = 0 
 
 * Men 
@@ -2491,8 +2666,8 @@ replace dagpns_y1 = 1 if dgn == 0 & dag == 61 & stm >= 2005 & stm < 2016
 replace dagpns_y1 = 1 if dgn == 0 & dag == 62 & stm >= 2016 & stm < 2018 
 replace dagpns_y1 = 1 if dgn == 0 & dag == 61 & stm >= 2018 & stm <= 2024
 
-lab var dagpns_y "Age became eligable for pension"
-lab var dagpns_y1 "Age+1 became eligable for pension"
+lab var dagpns_y "Age became eligible for pension"
+lab var dagpns_y1 "Age+1 became eligible for pension"
 
 tab dag dagpns_y
 tab dag dagpns_y
@@ -2502,11 +2677,11 @@ tab dag dagpns_y
 * Above state pension age dummy 
 preserve
 
-keep swv idperson idhh dagpns
-rename dagpns dagpns_sp
-rename idperson idpartner
+	keep swv idperson idhh dagpns
+	rename dagpns dagpns_sp
+	rename idperson idpartner
 
-save "$dir_data/temp_dagpns", replace
+	save "$dir_data/temp_dagpns", replace
 
 restore
 
@@ -2521,12 +2696,12 @@ replace dagpns_sp = -9 if idpartner < 0
 * At age when can first claim state pension or year after
 preserve
 
-keep swv idperson idhh dagpns_y dagpns_y1 
-rename dagpns_y dagpns_y_sp
-rename dagpns_y1 dagpns_y1_sp
-rename idperson idpartner
+	keep swv idperson idhh dagpns_y dagpns_y1 
+	rename dagpns_y dagpns_y_sp
+	rename dagpns_y1 dagpns_y1_sp
+	rename idperson idpartner
 
-save "$dir_data/temp_dagpns_y", replace
+	save "$dir_data/temp_dagpns_y", replace
 
 restore
 
@@ -2534,11 +2709,15 @@ merge m:1 swv idpartner idhh using "$dir_data/temp_dagpns_y"
 keep if _merge == 1 | _merge == 3
 drop _merge
 
-lab var dagpns_y_sp "Age became eligable for pension - partner"
-lab var dagpns_y1_sp "Age+1 became eligable for pension - partner"
+lab var dagpns_y_sp "Age became eligible for pension - partner"
+lab var dagpns_y1_sp "Age+1 became eligible for pension - partner"
 
 replace dagpns_y_sp = -9 if idpartner < 0
 replace dagpns_y1_sp = -9 if idpartner < 0
+
+* Correct underage partnerships 
+replace dagpns_y_sp = -9 if dag < ${age_form_partnership}
+replace dagpns_y1_sp = -9 if dag < ${age_form_partnership}
 
 fre dagpns_sp 
 fre dagpns_y_sp
@@ -2574,21 +2753,22 @@ tab ssscp year, col
 /*
 There are no equivalent variables in EU-SILC for partnership duration 
 prior to the entry into the panel.
-Max duration is 4 years due to individual panel length
+Max duration is 5 years due to individual panel length
 */
 preserve 
 
-keep idperson idpartner swv 
-replace idpartner = . if idpartner < 0
+	keep idperson idpartner swv 
+	replace idpartner = . if idpartner < 0
 
-xtset idperson swv 
-tsspell idpartner 
-rename _seq partnershipDuration 
-replace partnershipDuration = . if idpartner == .
+	xtset idperson swv 
+	tsspell idpartner 
+	
+	rename _seq partnershipDuration 
+	replace partnershipDuration = . if idpartner == .
 
-keep swv idperson partnershipDuration 
+	keep swv idperson partnershipDuration 
 
-save "$dir_data/temp_partnershipDuration", replace
+	save "$dir_data/temp_partnershipDuration", replace
 
 restore
 
@@ -2612,6 +2792,9 @@ lab var dcpyy_st "Observed with partnered status for x consecutive years"
 replace dcpyy = -9 if dcpyy == . 
 replace dcpyy_st = -9 if dcpyy_st == . 
 
+* Correct underage partnerships 
+replace dcpyy = -9 if dag < ${age_form_partnership}
+
 tab dcpyy_st swv, col
 
 tab dcpst dcpyy_st
@@ -2630,6 +2813,9 @@ replace scpexpy = -9 if swv == 2023
 
 lab val scpexpy dummy
 lab var scpexpy "Year prior to exiting partnership"
+
+* Correct underage partnerships 
+replace scpexpy = 0 if dag < ${age_form_partnership}
 
 fre scpexpy // 1%
 tab scpexpy year, col 
@@ -2662,24 +2848,24 @@ gen depChild02 = 1 if depChild == 1 & inrange(dag,0,2)
 * Mother
 preserve 
 
-drop if idmother == -9 
-drop if depChild != 1 
+	drop if idmother == -9 
+	drop if depChild != 1 
 
-keep idmother depChild depChild02 swv 
+	keep idmother depChild depChild02 swv 
 
-rename depChild has_child
-rename depChild02 has_child02
-rename idmother idperson 
+	rename depChild has_child
+	rename depChild02 has_child02
+	rename idmother idperson 
 
-bysort swv idperson : egen dnc_m = sum(has_child)
-bysort swv idperson : egen dnc02_m = sum(has_child02)
+	bysort swv idperson : egen dnc_merge = sum(has_child)
+	bysort swv idperson : egen dnc02_merge = sum(has_child02)
 
-sort idperson swv
-drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
+	sort idperson swv
+	drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
 
-drop has_child*
+	drop has_child*
 
-save "$dir_data/temp_depChild_mother", replace 
+	save "$dir_data/temp_depChild_mother", replace 
 
 restore 
 
@@ -2689,22 +2875,22 @@ drop _m
 * Father 
 preserve 
 
-drop if idfather == -9 
-drop if depChild != 1 
+	drop if idfather == -9 
+	drop if depChild != 1 
 
-keep idfather depChild depChild02 swv 
+	keep idfather depChild depChild02 swv 
 
-rename depChild has_child
-rename depChild02 has_child02
-rename idfather idperson 
+	rename depChild has_child
+	rename depChild02 has_child02
+	rename idfather idperson 
 
-bysort swv idperson : egen dnc_f = sum(has_child)
-bysort swv idperson : egen dnc02_f = sum(has_child02)
+	bysort swv idperson : egen dnc_f = sum(has_child)
+	bysort swv idperson : egen dnc02_f = sum(has_child02)
 
-sort idperson swv
-drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
+	sort idperson swv
+	drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
 
-drop has_child*
+	drop has_child*
 
 save "$dir_data/temp_depChild_father", replace 
 
@@ -2716,8 +2902,8 @@ drop _m
 gen dnc = 0 
 gen dnc02 = 0 
 
-replace dnc = dnc_m if dgn == 0 & dnc_m < . 
-replace dnc02 = dnc02_m if dgn == 0 & dnc_m < . 
+replace dnc = dnc_merge if dgn == 0 & dnc_merge < . 
+replace dnc02 = dnc02_merge if dgn == 0 & dnc_merge < . 
 
 replace dnc = dnc_f if dgn == 1 & dnc_f < . 
 replace dnc02 = dnc02_f if dgn == 1 & dnc_f < . 
@@ -2742,9 +2928,10 @@ tab dag year if dgn == 1 & dnc > 0 , col
 /*
 No age consistency imposed here 
 */
-
 count if dag > 42 & dgn == 0 & dnc02 > 0 & dnc02 != . // 246 cases 
 count if dag > 44 & dgn == 0 & dnc02 > 0 & dnc02 != . // 101 cases 
+
+// Updated in file 03 to be the number of children in benefit unit
 
 
 /*********************** NUMBER OF NEW BORN CHILDREN **************************/
@@ -2756,24 +2943,25 @@ fre dchpd
 
 preserve 
 
-keep swv idmother dchpd
-rename idmother idperson 
-rename dchpd mother_dchpd
+	keep swv idmother dchpd
+	rename idmother idperson 
+	rename dchpd mother_dchpd
 
-drop if idperson < 0
+	drop if idperson < 0
 
-collapse (max) mother_dchpd, by(idperson swv)
-duplicates report idperson swv
+	collapse (max) mother_dchpd, by(idperson swv)
+	duplicates report idperson swv
 
-save "$dir_data/mother_dchpd", replace
+	save "$dir_data/temp_mother_dchpd", replace
 
 restore 
 
-merge 1:1 swv idperson using "$dir_data/mother_dchpd", keepusing (mother_dchpd)
+merge 1:1 swv idperson using "$dir_data/temp_mother_dchpd", ///
+	keepusing (mother_dchpd)
 keep if _merge == 1 | _merge == 3
 
 replace mother_dchpd = 0 if dgn == 1
-replace mother_dchpd = 0 if dgn == 0 & _m == 1
+replace mother_dchpd = 0 if dgn == 0 & _merge == 1
 
 drop _merge
 drop dchpd
@@ -2789,32 +2977,39 @@ tab dchpd dnc02 if dgn == 0
 
 tab dag dchpd if dgn == 0 
 
+tab dag if dgn == 0 & dag > 49 & dchpd > 0 
+
 /*
         Age |      Freq.     Percent        Cum.
 ------------+-----------------------------------
-         45 |         22       47.83       47.83
-         46 |          9       19.57       67.39
-         47 |          5       10.87       78.26
-         48 |          6       13.04       91.30
-         49 |          3        6.52       97.83
-         78 |          1        2.17      100.00
+         84 |          1      100.00      100.00
 ------------+-----------------------------------
-      Total |         46      100.00
+      Total |          1      100.00
+
 */
 
+* Remove infeasible births (too old)
 gen flag_old_mother = (dchpd == 1 & dag > ${age_have_child_max} & dgn == 0)
 
 lab var flag_old_mother "FLAG: Have a new born child above the max fertile age"
 
 replace dchpd = -9 if flag_old_mother == 1
 
+* Address young mothers when construct BU
+
 tab dag dchpd if dgn == 0, row
 
-gen give_birth = (dchpd > 0 & dchpd < 4)
 
+/***************************** GIVE BIRTH DUMMY *******************************/
+
+* Give birth 
+gen give_birth = (dchpd > 0 & dchpd < 10)
+
+* Check consistency 
 tab dag give_birth if dgn == 0, col
-
 hist dag if give_birth == 1 &  dgn == 0
+
+graph drop _all
 
 
 /***************************** ADULT CHILD FLAG *******************************/
@@ -2831,25 +3026,27 @@ have to hold:
 * Merge in parental age and activity status information 
 preserve 
 
-keep if dgn == 0
-keep swv idhh idperson dag les_c4 dagpns
-rename idperson idmother
-rename dag dagmother
-rename les_c4 les_c4_mother
-rename dagpns dagpns_mother
+	keep if dgn == 0
+	keep swv idhh idperson dag les_c4 dagpns
+	
+	rename idperson idmother
+	rename dag dagmother
+	rename les_c4 les_c4_mother
+	rename dagpns dagpns_mother
 
-save "$dir_data/temp_mother_info", replace
+	save "$dir_data/temp_mother_info", replace
 
 restore, preserve
 
-keep if dgn == 1
-keep swv idhh idperson dag les_c4 dagpns
-rename idperson idfather
-rename dag dagfather
-rename les_c4 les_c4_father
-rename dagpns dagpns_father
+	keep if dgn == 1
+	keep swv idhh idperson dag les_c4 dagpns
+	
+	rename idperson idfather
+	rename dag dagfather
+	rename les_c4 les_c4_father
+	rename dagpns dagpns_father
 
-save "$dir_data/temp_father_info", replace 
+	save "$dir_data/temp_father_info", replace 
 
 restore
 
@@ -2888,6 +3085,9 @@ replace adultchildflag = 0 if dagfather - dag <= 15 & dagmother == .
 replace adultchildflag = 0 if dagfather == .  & dagmother - dag <= 15 
 replace adultchildflag = 0 if dagfather - dag <= 15 & dagmother - dag <= 15 
 
+* Age cap of 45
+replace adultchildflag = 0 if dag > 45 
+
 * Account for cases missing information
 replace adultchildflag = -9 if idmother != -9 & ///
 	(dagmother == . | les_c4_mother == .) & ///
@@ -2897,40 +3097,44 @@ replace adultchildflag = -9 if idfather != -9 & ///
 	(dagfather == . | les_c4_father == .) & ///
 	dag >= (${age_leave_parental_home} - 1)
 	
-	
+* Check consistency 	
 fre adultchildflag
 tab adultchildflag year, col
+
+tab adultchildflag dag if dag > 30 
 
 tab dag if adultchildflag == 1 & swv > 2010
 
 
 /************************ EXIT THE PARENTAL HOME ******************************/
 /* 
-Only populated if eligable for transition. 1 means that the individual exits the 
+Only populated if eligible for transition. 1 means that the individual exits the 
 parental home. 
 Leaving the parental home corresponds with the defintion of adult child; 
 an individual can leave the parental home they move out of the hh or if they 
 become the "responsible adult".  
 */
 sort idperson swv
+xtset idperson swv
 
 gen dlftphm = -9 
  
-replace dlftphm = 0 if adultchildflag[_n-1] == 1  & adultchildflag != -9 & ///
-	idperson == idperson[_n-1] & swv == swv[_n-1] + 1
+replace dlftphm = 0 if l.adultchildflag == 1  & adultchildflag != -9 & ///
+	idperson == l.idperson & swv == l.swv + 1
 	
 replace dlftphm = 0 if dag == ${age_leave_parental_home} & adultchildflag == 1 
 	
-replace dlftphm = 1 if adultchildflag == 0 & adultchildflag[_n-1] == 1 & ///
-	idperson == idperson[_n-1]  & swv == swv[_n-1] + 1
-
+replace dlftphm = 1 if adultchildflag == 0 & l.adultchildflag == 1 & ///
+	idperson == l.idperson  & swv == l.swv + 1
+	
 * Correct age fo adult child flag 
 replace adultchildflag = 0 if dag == ${age_leave_parental_home} - 1
 	
-	
 lab val dlftphm dummy
-lab var dlftphm "DEMOGRAPHIC: Exit the Parental Home"
+lab var dlftphm ///
+	"DEMOGRAPHIC: Exit the Parental Home, only populated if eligible"
 
+* Check consistency 
 bys swv: fre dlftphm 
 tab dlftphm year, col
 
@@ -2942,15 +3146,20 @@ tab dlftphm adultchildflag
 Note: For consistency with the simulation adult children and children above
 age to become responsible should be assigned "no children" category, even if 
 there are some children in the household 
+
+Already corrected for being too young to be in a partnership through dcpst 
+(on the underage side).
 */
 * Without economic activity 
-cap gen dhhtp_c4 = -9
-replace dhhtp_c4 = 1 if dcpst == 1 & dnc == 0 //Coupled, no children
-replace dhhtp_c4 = 2 if dcpst == 1 & dnc > 0 //Coupled, children
-replace dhhtp_c4 = 3 if dcpst == 2 & dnc == 0  //| adultchildflag == 1) 
-	//Not partnered, no children 
+cap drop dhhtp_c4
+
+gen dhhtp_c4 = -9
+replace dhhtp_c4 = 1 if dcpst == 1 & dnc == 0 // Coupled, no children
+replace dhhtp_c4 = 2 if dcpst == 1 & dnc > 0 // Coupled, children
+replace dhhtp_c4 = 3 if dcpst == 2 & dnc == 0  // | adultchildflag == 1) 
+	// Not partnered, no children 
 replace dhhtp_c4 = 4 if dcpst == 2 & dnc > 0 & dhhtp_c4 != 3 
-	//Not partnered, children
+	// Not partnered, children
 
 lab def dhhtp_c4_lb 1 "Couple with no dep children" ///
 	2 "Couple with dep children" ///
@@ -2959,7 +3168,7 @@ lab def dhhtp_c4_lb 1 "Couple with no dep children" ///
 lab val dhhtp_c4 dhhtp_c4_lb
 lab var dhhtp_c4 "Household composition"
 
-fre dhhtp_c4 // 3.53% single parents
+fre dhhtp_c4 // 1.72% single parents
 tab dhhtp_c4 year, col 
 
 * With economic activity 
@@ -2990,6 +3199,12 @@ fre dhhtp_c8 // 1.87% single parents
 tab dhhtp_c8 year, col 	
 bys swv: sum dhhtp_c8 
 
+/*
+Updated at the bottom of the file after update non-emplpoyment to include those 
+working 0-5 hours. 
+ 
+Also updatd in file 03 to account for alternative constrcution of dnc variable. 
+*/
 
 /************************** OECD EQUIVALENCE SCALE ****************************/
 * Temporary number of children 0-13 and 14-18 to create OECD hh equiv scale
@@ -3001,13 +3216,30 @@ bys swv idhh: egen dnc013 = sum(depChild_013)
 bys swv idhh: egen dnc1418 = sum(depChild_1418)
 drop depChild_013 depChild_1418
 
-gen moecd_eq = . //Modified OECD equivalence scale
+gen moecd_eq = . // Modified OECD equivalence scale
 replace moecd_eq = 1.5 if dhhtp_c4 == 1
 replace moecd_eq = 0.3*dnc013 + 0.5*dnc1418 + 1.5 if dhhtp_c4 == 2
 replace moecd_eq = 1 if dhhtp_c4 == 3
 replace moecd_eq = 0.3*dnc013 + 0.5*dnc1418 + 1 if dhhtp_c4 == 4
 
 drop dnc013 dnc1418
+
+
+/****************************** REGION OF BIRTH *******************************/
+/*
+Only available in the panel data from 2021.
+*/
+
+gen reg_birth = -9
+
+replace reg_birth = 1 if rb280 == "LOC"
+replace reg_birth = 2 if rb280 == "EU"
+replace reg_birth = 3 if rb280 == "OTH"
+
+lab def reg_birth 1	"native" 2 "other EU" 3 "non-EU"
+lab val reg_birth reg_birth	
+
+label var reg_birth "Region of birth"
 
 
 /******************** IN INITIAL EDUCATION SPELL AGE RANGE ********************/
@@ -3055,7 +3287,6 @@ lab val sedrsmpl sedrsmpl
 Generated from sedcsmpl and ded variables. Sample: Respondents who were in 
 initial education spell and left it. 
 */
-//fre ded
 gen scedsmpl = 0 
 replace scedsmpl = 1 if sedcsmpl == 1 & ded == 0 
 
@@ -3293,8 +3524,8 @@ egen months_wrk_missing = rowmiss(wrk_a wrk_b wrk_c wrk_d wrk_e wrk_f wrk_g ///
 	wrk_h wrk_i wrk_j wrk_k wrk_l)	
 	
 tab months_wrk_missing 
-	//almost all observations that report monthly info, have info for the whole 
-	// yr - missing all or missing none 
+	// almost all observations that report monthly info, have info for the whole 
+	// year, in general missing all or missing none 
 
 
 tab months_wrk if months_wrk_missing == 0 & yplgrs_annual != 0 
@@ -3308,7 +3539,7 @@ tab months_wrk if les_c3 == 1, sort
 // mean 11.44 months worked on average across workers
 // mode 12 months among the working 
 
-count if yplgrs_annual > 0 & months_wrk_missing != 0 // 89,855 
+count if yplgrs_annual > 0 & months_wrk_missing != 0 // 89,857 
 /*
  => many missing values regarding months worked last year 
  => if missing some monthly working information assume not working in the 
@@ -3363,7 +3594,7 @@ count if obs_earnings_hourly == . & idperson != idperson[_n+1] 	// 97,181
 count if obs_earnings_hourly == . & idperson == idperson[_n+1] & ///
 	les_c3 == -9  // 408
 count if obs_earnings_hourly == . & idperson == idperson[_n+1] & ///
-	les_c3 == 1 & swv != swv[_n+1] - 1 		//1,333
+	les_c3 == 1 & swv != swv[_n+1] - 1 		// 1,333
 // accounted for all cases 	
 	
 count if obs_earnings_hourly == 0 & les_c3 == 1 	// 19,434
@@ -3377,18 +3608,18 @@ count if obs_earnings_hourly == 0 & les_c3 == 1 & yplgrs_annual[_n+1] == 0 & ///
 	
 /*
 Missing wage observations:
-1- almost all due to being the last observation in individual's panel 
-2- missing activity information 
-3- missing adjacent observation 
+	1 - almost all due to being the last observation in individual's panel 
+	2 - missing activity information 
+	3 - missing adjacent observation 
 
 Zero wage observations
-4- next year is missing labour income information 
-5- next year reports zero labour income 
+	4 - next year is missing labour income information 
+	5 - next year reports zero labour income 
 
 How to address each case:
-- uprate previously reported wages 
-- use last years earnings and this years hours
-- use next years wages 
+	- uprate previously reported wages 
+	- use last years earnings and this years hours
+	- use next years wages 
 
 - use hot deck imputation
 
@@ -3435,7 +3666,7 @@ forvalues i = 6/23 {
 	replace obs_earnings_hourly = ///
 		obs_earnings_hourly[_n-1] * growth_factor_`j'`i' ///
 		if idperson == idperson[_n-1] & les_c3 == 1 & les_c3[_n-1] == 1 & ///
-		swv == 2000 +`i' & obs_earnings_hourly == .	
+		swv == 2000 +`i' & obs_earnings_hourly == .	& swv == swv[_n-1] + 1
 				
 	* Use the next years wages 
 	replace obs_earnings_hourly = ///
@@ -3446,7 +3677,8 @@ forvalues i = 6/23 {
 	* Use last years earnings and this years hours 
 	replace obs_earnings_hourly = ///
 		(yplgrs_mnth/(lhw*4.33)) * growth_factor_`j'`i' if ///
-		 obs_earnings_hourly == . & swv == 2000 + `i' & yplgrs_mnth != 0 
+		 obs_earnings_hourly == . & swv == 2000 + `i' & yplgrs_mnth != 0 & ///
+		 les_c4 == 1
 		
 }
 
@@ -3455,76 +3687,186 @@ gen flag_wage_imp_panel = (x == 1 & obs_earnings_hourly != . )
 label var flag_wage_imp_panel ///
 	"FLAG: wage imputed using surrounding panel information and uprating"
 	
-count if obs_earnings_hourly == .		// 25,041
-count if obs_earnings_hourly == . & idperson != idperson[_n+1] 	// 14,613
+count if obs_earnings_hourly == .	
+count if obs_earnings_hourly == . & idperson != idperson[_n+1] 	
 count if obs_earnings_hourly == . & idperson == idperson[_n+1] & ///
-	les_c3 == -9  // 408
+	les_c3 == -9  
 count if obs_earnings_hourly == . & idperson == idperson[_n+1] & ///
-	les_c3 == 1 & swv != swv[_n+1] - 1 		// 89
+	les_c3 == 1 & swv != swv[_n+1] - 1 	
 	
 count if obs_earnings_hourly == . & les_c3 == 1 & yplgrs_annual[_n+1] == 0 & ///
-	flag_missing_lbr_income[_n+1] == 1 & idperson == idperson[_n+1] // 605
+	flag_missing_lbr_income[_n+1] == 1 & idperson == idperson[_n+1] 
 count if obs_earnings_hourly == . & les_c3 == 1 & yplgrs_annual[_n+1] == 0 & ///
-	flag_missing_lbr_income[_n+1] == 0 & idperson == idperson[_n+1]	// 9,363
+	flag_missing_lbr_income[_n+1] == 0 & idperson == idperson[_n+1]	
 	
-count if obs_earnings_hourl == 0 & les_c3 == 1		// 0 
+count if obs_earnings_hourl == 0 & les_c3 == 1		
+	
 	
 * Use hot deck imputation for the remaining missing observations among the 
 * working
+* Use hot deck imputation for the remaining missing observations among the 
+* working
 
+/*
+Hot-deck imputation of missing hourly wages for individuals classified as 
+working.
+
+The imputation is conducted in two stages.
+
+Stage 1:
+Individuals with missing hourly wages are matched to donor observations within
+strata defined by:
+    - survey wave
+    - 10-year age band
+    - gender
+    - region
+
+Individuals aged 70+ are grouped with the 60+ age category to increase the
+number of potential donors. The donor pool consists of working individuals with
+an observed hourly wage. Within each stratum, one donor observation is selected
+at random (with replacement), and the donor's hourly wage is assigned to the
+recipient.
+
+Stage 2:
+If any working individuals remain without an observed or imputed wage after the
+first stage, the matching criteria are relaxed by dropping region. The remaining
+observations are therefore matched within strata defined by:
+    - survey wave
+    - 10-year age band
+    - gender
+
+This broader donor pool reduces the likelihood that observations remain
+unmatched because no wage donor is available within their region.
+
+A fixed random-number seed is used to make the random donor selection
+reproducible. Observations are sorted before the first-stage random draw so that
+the assignment of random numbers is reproducible with respect to the ordering
+of the data.
+*/
+
+set seed 987
+
+* Identify recipients: working individuals with missing hourly wages
 gen flag_wage_hotdeck = (les_c3 == 1 & missing(obs_earnings_hourly))
 
 lab var flag_wage_hotdeck "FLAG: wage imputed using hotdeck imputation"
 
-* Strata
+* Define first-stage matching strata
 cap drop ageband 
 gen ageband = floor(dag/10)*10
+
+* Pool individuals aged 70+ with the 60+ to increase donor availability
 replace ageband = 60 if ageband == 70  
-	// group 70+ year olds with 60+ to ensure matches 
 
 cap drop stratum 
 egen stratum = group(ageband drgn1 dgn swv), label(strutum, replace)  
 
-* Define donor pool
+* Construct first-stage donor pool: working individuals with observed wages
 preserve
 
-keep if les_c3 == 1 & obs_earnings_hourly != . 
-keep obs_earnings_hourly stratum idperson swv 
-bys stratum (idperson swv): gen draw = _n
-bys stratum (idperson swv): gen n_donors  = _N
-rename obs_earnings_hourly donor_wages
-drop idperson swv
-save "$dir_data/temp_wages_donors", replace
+	keep if les_c3 == 1 & obs_earnings_hourly != . 
+	keep obs_earnings_hourly stratum idperson swv 
+	
+	* Number donor observations within each stratum
+	bys stratum (idperson swv): gen draw = _n
+	
+	* Record number of available donors within each stratum
+	bys stratum (idperson swv): gen n_donors  = _N
+	
+	rename obs_earnings_hourly donor_wages
+	drop idperson swv
+	
+	save "$dir_data/temp_wages_donors", replace
 
-keep stratum n_donors
-bys stratum: keep if _n == 1
-save "$dir_data/temp_donorsN", replace
+	* Create lookup containing number of available donors in each stratum
+	keep stratum n_donors
+	bys stratum: keep if _n == 1
+	
+	save "$dir_data/temp_donorsN", replace
 
 restore
 
-* Attached number of donors in each stratum
+* Attach number of available donors to each recipient's stratum
 merge m:1 stratum using "$dir_data/temp_donorsN", nogen
 
-* Assign random donor 
+* Randomly select one donor observation from the recipient's stratum
 gen draw = . 
 
 sort stratum idperson swv
 
 by stratum (idperson swv): replace draw = ceil(runiform()*n_donors[1]) if ///
-	flag_wage_hotdeck == 1 & n_donors > 0 
+	flag_wage_hotdeck == 1 & n_donors > 0  & !missing(n_donors)
 
-* Attach donor	
+* Attach hourly wage from selected donor	
 merge m:1 stratum draw using "$dir_data/temp_wages_donors", ///
 	keepusing(donor_wages draw) 
 
-drop if _m == 2 
-drop _m
+drop if _merge == 2 
+drop _merge
 	
-replace obs_earnings_hourly = donor_wage if flag_wage_hotdeck == 1 
+* Impute hourly wage using selected donor	
+replace obs_earnings_hourly = donor_wages if flag_wage_hotdeck == 1 
 
-drop donor_wage ageband stratum dra n_donor
+* Clean up variables specific to first-stage matching
+drop donor_wages draw n_donors
 
+* Check for working individuals remaining without an hourly wage after Stage 1
 count if obs_earnings_hourly == . & les_c3 == 1
+
+
+* Stage 2: relax matching criteria by dropping region for unmatched recipients
+if r(N) > 0 {
+    
+	* Define broader strata using survey wave, age and gender only
+    cap drop stratum_v2
+    egen stratum_v2 = group(swv ageband dgn), label(replace)
+
+	* Construct second-stage donor pool
+    preserve
+	
+        keep if les_c3 == 1 & obs_earnings_hourly != .
+        keep obs_earnings_hourly stratum_v2
+		
+		* Number donors and record donor-pool size within each broader stratum
+        bys stratum_v2: gen draw_v2 = _n
+        bys stratum_v2: gen n_v2 = _N
+		
+        tempfile donors2
+        save `donors2'
+		
+    restore
+
+	* Create lookup containing number of donors in each broader stratum
+    preserve
+	
+        use `donors2', clear
+        bys stratum_v2: keep if _n == 1
+        keep stratum_v2 n_v2
+    
+		tempfile counts2
+        save `counts2'
+    
+	restore
+
+	* Attach number of available second-stage donors
+    merge m:1 stratum_v2 using `counts2', keep(1 3) nogen
+    
+    * Randomly select one donor from the broader stratum
+    gen draw_v2 = ceil(runiform() * n_v2) if obs_earnings_hourly == . & ///
+		les_c3 == 1 & n_v2 > 0 & !missing(n_v2)
+    
+    * Attach hourly wage from selected second-stage donor
+    merge m:1 stratum_v2 draw_v2 using `donors2', update replace keep(1 3) ///
+		nogen keepusing(obs_earnings_hourly)
+
+}
+
+* Clean up
+cap drop ageband stratum* n_donors draw n_v2 draw_v2 donor_wages
+
+* Final check: all working individuals should now have an hourly wage
+count if obs_earnings_hourly == . & les_c3 == 1		// 0 obs
+
 
 * Lagged wage 
 xtset idperson swv 
@@ -3543,22 +3885,161 @@ sum obs_earnings_hourly if les_c3 == -9
 drop yplgrs_annual yplgrs_mnth
 
 
+/******************* RE-CATEGORISATION OF WORKING 0-5 HOURS *******************/
+
+/*
+Agreed that those working 0-5 hours inclusive will be considered as non-employed 
+in line wiht the labour supply categorisation. 
+This section updates the relevant variables, imposing consistency across the 
+various related variables: 
+	les_c3
+	les_c4
+	l1_les_c3
+	l1_les_c4
+	lessp_c3	
+	lessp_c4
+	lesdf_c4 
+	dhhtp_c8
+	lhw
+	obs_earnings_hourly	
+*/
+
+* Activity status 
+replace les_c3 = 3 if les_c3 == 1 & inrange(lhw,0,5)
+replace les_c4 = 3 if les_c4 == 1 & inrange(lhw,0,5)
+
+xtset idperson swv
+sort idperson swv 
+
+
+* Lagged activity status 
+replace l1_les_c3 = 3 if l.les_c3 == 1 & l.lhw >= 0 & l.lhw <= 5 
+replace l1_les_c4 = 3 if l.les_c4 == 1 & l.lhw >= 0 & l.lhw <= 5 
+
+
+* Partner's activity status 
+cap drop lessp_c3
+cap drop lessp_c4
+
+preserve
+
+	keep swv idperson idhh les_c3
+	rename les_c3 lessp_c3
+	rename idperson idpartner
+	
+	save "$dir_data/temp_lesc3", replace
+
+restore
+
+merge m:1 swv idpartner idhh using "$dir_data/temp_lesc3"
+keep if _merge == 1 | _merge == 3
+
+lab var lessp_c3 "Partner's activity status"
+drop _merge
+
+* Impose partnership age restriction 
+replace lessp_c3 = . if dag < ${age_form_partnership}
+
+fre lessp_c3
+tab lessp_c3 year, col 
+tab dcpst lessp_c3
+
+
+preserve
+
+	keep swv idperson idhh les_c4
+	rename les_c4 lessp_c4
+	rename idperson idpartner
+	
+	save "$dir_data/temp_lesc4", replace
+
+restore
+
+merge m:1 swv idpartner idhh using "$dir_data/temp_lesc4"
+keep if _merge == 1 | _merge == 3 
+
+lab var lessp_c4 "LABOUR MARKET: Partner's activity status"
+lab val lessp_c4 les_c4
+
+drop _merge
+
+* Impose partnership age restriction 
+replace lessp_c4 = . if dag < ${age_form_partnership}
+
+
+* Partnership activity summary variables 
+cap drop lesdf_c4
+
+gen lesdf_c4 = -9
+
+* Both employed
+replace lesdf_c4 = 1 if les_c3 == 1 & lessp_c3 == 1 & dcpst == 1 
+	
+* Employed, spouse not employed	
+replace lesdf_c4 = 2 if les_c3 == 1 & (lessp_c3 == 2 | lessp_c3 == 3) & ///
+	dcpst == 1 
+
+* Not employed, and spouse employed	
+replace lesdf_c4 = 3 if (les_c3 == 2 | les_c3 == 3) & lessp_c3 == 1 & ///
+	dcpst == 1 
+
+* Both not employed	
+replace lesdf_c4 = 4 if (les_c3 == 2 | les_c3 == 3) & ///
+	(lessp_c3 == 2 | lessp_c3 == 3) & dcpst == 1 
+
+lab val lesdf_c4 lesdf_c4
+
+lab var lesdf_c4 "LABOUR MARKET: Own and spouse activity status"
+
+* Impose partnership age restriction 
+replace lesdf_c4 = -9 if dag < ${age_form_partnership}
+
+
+* With family composition with economic activity 
+cap drop dhhtp_c8
+gen dhhtp_c8 = . 
+
+replace dhhtp_c8 = 1 if dhhtp_c4 == 1 & lessp_c3 == 1
+replace dhhtp_c8 = 2 if dhhtp_c4 == 1 & lessp_c3 == 2
+replace dhhtp_c8 = 3 if dhhtp_c4 == 1 & lessp_c3 == 3	
+replace dhhtp_c8 = 4 if dhhtp_c4 == 2 & lessp_c3 == 1
+replace dhhtp_c8 = 5 if dhhtp_c4 == 2 & lessp_c3 == 2
+replace dhhtp_c8 = 6 if dhhtp_c4 == 2 & lessp_c3 == 3	
+replace dhhtp_c8 = 7 if dhhtp_c4 == 3
+replace dhhtp_c8 = 8 if dhhtp_c4 == 4
+
+lab val dhhtp_c8 dhhtp_c8	
+
+lab var dhhtp_c8 "Household composition with economic activity info"
+
+
+* Hours of work 
+replace lhw = 0 if inrange(lhw,0,5)
+
+* Wages 
+replace obs_earnings_hourly = 0 if lhw == 0 
+
+xtset idperson swv
+sort idperson swv 
+
+replace l1_obs_earnings_hourly = 0 if l.lhw == 0 
+
+
+* Consistency checks 
+tab les_c3 les_c4
+tab l1_les_c3 l1_les_c4 
+tab les_c4 lesdf_c4
+tab lessp_c4 dhhtp_c8
+
+tab lhw if les_c3 == 1 & lhw < 20 
+tab obs_earnings_hourly if lhw == 0 
+
+
 /************** GROSS REAL MONTHLY PERSONAL EMPLOYMENT INCOME *****************/
 /*
 Use wage and hours worked info instead of reported amounts in py010g py050g
 Use real wages therefore already in real terms. 
 */
-/*
-egen yplgrs = rowtotal(py010g py050g)
-replace yplgrs =  yplgrs / 12
-
-fre yplgrs if yplgrs < 0 // 0 obs
-
-* Impose non-negativity
-replace yplgrs = 0 if yplgrs < 0 
-
-*/
-
 gen yplgrs = obs_earnings_hourly * lhw * 4.33
 assert yplgrs >= 0   
 
@@ -3584,39 +4065,27 @@ count if lhw == . & les_c3 < 0
 
 /**************** GROSS NOMINAL MONTHLY PERSONAL CAPITAL INCOME ***************/
 /* 
-UK version:  
-gen ypncp = ///
-	asinh((fimninvnet_dv+fimnmisc_dv+fimnprben_dv)*gross_net_ratio*(1/CPI)) 
-	
-1 - fimninvnet_dv: 	Investment income
+hy080g: 	Regular interhousehold cash transfer received
+hy110g: 	Income received by people aged under 16
+hy040g: 	Income frm rental of a property or land 
+hy090g: 	Intrst, div, prof frm cptl inv in uncorp bsn
 
-2 -  fimnmisc_dv: 	Net miscellaneous income. Educational grant 
-					(not student loan or tuition fee loan), payments from a 
-					family member not living here, or any other regular payment 
-					(not asked in Wave 1).
-					
-3 -  fimnprben_dv: 	Net private benefit income. Trade union/friendly society 
-					payment, maintenance or alimony, or sickness and accident
-					insurance.  
-
-EU SILC version see above. 		
 NOTE: The raw variables have no missing or negative values. 			
-
 */
 
 * Household level variables are assigned to all adult hh members 
-* ==> split them equally among all adults in hh
+* 	==> split them equally among all adults in hh
 gen adult = (dag >= $age_adult) //18 yo and over 
 bysort stm idhh : egen n_adults = total(adult) 
 
 lab var n_adults "Number of adults in hh" 
 
-gen child = (dag < $age_adult) //below 18 yo 
+gen child = (dag < $age_adult) // below 18 yo 
 bysort stm idhh : egen n_child = total(child) 
 
 lab var n_child "Number of children in hh" 
 
-* NOTE: No negative values or missing values 
+* No negative values or missing values 
 foreach var in hy080g hy110g hy040g hy090g {
 	
 	gen `var'_pc = `var'/n_adults
@@ -3634,15 +4103,10 @@ count if hy080g == . | hy110g == . |  hy040g == . |  hy090g == .
 	
 /*********** GROSS NONMINAL MONTHLY PERSONAL PRIVATE PENSION INCOME ***********/
 /*
-UK version: 
-fimnpen_dv:	 Monthly amount of net pension income	
-
-EU SILC version 
 py080g: 	Pension from individual private plans (gross) 
 
-NOTE: The raw variable has many missing (.) values. 
+The raw variable has many missing (.) values. 
 */
-
 gen ypnoab = py080g / 12
 
 * Code missing as zero 
@@ -3656,6 +4120,9 @@ sum ypnoab if year == 2023
 
 count if py080g == . & dag >= 16 
 
+* Set to zero to be consistent with SimPathsEU
+replace ypnoab = 0 
+
 
 /*********** GROSS NOMINAL MONTHLY PERSONAL NON-BENEFIT INCOME ****************/
 /*
@@ -3664,23 +4131,9 @@ Note: This is supposed to mirror UKMOD market income
 	=  employment income +  private pensions income +  capital income 
 	
 Use components instead of raw vars so that changes feed through 
+
+
 */
-/*
-egen ypnb_temp = rowtotal(py010g py050g py080g hy080g_pc hy110g_pc ///
-	hy040g_pc hy090g_pc)
-gen ypnb = ypnb_temp / 12
-
-fre ypnb if ypnb < 0 
-/* obs with negative income (due to negative self-employment income) but many of 
-these are close to zero ==> recode them to zero */
-
-* Impose non-negativity 
-replace ypnb = 0 if  ypnb < 0 
-
-sum ypnb 
-assert ypnb >= 0 
-*/
-
 * Adjust gross eomployment income (yplgrs) so in nominal terms 
 gen temp_yplgrs = yplgrs * (CPI/100)
 
@@ -3716,10 +4169,13 @@ egen yptc = rowtotal(ypncp ypnoab)
 
 /************* SPOUSE GROSS PERSONAL MONTHLY NON-BENEFIT INCOME ***************/
 preserve
-keep swv idperson idhh ypnb
-rename ypnb ypnbsp
-rename idperson idpartner
-save "$dir_data/temp_ypnb", replace
+
+	keep swv idperson idhh ypnb
+	rename ypnb ypnbsp
+	rename idperson idpartner
+	
+	save "$dir_data/temp_ypnb", replace
+
 restore
 
 merge m:1 swv idpartner idhh using "$dir_data/temp_ypnb"
@@ -3748,7 +4204,11 @@ sum yhhnb if year == 2023
 
 
 /****************** NOMINAL MONTHLY PERSONAL DISPOSABLE INCOME *****************/
+/*
+hy020: 		Total disposable household income 
 
+py021g: 	Company car
+*/
 * Create hh value of company car variable 
 replace py021g = 0 if py021g == . 
 bysort stm idhh : egen hh_comp_car = total(py021g) 
@@ -3765,8 +4225,8 @@ replace ydisp = ydisp / 12
 
 
 /************************ REAL MONTHLY GROSS INCOMES **************************/
-* Adjust for inflation:
-* NOTE: yplgrs already in real terms as derived from real wages 
+* Adjust for inflation
+* Note, yplgrs already in real terms as derived from real wages 
 replace ypnb = ypnb/(CPI/100)
 replace yptc = yptc/(CPI/100)
 replace ypnbsp = ypnbsp/(CPI/100)
@@ -3814,6 +4274,7 @@ lab var yhhnb_asinh "Gross real monthly household non-benefit income, asinh"
 /*
 sum ypnbihs_dv ypnbihs_dv_sp yptciihs_dv yplgrs_dv ypncp ypnoab
 */ 
+
 
 /************************ LOG CAPTIAL INCOME **********************************/
 
@@ -3914,16 +4375,16 @@ lab var dhh_owned "Home ownership dummy"
 fre dhh_owned
 tab dhh_owned year, col 
 
+// updated in file 03
 
 /**************************** DISABILITY BENEFIT ******************************/
 /* 
-In EU-SILC, the variables 
-- py130n: 	(disability benefits net), 
-- py130g: 	(disability benefits gross), 
-- py131g: 	(contributory and means-tested), 
-- py132g: 	(contributory and non means-tested), 
-- py133g: 	(non-contributory and means-tested), 
-- py134g: 	(non-contributory and non means-tested) 
+py130n: 	(disability benefits net), 
+py130g: 	(disability benefits gross), 
+py131g: 	(contributory and means-tested), 
+py132g: 	(contributory and non means-tested), 
+py133g: 	(non-contributory and means-tested), 
+py134g: 	(non-contributory and non means-tested) 
 
 All may contain information on disability benefits. 
 
@@ -3941,7 +4402,7 @@ recode py133g (0 = -9)(. = -9), gen(py133gr)
 recode py134g (0 = -9)(. = -9), gen(py134gr)
 
 gen bdi = 0
-replace bdi = 1 if py130gr >= 1 | py130gr >= 1 | py132gr >= 1 | ///
+replace bdi = 1 if py130nr >= 1 | py130gr >= 1 | py132gr >= 1 | ///
 	py133gr >= 1 | py134gr >= 1 
 lab val bdi dummy
 
@@ -3954,9 +4415,6 @@ tab bdi year, col
 
 
 /*********************** EDUCATION STATUS - IMPUTATION 2 **********************/
-/* AB: At the point missing education level for those that transition out of
-education or have all missing observations. */
-
 gen orig_deh = deh_c3
 
 * Investigate characterisitcs - are missing observations plausibly random?
@@ -3973,9 +4431,11 @@ predict p_miss
 kdensity p_miss if missing_edu == 1, ///
 	addplot(kdensity p_miss if missing_edu == 0)
 
-/* Overlap is good => supports match, but shape is different suggesting that 
+/* 
+Overlap is good => supports match, but shape is different suggesting that 
 ppl missing education cluster at covaraiate combinations that produce higher
-probability of missing than observations for which we observe education */
+probability of missing than observations for which we observe education 
+*/
 
 * Generte adjusted weight 
 gen p_obs = 1 - p_miss
@@ -4052,7 +4512,7 @@ foreach k in 1 2 3 {
 
 * Impute 
 cap drop missing_edu 
-gen missing_edu = (deh_c3 == -9)
+gen missing_edu = (deh_c4 == -9)
 
 * All missing
 cap drop missing_count
@@ -4101,9 +4561,10 @@ forvalues i = 2/5 {
 		idperson == idperson[_n-1]
 		
 }		
-				
-* Those with some missing observations simply impose monotocity accounting 
-* whilst imposing a cap on educaiton level using any future observed level
+/*				
+Those with some missing observations simply impose monotocity accounting 
+whilst imposing a cap on education level using any future observed level
+*/
 
 * Next highest observation variable to enforce consistency 
 gsort idperson -count 
@@ -4153,9 +4614,9 @@ count if idperson == idperson[_n-1] & imp_deh_all > imp_deh_all[_n-1]
 
 * All due observatsions breaking the monotoncity rule are due to inconsistencies
 * in the raw data 
-gen flag_deh_imp_reg = (deh_c3 == . & imp_deh_all != .)
+gen flag_deh_imp_reg = (deh_c3 == -9 & imp_deh_all != .)
 
-lab var flag_deh_imp_reg "FLAG: -1, if age imputed using gologit"
+lab var flag_deh_imp_reg "FLAG: -1, if education imputed using gologit"
 
 * Impute remaining missing values 
 replace deh_c3 = imp_deh_all if deh_c3 == -9 
@@ -4183,15 +4644,15 @@ drop dgn2 dag2 dagsq2 drgn12 les_c42 dcpst2 ydses_c52 p1* p2 p3 rnd imp_deh*
 /******************** UPDATE PARTNER'S EDUCATION STATUS ***********************/
 preserve
 
-keep swv idperson deh_c3 deh_c4 flag_deh_imp_mono flag_deh_imp_reg
+	keep swv idperson deh_c3 deh_c4 flag_deh_imp_mono flag_deh_imp_reg
 
-rename idperson idpartner
-rename deh_c3 dehsp_c3 
-rename deh_c4 dehsp_c4
-rename flag_deh_imp_mono flag_dehsp_imp_mono
-rename flag_deh_imp_reg flag_dehsp_imp_reg
+	rename idperson idpartner
+	rename deh_c3 dehsp_c3 
+	rename deh_c4 dehsp_c4
+	rename flag_deh_imp_mono flag_dehsp_imp_mono
+	rename flag_deh_imp_reg flag_dehsp_imp_reg
 
-save "$dir_data/temp_dehsp", replace
+	save "$dir_data/temp_dehsp", replace
 
 restore
 
@@ -4211,7 +4672,519 @@ fre dehsp_c4 if idpartner > 0
 tab dehsp_c4 year, col
 bys swv: sum dehsp_c4 if dehsp_c4 > 0 
 
+* Impose partnership age restriction 
+replace dehsp_c3 = . if dag < ${age_form_partnership}
+replace dehsp_c4 = . if dag < ${age_form_partnership}
+
+
 sort idperson swv 
+
+
+/******************** EMPLOYMENT EXPERIENCE - IMPUTATION **********************/
+
+* Inspect variable 
+count if liwwh == -9
+count if missing(liwwh)
+count if liwwh == -9 & dag > 15
+
+tab liwwh if dag < 16 
+tab liwwh if dag < 20 
+tab liwwh if dag < 25
+tab liwwh if dag < 30
+
+
+/*
+Hot-deck imputation of missing employment experience (liwwh).
+
+Employment experience is imputed for individuals aged 16+ with missing values
+(liwwh == -9) and non-missing age information. Donors are restricted to 
+observations with valid reported employment experience, including zero.
+
+Imputation is carried out sequentially using increasingly broad matching strata.
+Observations that cannot be matched in one round proceed to the next:
+
+    Round 1: exact age, sex, education, economic status and number of children
+    Round 2: exact age, sex, education and economic status
+             (drops number of children)
+    Round 3: age group, sex, education and economic status
+             (replaces exact age with narrow age groups)
+    Round 4: age group, sex and education
+             (additionally drops economic status)
+    Round 5: exact age and sex
+             (drops education and returns to exact age matching)
+
+Within each round, one donor observation is selected at random (with
+replacement) from the relevant matching stratum. Fixed random-number seeds and
+a consistent observation ordering are used to make donor selection reproducible.
+
+Only genuinely observed values of liwwh are used as donors in all rounds.
+After combining the five rounds, feasibility constraints are imposed so that
+employment experience is non-negative and cannot exceed the number of years
+since the minimum school-leaving age.
+*/
+
+* Flag observations requiring imputation
+gen byte temp_imp_liwwh = ///
+    (liwwh == -9 & dag > 15 & !missing(dag))
+
+tab temp_imp_liwwh
+
+* Construct matching strata
+egen long temp_stratum_liwwh = ///
+    group(dag dgn deh_c3 les_c4 dnc), missing
+	
+* Unique observation ID for reproducible donor selection
+sort idperson stm
+gen long temp_obsid = _n
+
+tempfile donors donor_counts
+
+
+* Construct donor pool
+preserve
+
+    * Valid observed values of employment experience
+    * Zero is a valid value
+    keep if liwwh >= 0 & liwwh < .
+
+    keep temp_obsid temp_stratum_liwwh liwwh
+
+    * Number donors within each matching stratum
+    sort temp_stratum_liwwh temp_obsid
+    by temp_stratum_liwwh: gen long temp_draw = _n
+    by temp_stratum_liwwh: gen long temp_n_donors = _N
+
+    rename liwwh temp_donor_liwwh
+
+    save `donors'
+
+    * Create lookup containing number of donors in each stratum
+    keep temp_stratum_liwwh temp_n_donors
+    by temp_stratum_liwwh: keep if _n == 1
+
+    save `donor_counts'
+
+restore
+
+
+* Merge number of available donors onto recipients
+merge m:1 temp_stratum_liwwh using `donor_counts', nogen
+
+
+* Randomly select one donor within each matching stratum
+set seed 9876
+
+sort temp_stratum_liwwh temp_obsid
+
+gen long temp_draw = ceil(runiform() * temp_n_donors) if ///
+    temp_imp_liwwh == 1 & temp_n_donors > 0
+
+
+* Merge selected donor values
+merge m:1 temp_stratum_liwwh temp_draw using `donors', ///
+    keep(master match) nogen
+
+* Checks
+count if temp_imp_liwwh == 1
+count if temp_imp_liwwh == 1 & !missing(temp_donor_liwwh)
+count if temp_imp_liwwh == 1 & missing(temp_donor_liwwh)
+
+tab liwwh if temp_imp_liwwh == 1
+
+* Rename first-round imputation
+rename temp_donor_liwwh temp_donor_liwwh1
+
+
+* Second-round hot-deck imputation
+* Relax matching by dropping number of children (dnc)
+* Exact matching on age, sex, education and economic status
+
+egen long temp_stratum_liwwh2 = ///
+    group(dag dgn deh_c3 les_c4), missing
+
+tempfile donors2 donor_counts2
+
+
+* Construct donor pool
+preserve
+
+    * Valid observed values of employment experience
+    * Zero is a valid value
+    keep if liwwh >= 0 & liwwh < .
+
+    keep temp_obsid temp_stratum_liwwh2 liwwh
+
+    * Number donors within each matching stratum
+    sort temp_stratum_liwwh2 temp_obsid
+    by temp_stratum_liwwh2: gen long temp_draw2 = _n
+    by temp_stratum_liwwh2: gen long temp_n_donors2 = _N
+
+    rename liwwh temp_donor_liwwh2
+
+    save `donors2'
+
+    * Create lookup containing number of donors in each stratum
+    keep temp_stratum_liwwh2 temp_n_donors2
+    by temp_stratum_liwwh2: keep if _n == 1
+
+    save `donor_counts2'
+
+restore
+
+
+* Merge number of available donors onto recipients
+merge m:1 temp_stratum_liwwh2 using `donor_counts2', nogen
+
+
+* Randomly select one donor within each matching stratum
+set seed 9877
+
+sort temp_stratum_liwwh2 temp_obsid
+
+gen long temp_draw2 = ceil(runiform() * temp_n_donors2) if ///
+    temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    temp_n_donors2 > 0
+
+
+* Merge selected donor values
+merge m:1 temp_stratum_liwwh2 temp_draw2 using `donors2', ///
+    keep(master match) nogen
+
+
+* Checks
+count if temp_imp_liwwh == 1 & missing(temp_donor_liwwh1)
+    // Entering second round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    !missing(temp_donor_liwwh2)
+    // Successfully matched in second round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2)
+    // Still unmatched after second round
+
+	
+* Third-round hot-deck imputation
+* Relax exact age matching using narrow age groups
+* Exact matching on age group, sex, education and economic status
+
+* Construct narrow age groups
+gen byte temp_agegroup_liwwh = .
+
+replace temp_agegroup_liwwh = 1  if inrange(dag,16,19)
+replace temp_agegroup_liwwh = 2  if inrange(dag,20,24)
+replace temp_agegroup_liwwh = 3  if inrange(dag,25,29)
+replace temp_agegroup_liwwh = 4  if inrange(dag,30,34)
+replace temp_agegroup_liwwh = 5  if inrange(dag,35,39)
+replace temp_agegroup_liwwh = 6  if inrange(dag,40,44)
+replace temp_agegroup_liwwh = 7  if inrange(dag,45,49)
+replace temp_agegroup_liwwh = 8  if inrange(dag,50,54)
+replace temp_agegroup_liwwh = 9  if inrange(dag,55,59)
+replace temp_agegroup_liwwh = 10 if inrange(dag,60,64)
+replace temp_agegroup_liwwh = 11 if dag >= 65 & dag < .
+
+* Construct matching strata
+egen long temp_stratum_liwwh3 = ///
+    group(temp_agegroup_liwwh dgn deh_c3 les_c4), missing
+
+tempfile donors3 donor_counts3
+
+
+* Construct donor pool
+preserve
+
+    * Only genuinely observed values are used as donors
+    * Zero is a valid value
+    keep if liwwh >= 0 & liwwh < .
+
+    keep temp_obsid temp_stratum_liwwh3 liwwh
+
+    * Number donors within each matching stratum
+    sort temp_stratum_liwwh3 temp_obsid
+    by temp_stratum_liwwh3: gen long temp_draw3 = _n
+    by temp_stratum_liwwh3: gen long temp_n_donors3 = _N
+
+    rename liwwh temp_donor_liwwh3
+
+    save `donors3'
+
+    * Create lookup containing number of donors in each stratum
+    keep temp_stratum_liwwh3 temp_n_donors3
+    by temp_stratum_liwwh3: keep if _n == 1
+
+    save `donor_counts3'
+
+restore
+
+
+* Merge number of available donors onto recipients
+merge m:1 temp_stratum_liwwh3 using `donor_counts3', nogen
+
+
+* Randomly select one donor within each matching stratum
+set seed 9878
+
+sort temp_stratum_liwwh3 temp_obsid
+
+gen long temp_draw3 = ceil(runiform() * temp_n_donors3) if ///
+    temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    temp_n_donors3 > 0
+
+
+* Merge selected donor values
+merge m:1 temp_stratum_liwwh3 temp_draw3 using `donors3', ///
+    keep(master match) nogen
+
+
+* Checks
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2)
+    // Entering third round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    !missing(temp_donor_liwwh3)
+    // Successfully matched in third round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3)
+    // Still unmatched after third round
+	
+	
+* Fourth-round hot-deck imputation
+* Relax economic status for remaining unmatched observations (older students)
+* Exact matching on age group, sex and education
+
+* Construct matching strata
+egen long temp_stratum_liwwh4 = ///
+    group(temp_agegroup_liwwh dgn deh_c3), missing
+
+tempfile donors4 donor_counts4
+
+
+* Construct donor pool
+preserve
+
+    * Only genuinely observed values are used as donors
+    * Zero is a valid value
+    keep if liwwh >= 0 & liwwh < .
+
+    keep temp_obsid temp_stratum_liwwh4 liwwh
+
+    * Number donors within each matching stratum
+    sort temp_stratum_liwwh4 temp_obsid
+    by temp_stratum_liwwh4: gen long temp_draw4 = _n
+    by temp_stratum_liwwh4: gen long temp_n_donors4 = _N
+
+    rename liwwh temp_donor_liwwh4
+
+    save `donors4'
+
+    * Create lookup containing number of donors in each stratum
+    keep temp_stratum_liwwh4 temp_n_donors4
+    by temp_stratum_liwwh4: keep if _n == 1
+
+    save `donor_counts4'
+
+restore
+
+
+* Merge number of available donors onto recipients
+merge m:1 temp_stratum_liwwh4 using `donor_counts4', nogen
+
+
+* Randomly select one donor within each matching stratum
+set seed 9879
+
+sort temp_stratum_liwwh4 temp_obsid
+
+gen long temp_draw4 = ceil(runiform() * temp_n_donors4) if ///
+    temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    temp_n_donors4 > 0
+
+
+* Merge selected donor values
+merge m:1 temp_stratum_liwwh4 temp_draw4 using `donors4', ///
+    keep(master match) nogen
+
+
+* Checks
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3)
+    // Entering fourth round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    !missing(temp_donor_liwwh4)
+    // Successfully matched in fourth round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    missing(temp_donor_liwwh4)
+    // Still unmatched after fourth round	
+	
+
+* Fifth-round hot-deck imputation
+* Relax education for remaining unmatched observations
+* Exact matching on age and sex
+
+* Construct matching strata
+egen long temp_stratum_liwwh5 = ///
+    group(dag dgn), missing
+
+tempfile donors5 donor_counts5
+
+
+* Construct donor pool
+preserve
+
+    * Only genuinely observed values are used as donors
+    * Zero is a valid value
+    keep if liwwh >= 0 & liwwh < .
+
+    keep temp_obsid temp_stratum_liwwh5 liwwh
+
+    * Number donors within each matching stratum
+    sort temp_stratum_liwwh5 temp_obsid
+    by temp_stratum_liwwh5: gen long temp_draw5 = _n
+    by temp_stratum_liwwh5: gen long temp_n_donors5 = _N
+
+    rename liwwh temp_donor_liwwh5
+
+    save `donors5'
+
+    * Create lookup containing number of donors in each stratum
+    keep temp_stratum_liwwh5 temp_n_donors5
+    by temp_stratum_liwwh5: keep if _n == 1
+
+    save `donor_counts5'
+
+restore
+
+
+* Merge number of available donors onto recipients
+merge m:1 temp_stratum_liwwh5 using `donor_counts5', nogen
+
+
+* Randomly select one donor within each matching stratum
+set seed 9880
+
+sort temp_stratum_liwwh5 temp_obsid
+
+gen long temp_draw5 = ceil(runiform() * temp_n_donors5) if ///
+    temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    missing(temp_donor_liwwh4) & ///
+    temp_n_donors5 > 0
+
+
+* Merge selected donor values
+merge m:1 temp_stratum_liwwh5 temp_draw5 using `donors5', ///
+    keep(master match) nogen
+
+
+* Checks
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    missing(temp_donor_liwwh4)
+    // Entering fifth round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    missing(temp_donor_liwwh4) & ///
+    !missing(temp_donor_liwwh5)
+    // Successfully matched in fifth round
+
+count if temp_imp_liwwh == 1 & ///
+    missing(temp_donor_liwwh1) & ///
+    missing(temp_donor_liwwh2) & ///
+    missing(temp_donor_liwwh3) & ///
+    missing(temp_donor_liwwh4) & ///
+    missing(temp_donor_liwwh5)
+    // Still unmatched after fifth round	
+	// individuals with missing age or gender information 
+	
+	
+* Replace missing employment experience with hot-deck imputation
+* Combine imputations across matching rounds
+gen temp_liwwh_imp = temp_donor_liwwh1
+
+replace temp_liwwh_imp = temp_donor_liwwh2 if ///
+    temp_imp_liwwh == 1 & missing(temp_liwwh_imp)
+
+replace temp_liwwh_imp = temp_donor_liwwh3 if ///
+    temp_imp_liwwh == 1 & missing(temp_liwwh_imp)
+
+replace temp_liwwh_imp = temp_donor_liwwh4 if ///
+    temp_imp_liwwh == 1 & missing(temp_liwwh_imp)
+	
+replace temp_liwwh_imp = temp_donor_liwwh5 if ///
+    temp_imp_liwwh == 1 & missing(temp_liwwh_imp)	
+	
+* All observations requiring imputation should now have a donor
+assert !missing(temp_liwwh_imp) if temp_imp_liwwh == 1
+
+* Replace missing employment experience
+replace liwwh = temp_liwwh_imp if temp_imp_liwwh == 1
+
+* Label imputation flag
+rename temp_imp_liwwh flag_imp_liwwh
+
+label var flag_imp_liwwh ///
+    "FLAG: Missing employment experience imputed using hot deck"
+
+* Impose feasibility constraints on observed and imputed employment experience
+* Individuals below minimum school-leaving age are assigned zero experience.
+* For older individuals, experience cannot exceed the number of years since
+* minimum school-leaving age.
+replace liwwh = 0 if dag < ${age_leave_school}
+
+replace liwwh = dag - ${age_leave_school} if ///
+    liwwh > (dag - ${age_leave_school}) & ///
+    liwwh < . & dag >= ${age_leave_school}
+	
+	
+assert liwwh >= 0 if dag >= ${age_leave_school} & liwwh < . & dag != . 
+
+assert liwwh <= dag - ${age_leave_school} if ///
+    dag >= ${age_leave_school} & liwwh < .
+
+assert liwwh == 0 if dag < ${age_leave_school}	
+	
+* Clean up 	
+drop temp_stratum_liwwh temp_stratum_liwwh2 ///
+    temp_stratum_liwwh3 temp_stratum_liwwh4 temp_stratum_liwwh5 ///
+    temp_agegroup_liwwh temp_obsid ///
+    temp_draw temp_draw2 temp_draw3 temp_draw4 temp_draw5 ///
+    temp_n_donors temp_n_donors2 temp_n_donors3 temp_n_donors4 ///
+    temp_n_donors5 ///
+    temp_donor_liwwh1 temp_donor_liwwh2 ///
+    temp_donor_liwwh3 temp_donor_liwwh4 temp_donor_liwwh5 ///
+    temp_liwwh_imp
 
 
 /***************************** WEIGHTS ****************************************/
@@ -4310,12 +5283,6 @@ Year	Total Population
 2021	37,073,357 
 
 */
-
-* EUROMOD weight based on DB090, sums up to the population of HU, see below: 
-/*	
-
-*/
-
 /* 
 RB060 - Individual Cross-sectional Weight 
 
@@ -4616,9 +5583,11 @@ Target Variables. 2022 operation (Version 7), p. 105).
 
 * Distribution of RB060 before rescaling  
 preserve 
-collapse (sum) rb060, by(stm)
-format rb060 %15.0f
-list stm rb060
+
+	collapse (sum) rb060, by(stm)
+	format rb060 %15.0f
+	list stm rb060
+
 restore 
 /*		
     +------------------+
@@ -4647,16 +5616,14 @@ restore
  18. | 2022   147346011 |
  19. | 2023   111286696 |
      +------------------+
-
-
 */
 
 * Rescaling RB060
 order stm db075 rb060, last
 sort stm db075
 
-bys stm db075: egen total_group_rb060 = total(rb060)
-bys stm: egen total_rb060 = total(rb060)
+bys stm db075 (idperson): egen total_group_rb060 = total(rb060)
+bys stm (idperson): egen total_rb060 = total(rb060)
 
 cap drop rscale
 gen rscale = total_group_rb060/total_rb060
@@ -4676,12 +5643,15 @@ lab var dimxwt ///
 
 * Distribution after rescaling 
 preserve 
-collapse (sum) dimxwt, by(stm)
-format dimxwt %15.0f
-list stm dimxwt
+
+	collapse (sum) dimxwt, by(stm)
+	format dimxwt %15.0f
+	list stm dimxwt
+
 restore 
 
-/*			
+/*	
+	 +-----------------+		
      |  stm     dimxwt |
      |-----------------|
   1. | 2005   37478548 |
@@ -4715,20 +5685,23 @@ Cross-sectional household weight created by combining individual rescaled
 cross-sectional weights 
 */
 gen one = 1 
-bysort stm idhh: egen hhsize = total(one)
+bysort stm idhh (idperson): egen hhsize = total(one)
 
 cap drop dhhwt
-bysort stm idhh: egen dhhwt = total(dimxwt)
+bysort stm idhh (idperson): egen dhhwt = total(dimxwt)
 replace dhhwt = dhhwt/hhsize
 lab var dhhwt "DEMOGRAPHIC : Household Cross-sectional Weight based on rb060"
 
 * Distribution 
 preserve 
-collapse (sum) dhhwt, by(stm)
-format dhhwt %15.0f
-list stm dhhwt
+
+	collapse (sum) dhhwt, by(stm)
+	format dhhwt %15.0f
+	list stm dhhwt
+
 restore 
 /*
+	 +-----------------+
      |  stm      dhhwt |
      |-----------------|
   1. | 2005   37478548 |
@@ -4777,13 +5750,13 @@ count if rb062 < .
 
 * Copy rb062 to all years of the rotational group
 cap drop rb062_imputed
-bys idperson db075 (stm): gen rb062_imputed  = rb062[_N] if missing(rb062)
+bys idperson db075 (stm idperson): gen rb062_imputed  = rb062[_N] if missing(rb062)
 replace rb062_imputed = rb062 if !missing(rb062) & missing(rb062_imputed)
 
 * Compute rescaling factor 
 cap drop total_rb062_group total_rb062
-bys stm db075: egen total_rb062_group = total(rb062_imputed)
-bys stm: egen total_rb062 = total(rb062_imputed)
+bys stm db075 (idperson): egen total_rb062_group = total(rb062_imputed)
+bys stm (idperson): egen total_rb062 = total(rb062_imputed)
 
 cap drop rscale 
 gen rscale = total_rb062_group / total_rb062
@@ -4797,12 +5770,15 @@ lab var dimlwt "DEMOGRAPHIC : Individual Longitudinal Weight  based on rb062"
 
 * Distribution after rescaling
 preserve 
-collapse (sum) dimlwt, by(stm)
-format dimlwt %15.0f
-list stm dimlwt
+
+	collapse (sum) dimlwt, by(stm)
+	format dimlwt %15.0f
+	list stm dimlwt
+
 restore 
 
 /*	
+	 +-----------------+
      |  stm     dimlwt |
      |-----------------|
   1. | 2005   11967193 |
@@ -4923,7 +5899,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") replace
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") replace
 putexcel B1 = ("Count") C1 = ("Percent") D1 = ("Sample")
 putexcel A2 = ("Health imputed using generalized ordered logit")
 putexcel A3 = matrix(names) B3 = matrix(freq) C3 = matrix(percent) 
@@ -4936,7 +5912,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A5 = ("Partner's health imputed")
 putexcel A6 = matrix(names) B6 = matrix(freq) C6 = matrix(percent) 
 putexcel D6 = ("16+, has a partner")
@@ -4948,7 +5924,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A8 = ("Report being retired too young")
 putexcel A9 = matrix(names) B9 = matrix(freq) C9 = matrix(percent) 
 putexcel D9 = ("16-49")
@@ -4960,7 +5936,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A11 = ("Forced to remain retired")
 putexcel A12 = matrix(names) B12 = matrix(freq) C12 = matrix(percent) 
 putexcel D12 = ("50+")
@@ -4972,7 +5948,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A15 = ("Forced into retirement")
 putexcel A16 = matrix(names) B16 = matrix(freq) C16 = matrix(percent) 
 putexcel D16 = ("75+")
@@ -4985,7 +5961,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A18 = ("Replaced >0 hours of work with 0 as report not-employed")
 putexcel A19 = matrix(names) B19 = matrix(freq) C19 = matrix(percent) 
 putexcel D19 = ("16-75")
@@ -4998,7 +5974,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A21 = ("Replaced >0 hours of work with 0 as report retired")
 putexcel A22 = matrix(names) B22 = matrix(freq) C22 = matrix(percent) 
 putexcel D22 = ("16-75")
@@ -5011,7 +5987,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A24 = ("Replaced >0 hours of work with 0 as report student")
 putexcel A25 = matrix(names) B25 = matrix(freq) C25 = matrix(percent) 
 putexcel D25 = ("16-75")
@@ -5023,7 +5999,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A27 = ("Replaced activity status as report 0 hours")
 putexcel A28 = matrix(names) B28 = matrix(freq) C28 = matrix(percent) 
 putexcel D28 = ("16-75")
@@ -5035,7 +6011,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A30 = ///
 	("Replaced activity status from missing to working as report >0 hours")
 putexcel A31 = matrix(names) B31 = matrix(freq) C31 = matrix(percent) 
@@ -5049,7 +6025,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A33 = ///
 ("Replaced missing hours with >0 amount using adjacent cells as report working")
 putexcel A34 = matrix(names) B34 = matrix(freq) C34 = matrix(percent) 
@@ -5063,7 +6039,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A36 = ///
 	("Replaced hours from missing to >0 amount using hot deck imputation")
 putexcel A37 = matrix(names) B37 = matrix(freq) C37 = matrix(percent) 
@@ -5076,7 +6052,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A39 = ("Replaced disabled status with 0 due to retirement status")
 putexcel A40 = matrix(names) B40 = matrix(freq) C40 = matrix(percent) 
 putexcel D40 = ("50+")
@@ -5088,7 +6064,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A42 = ///
 	("Replaced unemployed with 0 due to retirement status enforcement")
 putexcel A43 = matrix(names) B43 = matrix(freq) C43 = matrix(percent) 
@@ -5102,7 +6078,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A45 = ///
 	("Reports being a new mother but above max fertile age")
 putexcel A46 = matrix(names) B46 = matrix(freq) C46 = matrix(percent) 
@@ -5115,7 +6091,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A48 = ("Education level imputed using generalized ordered logit predicted value")
 putexcel A49 = matrix(names) B49 = matrix(freq) C49 = matrix(percent) 
 putexcel D49 = ("16+, not in initial education spell")
@@ -5127,7 +6103,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A51 = ("Education level imputed using deductive logic")
 putexcel A52 = matrix(names) B52 = matrix(freq) C52 = matrix(percent) 
 putexcel D52 = ("16+, not in initial education spell")
@@ -5140,7 +6116,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A54 = ///
 	("Partner's education level imputed using ordered probit predicted value")
 putexcel A55 = matrix(names) B55 = matrix(freq) C55 = matrix(percent) 
@@ -5154,7 +6130,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A57 = ///
 	("Partner's education level imputed using ordered probit predicted value")
 putexcel A58 = matrix(names) B58 = matrix(freq) C58 = matrix(percent) 
@@ -5167,7 +6143,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A60 = ("Wage imputed using adjacent cell in individual panel")
 putexcel A61 = matrix(names) B61 = matrix(freq) C61 = matrix(percent) 
 putexcel D61 = ("Employed")
@@ -5179,7 +6155,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A63 = ("Wage imputed using hot deck imputation")
 putexcel A64 = matrix(names) B64 = matrix(freq) C64 = matrix(percent) 
 putexcel D64 = ("Employed")
@@ -5191,7 +6167,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A66 = ("Age imputed using deductive logic")
 putexcel A67 = matrix(names) B67 = matrix(freq) C67 = matrix(percent) 
 putexcel D67 = ("All")
@@ -5203,7 +6179,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A69 = ("Age imputed using regrssion model")
 putexcel A70 = matrix(names) B70 = matrix(freq) C70 = matrix(percent) 
 putexcel D70 = ("All")
@@ -5220,7 +6196,8 @@ keep idhh idperson idpartner idfather idmother dct drgn1 dnc02 dnc dgn dgnsp ///
 	dagpns_sp CPI dlltsd_sp ypnoab_lvl ydisp flag_* Int_Date unemp yplgrs ///
 	liwwh dagpns_y dagpns_y1 dagpns_y_sp dagpns_y1_sp obs_earnings_hourly ///
 	l1_obs_earnings_hourly l1_les_c3 l1_les_c4 new_rel dcpyy_st studentflag ///
-	dcpyy_st dhhtp_c8 dehsp_c4 widow rb110 flag_deceased flag_deceased_sp
+	dcpyy_st dhhtp_c8 dehsp_c4 widow rb110 flag_deceased flag_deceased_sp ///
+	reg_birth
 
 sort swv idhh idperson 
 
@@ -5235,7 +6212,7 @@ foreach var in idhh idperson idpartner idfather idmother dct drgn1 dnc02 ///
 	dagpns_y dagpns_y1 dagpns_y_sp dagpns_y1_sp obs_earnings_hourly ///
 	l1_obs_earnings_hourly l1_les_c3 l1_les_c4 new_rel dcpyy_st new_rel ///
 	dcpyy_st dhhtp_c8 studentflag dehsp_c4 widow flag_deceased ///
-	flag_deceased_sp {
+	flag_deceased_sp reg_birth {
 	
 		qui recode `var' (-9/-1 = -9) (. = -9) 
 
@@ -5262,19 +6239,16 @@ drop if dup == 1 // 0 duplicates
 drop dup
 isid idperson idhh swv	
 
-* Check create same dataset each time 
-/*
-Only differences should come from stochastic imputation variables 
-*/
+
 sort idperson swv 
 
-//cf _all using "$dir_data/${country}-SILC_pooled_all_obs_02.dta"
-//, verbose 
-
-
 /*********************************** SAVE *************************************/
-save "$dir_data/${country}-SILC_pooled_all_obs_02.dta", replace 
-cap log close 
+//save "$dir_data/${country}-SILC_pooled_all_obs_02.dta", replace 
+
+* Check create same dataset each time 
+* Only differences should come from stochastic imputation variables 
+cf _all using "$dir_data/${country}-SILC_pooled_all_obs_02.dta"
+
 
 /***************************** CLEAN UP AND EXIT ******************************/
 #delimit ;
@@ -5288,7 +6262,7 @@ local files_to_drop
 	temp_lesc4.dta
 	temp_ypnb.dta
 	temp_partnershipDuration.dta
-	mother_dchpd.dta
+	temp_mother_dchpd.dta
 	temp_orig_econ_status.dta
 	temp_orig_edu.dta
 	temp_orig_occu.dta
@@ -5310,3 +6284,4 @@ foreach file of local files_to_drop {
 
 }
 
+cap log close 

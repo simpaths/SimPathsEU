@@ -1,22 +1,65 @@
 /*******************************************************************************
 * PROJECT:              SimPaths EU
 * DO-FILE NAME:         03_create_benefit_units.do
-* DESCRIPTION:          Screens data and creates benefit units 
-********************************************************************************
+* DESCRIPTION:          Screens data and creates benefit units.
 * COUNTRY:              PL
-* DATA:         	    EU-SILC panel dataset  
-* AUTHORS: 				Daria Popova, Ashley Burdett
-* LAST UPDATE:          Jan 2026 
-* NOTE:					
-* 						This do-file: 
-* 							1. Creates benefit units ensuring the 
-*							characteristics are consistent with the simulation
-* 							assumptions.
+* DATA:                 EU-SILC panel dataset
+* AUTHORS:              Daria Popova, Ashley Burdett
+* LAST UPDATE:          7 October 2026
+********************************************************************************
+* NOTES:
 *
-* 							2. Identifies household to be dropped in the sample 
-* 							due to missing values. 
+*   -----------------------------------------------------------------------
+*    What this file does
+*   -----------------------------------------------------------------------
+*   This do-file creates benefit units from the SILC household structure,
+*   imposing consistency with simulation assumptions as noted in the master
+*   file. The file also screens observations for issues that prevent the
+*   construction of valid benefit units.
 *
-* 							3. Creates benefit level homeownership variable. 					
+*   -----------------------------------------------------------------------
+*    Benefit unit construction
+*   -----------------------------------------------------------------------
+*   Benefit units are constructed based on family relationships within the
+*   household. In particular, the file:
+*
+*   - Treats multiple benefit units within multigenerational households as
+*     distinct benefit units
+*   - Identifies orphaned children and, where possible, assigns them to the
+*     most plausible parent in the household based on age
+*   - Checks and imposes consistency between parent, partner and benefit
+*     unit relationships
+*   - Handles teenage parents living with their own parents, including cases
+*     where the teenage parent also has a live-in partner
+*
+*   -----------------------------------------------------------------------
+*    Sample screening
+*   -----------------------------------------------------------------------
+*   Households/benefit units that cannot be consistently represented in
+*   SimPaths are identified for exclusion. This includes cases with:
+*
+*   - Missing variables required for benefit unit construction
+*   - Orphaned children who cannot be matched to a plausible parent
+*   - Underage couples that cannot be represented consistently within the
+*     benefit unit structure
+*
+*   Where an underage parent has a child and lives with their own parents,
+*   the household is retained where possible and the benefit unit
+*   relationships are adjusted accordingly.
+*
+*   -----------------------------------------------------------------------
+*    Benefit unit variables
+*   -----------------------------------------------------------------------
+*   - Benefit unit identifiers and family relationships
+*   - Benefit unit-level home ownership
+*
+*   -----------------------------------------------------------------------
+*    Final checks & save
+*   -----------------------------------------------------------------------
+*   Check the consistency of benefit unit and family relationships and save
+*   the resulting dataset for subsequent initial population construction.
+*
+* TO DO:
 *******************************************************************************/
 
 cap log close 
@@ -67,79 +110,16 @@ foreach vv in dgnsp dagsp dehsp_c3 dhesp lessp_c3 lessp_c4 {
 replace ssscp = 0 if idpartner == -9   
 //fre ssscp
 
-* Adult is defined as 18 or over, or if married, or has their own kids 
-// DP: last condition added to avoid splitting kids from their teenager parents 
-gen child = dag < ${age_becomes_responsible} & dcpst != 1   
 
-* Count number of dep children of each person 
-* For mother 
-count 
-preserve
-sort swv idhh idperson
-
-save "$dir_data/motherinfo.dta", replace
-
-keep swv idhh idmother child
-rename idmother idperson
-bysort swv idperson: egen int n_child_mother = total(child) 
-	//number of dependent children who have this idmother
-	
-duplicates drop swv idperson, force
-drop child 
-
-save "$dir_data/motherinfo.dta", replace
-restore 
-	
-sort swv idhh idperson
-merge m:1 swv idhh idperson using "$dir_data/motherinfo.dta"
-fre _merge 
-
-drop if _merge == 2 
-drop _merge
-count 
-recode n_child_mother (. = 0)
-    
-* For father 
-count 
-preserve
-sort swv idhh idperson
-
-save "$dir_data/fatherinfo.dta", replace
-
-keep swv idhh idfather child  
-rename idfather idperson
-bysort swv idperson: egen int n_child_father = total(child) 
-	//number of dependent children who have this idfather
-		
-duplicates drop swv idperson, force
-drop child 
-
-save "$dir_data/fatherinfo.dta", replace
-restore 
-	
-sort swv idhh idperson
-merge m:1 swv idhh idperson using "$dir_data/fatherinfo.dta"
-fre _merge 
-
-drop if _merge == 2 
-drop _merge
-count 
-recode n_child_father (. = 0)
-	
-gen n_child = n_child_mother + n_child_father 
+* Establish Adult/Child status
 /*
-n of kids this individual has ==> no double count because father's kids will 
-be in their line while mothers kids will be in their line 
-*/
-	
-sum n_child_mother if n_child_mother > 0 
-sum n_child_father if n_child_father > 0 
-sum n_child if n_child > 0 
-	
-order swv idhh idperson idpartner idmother idfather dag n_child, last 
+Individuals below the age of responsibility are classified as children unless 
+they are in a partnership or have their own dependent children
 
-count if child == 1 & n_child > 0 // 14 obs who are kids but have their own kids 
-replace child = 0 if n_child > 0  // convert teenage parents into adults   
+Use flag here to capture the individuals < 18 who are in a partnership.
+*/
+gen child = dag < ${age_becomes_responsible} & flag_young_partnership == 0 ///
+	& dnc == 0 	
 
 gen adult = 1 - child 
 
@@ -163,27 +143,29 @@ fre idhh if num_adults == 0
 --------------------------------------------------------------------
                        |      Freq.    Percent      Valid       Cum.
 -----------------------+--------------------------------------------
-Valid   120131607501   |          1       8.33       8.33       8.33
-        220142378001   |          1       8.33       8.33      16.67
-        220142482401   |          1       8.33       8.33      25.00
-        320117060501   |          1       8.33       8.33      33.33
-        320117065902   |          1       8.33       8.33      41.67
-        320117468301   |          1       8.33       8.33      50.00
-        320153025101   |          1       8.33       8.33      58.33
-        420128104401   |          1       8.33       8.33      66.67
-        12022118890201 |          1       8.33       8.33      75.00
-        12022120440001 |          1       8.33       8.33      83.33
-        22023263590000 |          1       8.33       8.33      91.67
-        32020742660001 |          1       8.33       8.33     100.00
-        Total          |         12     100.00     100.00           
+Valid   220142378001   |          1       9.09       9.09       9.09
+        220142482401   |          1       9.09       9.09      18.18
+        320117060501   |          1       9.09       9.09      27.27
+        320117065902   |          1       9.09       9.09      36.36
+        320117468301   |          1       9.09       9.09      45.45
+        320153025101   |          1       9.09       9.09      54.55
+        420128104401   |          1       9.09       9.09      63.64
+        12022118890201 |          1       9.09       9.09      72.73
+        12022120440001 |          1       9.09       9.09      81.82
+        22023263590000 |          1       9.09       9.09      90.91
+        32020742660001 |          1       9.09       9.09     100.00
+        Total          |         11     100.00     100.00           
 --------------------------------------------------------------------
+
 */
 
-/* 
-This is due to errors in their idhh ==> these kids have different idhh from 
-their mothers/fathers ==> correct manually, put children in their parent's 
-(mother's) home 
+/*
+This is due to errors in their idhh — these kids have a different idhh from
+their mother/father. Automated fix: look up the parent's idhh by idmother /
+idfather and assign it to the child. Children with no parent in the sample
+fall through as true leftovers and are handled in the orphan section below.
 */
+
 replace idhh = 220142378000 if idperson == 22014237800101 & swv == 2012
 replace idhh = 220142482400 if idperson == 22014248240101 & swv == 2013
 replace idhh = 320117060500 if idperson == 32011706050101 & swv == 2010
@@ -195,12 +177,11 @@ replace idhh = 12022118890200 if idperson == 1202211889020101 & swv == 2019
 replace idhh = 12022120440000 if idperson == 1202212044000101 & swv == 2021
 replace idhh = 32020742660000 if idperson == 3202074266000101 & swv == 2018
 
-/* 
-Leftovers: 
-These hholds are kids < 18 living without adults, will deal with then later
-	120131607501
-	22023263590000
+/*
+Leftovers:  children < 18 in adult-less hholds with no parent in the sample.
+These are handled in the orphan assignment section below.
 */
+
 
 * Set benefit units
 cap gen long idbenefitunit = .
@@ -212,11 +193,11 @@ format idbupartner %19.0g
 ** Populate benefit units 
 * Assign first couples 
 /*
-Logic of code here is to populate all in the hh and remove if not not in the 
-same benefit unit. 
+Logic of code here is to populate all in the hh and remove if not in the same
+benefit unit. 
 */ 
 order swv idhh idbenefitunit idbupartner idperson idpartner idmother ///
-	idfather dag n_child partnered
+	idfather dag dnc partnered
 	
 gsort swv idhh -partnered -dag idperson 
 /*
@@ -240,7 +221,7 @@ replace idbupartner = . if (adult == 1 & idperson != idbenefitunit & ///
 
 replace idbenefitunit = . if (adult == 1 & idperson != idbenefitunit & ///
 	idpartner != idbenefitunit) 
-	//remove bu id or other adults in hh who are not head or partner 
+	//remove bu id for other adults in hh who are not head or partner 
 
 * Children
 replace idbupartner = . if (child == 1 & idfather != idbenefitunit & ///
@@ -256,7 +237,7 @@ replace idbenefitunit = . if (child == 1 & idfather != idbenefitunit & ///
 //count if idhh == idhh[_n-1] & partnered == 0 & partner[_n-1] == 1 & ///
 //	idbenefitunit[_n-1] == . 
 
-* Assign single adults iving with parents to their own ben unit 
+* Assign single adults living with parents to their own ben unit 
 /* 
 Their children are assigned to them later.
 */	
@@ -275,7 +256,7 @@ forvalues i = 1/3 {
 		/* 
 		Sort so those without a partner go before those with and partnered
 		individual who have been assigned a ben unit come before those who 
-		haven't. Have children adn sinlge adults before the partnered so that 
+		haven't. Have children and single adults before the partnered so that 
 		they are not impacted by the fill down. 
 		*/
 			
@@ -308,7 +289,7 @@ count if adult == 1 & idbenefitunit == . & partnered == 1
 recode idbupartner (. = -9) 
 
 * Check if all adults are assigned to ben units 
-count  if adult == 1 & idbenefitunit == .  // 0 
+count  if adult == 1 & idbenefitunit == .  // 0 obs
 assert idbenefitunit != . if adult == 1 
 
 gsort swv idhh -partnered idbenefitunit -dag idperson 
@@ -354,10 +335,10 @@ drop ttl_hh count
 gsort swv idhh -partnered idbenefitunit -dag idperson 
 
 * Check if all kids are assigned 
-count if child == 1 & idbenefitunit == . //1 ,703 kids are still not assigned 
+count if child == 1 & idbenefitunit == . 	// 1,781 children not assigned 
 
 cap gen orphan = (idfather < 0 & idmother < 0 & child == 1)
-fre orphan if idbenefitunit == . // 1,703
+fre orphan if idbenefitunit == . 	// 1,781 obs 
 /*
 => all remaining are orphans i.e. don't have any information in the dataset 
 about the mother or the father. 
@@ -374,8 +355,8 @@ fre n_orphan
 -----------------------------------------------------------
               |      Freq.    Percent      Valid       Cum.
 --------------+--------------------------------------------
-Valid   0     |     541036      98.88      98.88      98.88
-        1     |       4259       0.78       0.78      99.66
+Valid   0     |     541046      98.88      98.88      98.88
+        1     |       4249       0.78       0.78      99.66
         2     |       1343       0.25       0.25      99.90
         3     |        299       0.05       0.05      99.96
         4     |         75       0.01       0.01      99.97
@@ -385,50 +366,49 @@ Valid   0     |     541036      98.88      98.88      98.88
         9     |         13       0.00       0.00     100.00
         Total |     547161     100.00     100.00           
 -----------------------------------------------------------
-
 */
 order stm idhh idperson idpartner idfather idmother dag dgn adult orphan ///
 	n_orphan 
 
 /*
-Assign orphans to adults in hh according that are most likely to be the parent 
-by age. Assume an age difference of twenty years. 
+Assign orphans to adults in the household who are most likely to be their
+parent based on age. Assume a target age difference of twenty years.
 
-Note: Could add an additional condition imposing a min age at which the 
-theoretical birth is allowed to have taken place to to avoid theretical births 
-happening too young. May have some cases in which the orphn is assigned to 
-someone in their late teens/early twenties instead of their parents. 
-*/	
+Note: Could add an additional condition imposing a minimum age at which the
+theoretical birth could have taken place, to avoid assigning an orphan to
+someone who would have been implausibly young at the time of birth.
+*/
 	
 * Create variables storing ages for all orphans in hh 
 preserve 
 
-keep if n_orphan > 0 
-keep stm idhh idperson idpartner idfather idmother dag dgn adult orphan n_orphan
-keep if orphan == 1
+	keep if n_orphan > 0 
+	keep stm idhh idperson idpartner idfather idmother dag dgn adult orphan ///
+		n_orphan
+	keep if orphan == 1
 
-bys stm idhh: gen orphan_number = _n if orphan == 1  
+	bys stm idhh: gen orphan_number = _n if orphan == 1  
 
-sum n_orphan
-local max_orphan = r(max)
+	sum n_orphan
+	local max_orphan = r(max)
 
-// Loop over each orphan in hh and create corresponding age variables
-forvalues i = 1/`max_orphan' {  
-	
-	bys stm idhh: egen temp_dag_orphan`i' = sum(dag) if orphan_number == `i'  
-	bys stm idhh: egen dag_orphan`i' = sum(temp_dag_orphan`i')
-	drop temp_dag_orphan`i'
-	
-}
+	// Loop over each orphan in hh and create corresponding age variables
+	forvalues i = 1/`max_orphan' {  
+		
+		bys stm idhh: egen temp_dag_orphan`i' = sum(dag) if orphan_number == `i'  
+		bys stm idhh: egen dag_orphan`i' = sum(temp_dag_orphan`i')
+		drop temp_dag_orphan`i'
+		
+	}
 
-save "$dir_data/orphans.dta", replace 
+	save "$dir_data/temp_orphans.dta", replace 
 
 restore 
 
 count 
 
 * Add info on orphan's age to the main dataset 
-merge 1:1 stm idhh idperson using "$dir_data/orphans.dta",	///
+merge 1:1 stm idhh idperson using "$dir_data/temp_orphans.dta",	///
 	keepusing(dag_orphan* orphan_number)
 
 keep if _merge == 1 | _merge == 3 
@@ -528,11 +508,12 @@ replace idfather = idbupartner if idmother == idbenefitunit & orphan == 1
 replace idfather = -9 if idfather == . 
 replace idmother = -9 if idmother == . 
 
+
 ** Run checks 
 * Any remaining orphans?
-count if idbenefitunit == . // 2 obs
-count if child == 1 & idbenefitunit == . // 2 obs
-count if child == 1 & idbenefitunit == . & orphan == 1 // 2 orphan obs 
+count if idbenefitunit == . // 1 obs
+count if child == 1 & idbenefitunit == . // 1 obs
+count if child == 1 & idbenefitunit == . & orphan == 1 // 1 obs 
 
 fre adult child orphan dag if idbenefitunit == . 
 fre idperson if orphan == 1 & missing(idbenefitunit) 
@@ -544,7 +525,7 @@ drop if orphan == 1 & idbenefitunit == .
 
 /* Alternatively could make the eldest an adult? */
 /*
-* Recode the first child in be nunit as adult
+* Recode the first child in ben unit as adult
 bys swv idhh: replace child = 0 if child == 1 & idperson == idperson[1] & ///
 	orphan == 1 & num_adults == 0  
 bys swv idhh: replace adult = 1 if idperson == idperson[1] & orphan == 1 & ///
@@ -561,34 +542,36 @@ assert idbupartner != .
 
 replace idbupartner = . if idbupartner == -9
 bys swv idbenefitunit (idbupartner): replace idbupartner = idbupartner[1] if ///
-	idbupartner != idbupartner[1] //0 changes
+	idbupartner != idbupartner[1] // 0 changes
 
 replace idbupartner = -9 if idbupartner == .
 assert idbupartner != idbenefitunit
 
 
-/*************************** DROPPING BENEFIT UNITS ***************************/
-/*
-Remaining to benefit units necessary to make consistent with simluation 
-	assumptions: 
+/************ IDENTIFY REMAINING NON-STANDARD BENEFIT UNITS *******************/
 
-Can only leave the parental home at 18. Therefore )nly adults (18+) can be head 
-of a benefit unit: 
-	- Remains some children without idenitifed parents. 
-		=> Remove from sample 
-	- Currently teenage mothers who live with their parents are in the sample 
-		and head of their own benefit unit. 
-		=> Assign the young child to the 
-		grandparents effectively making the mother and child siblings. 
-		
-Only adults can form partnerships
-	- There are some partnerships that involve individuals <18.
-		=> Convert the underage teenager into an 18 yo. 
-		
-Partnerships require two indiviudals 
-	- There are some non-reciprocated partnerships. 
-		=> Remove the ben unit of the individuals that say their in an 
-		unrecognized partnership. 
+/*
+Identify and correct remaining benefit units that are inconsistent with 
+simulation assumptions.
+
+Individuals can only leave the parental home from age 18. Therefore, only 
+adults (18+) can head a benefit unit:
+    - Children without identified parents are flagged for removal.
+    - Teenage parents living with their parents cannot head their own benefit 
+      unit. The teenage parent and their child are reassigned to the 
+      grandparents' benefit unit, with the grandparents assigned as the 
+      child's parents for simulation purposes.
+
+Partnerships require two adults:
+    - Individuals who report being partnered but are the only adult in their 
+      benefit unit are recoded as single, and the associated partnership 
+      variables are updated accordingly.
+    - Remaining benefit units containing an underage partnership that is 
+      inconsistent with the benefit-unit structure are flagged for removal.
+
+The resulting benefit-unit structure is therefore consistent with the 
+simulation assumptions regarding age of leaving the parental home, benefit-unit 
+responsibility and partnership formation.
 */
 
 * Check for benefit units with multiple adults of same sex
@@ -606,27 +589,29 @@ assert sumMen < 2 & sumWomen < 2
 
 * Check for duplicates in terms of swv and idperson
 duplicates report swv idperson 
-duplicates report stm idperson // no cases 
+duplicates report swv idperson // no cases 
 
 sort swv idbenefitunit idperson 
 
 
-* Idenitfy benefit units to drop due to benefit unit inconsistencies
-
+* Identify benefit units to drop due to benefit unit inconsistencies
 cap gen dropObs = . 
 
-* Child (<18) living without a parent 
+
+* Child (<18) living without parents 
 /*
-Age <age that can leave the parental home and do not have an adult in the 
-benefit unit 
+Children below the age at which they can leave the parental home (18) who do
+not have an identified parent
 	==> Drop orphans from sample 
+	
+NOTE: Removes underage partners if they don't live with parents 	
 */
 gen orphan_check = 1 if (idfather < 0 & idmother < 0) & ///
 	(dag > 0 & dag < ${age_leave_parental_home}) 
 	
 gen flag_orphan_drop = (orphan_check == 1)
 
-lab var flag_orphan_drop "FLAG: Number of orphan obs unassigned to adult"	
+lab var flag_orphan_drop "FLAG: Number of orphan obs unassigned to parent"	
 	
 fre dag if orphan_check == 1 
 
@@ -637,17 +622,20 @@ drop orphan_check
 
 * Teenage parent (<18) living with parents 
 /* 
-Above assumed head own benefit unit if a parent. Therefore teenage mothers (<18)
-who with live in thier parents home are included in the sample as the head of 
-a benefit unit with their child even though they are a chid themselves. 
+If a teenage parent and lives with parents.
 	==> Assign the new child to their grandparents (idmother & idfather) thus 
-	effectively treat the teenage mum and their child as siblings in the code. 
+	treat the teenage parent and their child as siblings in the code. 
 	
+NOTE: Drops partner if they live with the family. Very rare, tyically if 
+partnership between two children.
 */     
-bys swv idbenefitunit: gen childhead = (idperson == idbenefitunit & ///
-	dag < ${age_becomes_responsible})
+gen childhead = (idperson == idbenefitunit & ///
+	dag < ${age_becomes_responsible} & dnc > 0)
 	
-fre childhead // 29 obs 
+fre childhead // 16 obs 
+
+tab idpartner if childhead == 1
+	// none partnered 
 
 gen flag_child_parent = (childhead == 1)	
 
@@ -655,8 +643,14 @@ lab var flag_child_parent "FLAG: Child parent"
 
 bys swv idbenefitunit: egen childhead_bu = max(childhead) 
 
-gen x = (childhead == 1)
+* Drop partner of child parent living in parental household if they are also  
+* underage 
+drop if childhead_bu == 1 & childhead == 0 & dag > 12
+replace idpartner = -9 if childhead == 1 
+replace dagsp = -9 if childhead == 1
 
+* Check don't observe leaving parental home
+gen x = (childhead == 1)
 replace x = 1 if x[_n-1] == 1 & idperson == idperson[_n-1] 
 
 sort idperson swv 
@@ -698,10 +692,6 @@ format idnewmum %18.0g
 format idnewdad %18.0g
 format idnewbu %18.0g
 
-gen agenewchild = -9 
-replace agenewchild = dag if idmother == idchildhead & childhead == 1 
-bysort idhh swv (agenewchild): replace agenewchild = agenewchild[_N]
-
 sort idperson swv 
 
 replace adult = 0 if idperson == idchildhead
@@ -724,28 +714,25 @@ drop x childhead childhead_bu childhead_hh idchildhead idnewmum idnewdad idnewbu
  
 * Reports being partnered but one adult in ben unit
 /*
-Descrepancy about whether in a partnership or not, one partner doesn't report. 
+Discrepancy about whether in a partnership or not, one partner doesn't report. 
 	==> Make the partner reporting the relationship single to preserve 
-	benefit unit strucutres
+	benefit unit structures
 	
-	Altetnatively could just delete these individuals and their benefit units 
-	
-NOTE: Don't update the idmother/idfather information to -9 of the non-resident 	
-parent. 
+	Alternatively could just delete these individuals and their benefit units 
 */
-bys stm idbenefitunit : egen num_adult = sum(adult)
+bys swv idbenefitunit : egen num_adult = sum(adult)
 
 gen partner1 = (num_adult == 1 & dcpst == 1 & adult == 1) 
 
-bys stm idbenefitunit : egen partner1_bu = max(partner1)
+bys swv idbenefitunit : egen partner1_bu = max(partner1)
 
-fre partner1 // 168 obs 
-fre partner1_bu // 225 obs 
+fre partner1 // 167 obs 
+fre partner1_bu // 224 obs 
 
 gen flag_1partner = (partner1_bu)
 
 lab var flag_1partner ///
-	"FLAG: Number of benefit unit obervations adjusted to single because individual reports being  in a partnership but partner does not recognise"
+	"FLAG: Number of benefit unit observations adjusted to single because individual reports being in a partnership but partner does not recognise"
 
 * Update partnership related variables
 xtset idperson swv 
@@ -793,134 +780,68 @@ replace dehsp_c4 = -9 if partner1 == 1
 
 replace partnered = 0 if partner1 == 1
 
+* Correct underage partner 
+replace idpartner = -9 if dag < ${age_form_partnership}
+
+tab dcpst if dag < ${age_form_partnership}
+
 drop partner1 partner1_bu
 
 
-* Reports being single but more than one adult in benenfit unit 
+* Reports being single but more than one adult in benefit unit 
 /*
-In a relationship and one partner 17 so not indicated in dcpst 
-	==> Turn the teenage partner into an 18 year old 
-	
+This is because in file 02 forced individuals with underage partners to be 
+single. 	
+ => Drop all benefit units in which there is a partnership that involves an 
+underage individual and they don't have a kid whilst living with parents. 
 */
 gen part1adult = (num_adult == 2 & dcpst == 2 & adult == 1) 
+	
+bys swv idbenefitunit : egen part1adult_bu = max(part1adult)
 
-bys stm idbenefitunit : egen part1adult_bu = max(part1adult)
+tab dag if part1adult == 1 
 
+/*
+        Age |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         17 |          4      100.00      100.00
+------------+-----------------------------------
+      Total |          4      100.00
+*/
+
+tab dnc if part1adult == 1
+	// 3 have children
+	
+tab dropObs if part1adult == 1	
+tab idmother if part1adult == 1		
+tab idfather if part1adult == 1	
+	// 1 lives with parents
+	
 gen flag_adult_child_rel = (part1adult == 1)
 
 lab var flag_adult_child_rel ///
-	"Number of adults that report being in a relationship with someone under the age of responsibility"
+	"Number of individuals < 18 that are still in a partnership"
 
-fre part1adult_bu // 11 obs 
+fre part1adult_bu // 13 obs 
 
-replace dag = 18 if part1adult == 1
+replace dropObs = 1 if flag_adult_child_rel == 1 
+
+//replace dag = 18 if part1adult == 1
 
 drop part1adult part1adult_bu 
 
 
-* Identify benefit units to drop due to missing values 
-
-* Missing region 
-count if drgn1 == -9 // 0 obs 
-replace dropObs = 1 if drgn1 == -9
-
-* Missing age 
-count if dag == -9 // 13 obs 
-replace dropObs = 1 if dag == -9
-
-* Missing age of partner (but has a partner)
-count if dagsp == -9 & idpartner != -9 // 0 obs 
-replace dropObs = 1 if dagsp == -9 & idpartner != -9
-
-* Health status - remove household if missing for those 16+ 
-count if (dhe == -9 ) & dag > ${age_becomes_semi_responsible} 
-	// 0 obs due to imputation  
-count if (dhe == -9 ) & dag > 0 & dag <= ${age_becomes_semi_responsible} 
-	// 0 obs due to imputation 
-replace dropObs = 1 if (dhe == -9) & dag > ${age_becomes_semi_responsible}
-
-* Health status of spouse - remove household if missing but ind has a spouse 
-count if dhesp == -9 & idpartner != -9 // 0 obs
-replace dropObs = 1 if (dhesp == -9) & idpartner != -9
-
-* Education - remove household if missing education level for 16+
-count if deh_c3 == -9 & dag >= ${age_becomes_semi_responsible} & ded == 0 
-replace dropObs = 1 if deh_c3 == -9 & dag >= ${age_becomes_semi_responsible} & ///
-	ded == 0
-
-* Education of spouse - remove household if missing but individual has a spouse 
-count if dehsp_c3 == -9 & idpartner != -9 // 2,896 obs 
-replace dropObs = 1 if dehsp_c3 == -9 & idpartner != -9
-
-* Partnership status 
-count if dcpst == -9 // 0 obs  
-replace dropObs = 1 if dcpst == -9 
-
-* Activity status 
-count if les_c3 == -9 & dag >= ${age_becomes_semi_responsible} 
-replace dropObs = 1 if les_c3 == -9 & dag >= ${age_becomes_semi_responsible}
-
-* Activity status with retirement as a separate category 
-count if les_c4 == -9 & dag >= ${age_becomes_semi_responsible} 
-replace dropObs = 1 if les_c4 == -9 & dag >= ${age_becomes_semi_responsible}
-
-* Partner's activity status 
-count if lessp_c3 == -9 & idpartner != -9 // 2,536 obs 
-replace dropObs = 1 if lessp_c3 == -9 & idpartner != -9
-
-* Own and spousal activity status 
-count if lesdf_c4 == -9 & idpartner != -9 // 2,601 obs
-replace dropObs = 1 if lesdf_c4 == -9 & idpartner != -9
-
-* Household composition 
-count if dhhtp_c4 == -9 // 0 obs 
-replace dropObs = 1 if dhhtp_c4 == -9
-
-* Income 
-* Gross personal non-benefit income 
-//==> no missing values by construction, theoretically can be zero 
-count if ypnbihs_dv == 0 & dag >= ${age_becomes_semi_responsible} 
-count if ypnbihs_dv > 0 & dag >= ${age_becomes_semi_responsible} 
-
-* Gross personal employment income 
-//==> no missing values by construction but theoretically can be zero 
-count if yplgrs_dv < 0 & dag >= ${age_becomes_semi_responsible}  
-count if yplgrs_dv == 0 & dag >= ${age_becomes_semi_responsible}  
-count if yplgrs_dv > 0 & dag >= ${age_becomes_semi_responsible}  
-
-* Household income quintile
-//==> a few missing values for kids who live w/t other adults
-count if ydses_c5 == -9 & dag >= ${age_becomes_semi_responsible}  // 0 obs 
-
-* Gross personal non-employment capital income 
-//==> no missing values by construction 
-count if ypncp < 0 & dag >= ${age_becomes_semi_responsible} // 0 obs 
-count if ypncp == 0 & dag >= ${age_becomes_semi_responsible} 
-count if ypncp > 0 & dag >= ${age_becomes_semi_responsible} 
-
-replace dropObs = 1 if ypnbihs_dv == -9 & dag >= ${age_becomes_semi_responsible}
-replace dropObs = 1 if yplgrs_dv == -9 & dag >= ${age_becomes_semi_responsible} 
-replace dropObs = 1 if ydses_c5 == -9 
-replace dropObs = 1 if ypncp == -9 & dag >= ${age_becomes_semi_responsible}
-	
-	
-* Indicator for households with missing values 
-cap drop dropHH
-bys swv idhh: egen dropHH = max(dropObs)
-tab dropHH, mis
-
-gen flag_drop_obs = (dropHH == 1)
-
-lab var flag_drop_obs ///
-	"FLAG: Number of observations dropped in data construction"
-
-sort idperson swv 
-
-
 /**************************** UPDATE VARIABLES ********************************/
+/*
+Update household composition variables in light of changes. 
 
+24/09/2026: Agreed to update number of children variable to align with SimPaths 
+imputation so that it counts the number of children in the benefit unit, rather  
+than using the parent ID variables.  
+*/
+
+/*
 * Number of children variables 
-
 rename dnc dncold 
 rename dnc02 dnc02old 
 
@@ -931,24 +852,24 @@ gen depChild02 = 1 if depChild == 1 & inrange(dag,0,2)
 * Mother
 preserve 
 
-drop if idmother == -9 
-drop if depChild != 1 
+	drop if idmother == -9 
+	drop if depChild != 1 
 
-keep idmother depChild depChild02 swv 
+	keep idmother depChild depChild02 swv 
 
-rename depChild has_child
-rename depChild02 has_child02
-rename idmother idperson 
+	rename depChild has_child
+	rename depChild02 has_child02
+	rename idmother idperson 
 
-bysort swv idperson : egen dnc_m = sum(has_child)
-bysort swv idperson : egen dnc02_m = sum(has_child02)
+	bysort swv idperson : egen dnc_m = sum(has_child)
+	bysort swv idperson : egen dnc02_m = sum(has_child02)
 
-sort idperson swv
-drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
+	sort idperson swv
+	drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
 
-drop has_child*
+	drop has_child*
 
-save "$dir_data/temp_depChild_mother", replace 
+	save "$dir_data/temp_depChild_mother", replace 
 
 restore 
 
@@ -958,24 +879,24 @@ drop _m
 * Father 
 preserve 
 
-drop if idfather == -9 
-drop if depChild != 1 
+	drop if idfather == -9 
+	drop if depChild != 1 
 
-keep idfather depChild depChild02 swv 
+	keep idfather depChild depChild02 swv 
 
-rename depChild has_child
-rename depChild02 has_child02
-rename idfather idperson 
+	rename depChild has_child
+	rename depChild02 has_child02
+	rename idfather idperson 
 
-bysort swv idperson : egen dnc_f = sum(has_child)
-bysort swv idperson : egen dnc02_f = sum(has_child02)
+	bysort swv idperson : egen dnc_f = sum(has_child)
+	bysort swv idperson : egen dnc02_f = sum(has_child02)
 
-sort idperson swv
-drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
+	sort idperson swv
+	drop if idperson == idperson[_n-1] & swv == swv[_n-1] 
 
-drop has_child*
+	drop has_child*
 
-save "$dir_data/temp_depChild_father", replace 
+	save "$dir_data/temp_depChild_father", replace 
 
 restore 
 
@@ -1000,59 +921,157 @@ drop dnc_* dnc02_*
 drop dncold dnc02old
 
 // not updated new born variable 
+*/
+
+cap drop dnc dnc02
+
+* Identify children
+gen byte temp_depChild = dag <= ${age_max_dep_child}
+
+gen byte temp_depChild02 = inrange(dag, 0, 2)
+
+* Count children within benefit unit
+bysort swv idbenefitunit: egen dnc = total(temp_depChild)
+bysort swv idbenefitunit: egen dnc02 = total(temp_depChild02)
+
+lab var dnc ///
+    "Number of children 0-${age_max_dep_child} in benefit unit"
+
+lab var dnc02 ///
+    "Number of children aged 0-2 in benefit unit"
+
+* Children themselves are assigned zero children, consistent with SimPaths
+replace dnc = 0 if dag <= ${age_max_dep_child}	
+replace dnc02 = 0 if dag <= ${age_max_dep_child}
+	
+drop temp_depChild temp_depChild02
+
+* Consistency checks
+assert dnc >= 0 & dnc < .
+assert dnc02 >= 0 & dnc02 < .
+
+* Number aged 0-2 cannot exceed total number of children
+assert dnc02 <= dnc
+
+* Individuals classified as children should not themselves have children
+assert dnc == 0 if dag <= ${age_max_dep_child}
+assert dnc02 == 0 if dag <= ${age_max_dep_child}
+
+
+* OECD Equivalence Scale  
+* Temporary number of children 0-13 and 14-18 to create OECD hh equiv scale
+cap drop depChild_013
+cap drop depChild_1418
+cap drop dnc013
+cap drop dnc1418
+cap drop moecd_eq
+
+gen depChild_013 = 1 if (dag >= 0 & dag <= 13) & (idmother > 0 | idfather > 0) 
+
+gen depChild_1418 = 1 if (dag >= 14 & dag <= 18) & (idmother > 0 | idfather > 0) 
+
+bys swv idhh: egen dnc013 = sum(depChild_013)
+bys swv idhh: egen dnc1418 = sum(depChild_1418)
+drop depChild_013 depChild_1418
+
+gen moecd_eq = . //Modified OECD equivalence scale
+replace moecd_eq = 1.5 if dhhtp_c4 == 1
+replace moecd_eq = 0.3*dnc013 + 0.5*dnc1418 + 1.5 if dhhtp_c4 == 2
+replace moecd_eq = 1 if dhhtp_c4 == 3
+replace moecd_eq = 0.3*dnc013 + 0.5*dnc1418 + 1 if dhhtp_c4 == 4
+
+drop dnc013 dnc1418
+
+
+* Household composition 
+/*
+Note: For consistency with the simulation adult children and children above
+age to become responsible should be assigned "no children" category, even if 
+there are some children in the household 
+*/
+* Without economic activity 
+cap drop dhhtp_c4
+cap drop dhhtp_c8
+
+gen dhhtp_c4 = -9
+replace dhhtp_c4 = 1 if dcpst == 1 & dnc == 0 // Coupled, no children
+replace dhhtp_c4 = 2 if dcpst == 1 & dnc > 0 // Coupled, children
+replace dhhtp_c4 = 3 if dcpst == 2 & dnc == 0  // | adultchildflag == 1) 
+	// Not partnered, no children 
+replace dhhtp_c4 = 4 if dcpst == 2 & dnc > 0 & dhhtp_c4 != 3 
+	// Not partnered, children
+
+lab val dhhtp_c4 dhhtp_c4_lb
+lab var dhhtp_c4 "Household composition"
+
+
+* With economic activity 
+gen dhhtp_c8 = -9 
+
+replace dhhtp_c8 = 1 if dhhtp_c4 == 1 & lessp_c3 == 1
+replace dhhtp_c8 = 2 if dhhtp_c4 == 1 & lessp_c3 == 2
+replace dhhtp_c8 = 3 if dhhtp_c4 == 1 & lessp_c3 == 3	
+replace dhhtp_c8 = 4 if dhhtp_c4 == 2 & lessp_c3 == 1
+replace dhhtp_c8 = 5 if dhhtp_c4 == 2 & lessp_c3 == 2
+replace dhhtp_c8 = 6 if dhhtp_c4 == 2 & lessp_c3 == 3	
+replace dhhtp_c8 = 7 if dhhtp_c4 == 3
+replace dhhtp_c8 = 8 if dhhtp_c4 == 4
+
+lab val dhhtp_c8 dhhtp_c8	
+
+lab var dhhtp_c8 "Household composition with economic activity info"
 
 
 * Home ownership variable 
 preserve
 
-egen tag_bu_wave = tag(idbenefitunit swv)
-count if tag_bu_wave
-local n_bu_before = r(N)
-display "Number of benefit unit–wave combinations BEFORE selecting head: `n_bu_before'"
+	egen tag_bu_wave = tag(idbenefitunit swv)
+	count if tag_bu_wave
+	local n_bu_before = r(N)
+	display ///
+	"Number of benefit unit–wave combinations BEFORE selecting head: `n_bu_before'"
 
+	* Sort benefit unit members within each wave:
+	* 1. Highest non-benefit income (ypnbihs_dv)
+	* 2. Highest age (dag)
+	* 3. Lowest idperson (idperson)
+	gsort idbenefitunit swv -ypnbihs_dv -dag idperson 
 
-* Sort benefit unit members within each wave:
-* 1. Highest non-benefit income (ypnbihs_dv)
-* 2. Highest age (dag)
-* 3. Lowest idperson (idperson)
-gsort idbenefitunit swv -ypnbihs_dv -dag idperson 
+	* Tag the first person (the "head") per benefit unit and wave
+	bysort idbenefitunit swv: gen benunit_head = (_n == 1)
 
-* Tag the first person (the "head") per benefit unit and wave
-bysort idbenefitunit swv: gen benunit_head = (_n == 1)
+	* Keep only benefit unit heads
+	keep if benunit_head == 1
 
-* Keep only benefit unit heads
-keep if benunit_head == 1
+	* Count unique benefit-unit–wave combinations AFTER head selection
+	drop tag_bu_wave
+	egen tag_bu_wave = tag(idbenefitunit swv)
+	count if tag_bu_wave
+	local n_bu_after = r(N)
+	display ///
+	"Number of benefit unit–wave combinations AFTER selecting head: `n_bu_after'"
 
-* Count unique benefit-unit–wave combinations AFTER head selection
-drop tag_bu_wave
-egen tag_bu_wave = tag(idbenefitunit swv)
-count if tag_bu_wave
-local n_bu_after = r(N)
-display "Number of benefit unit–wave combinations AFTER selecting head: `n_bu_after'"
+	* Ensure benefit unit–wave counts match before and after head selection
+	assert `n_bu_before' == `n_bu_after'
 
-* Ensure benefit unit–wave counts match before and after head selection
-assert `n_bu_before' == `n_bu_after'
+	* Verify only one head per benefit unit per wave
+	by idbenefitunit swv, sort: gen n = _N
+	assert n == 1
 
-* Verify only one head per benefit unit per wave
-by idbenefitunit swv, sort: gen n = _N
-assert n == 1
+	keep idperson swv dhh_owned 
 
-keep idperson swv dhh_owned 
-
-save "$dir_data/temp_dhh_owned", replace 
+	save "$dir_data/temp_dhh_owned", replace 
 
 restore 
 
 rename dhh_owned dhh_owned_orig
 
 merge 1:1 idperson swv using "$dir_data/temp_dhh_owned"
-
 drop _m 
 
 replace dhh_owned = 0 if dhh_owned == . 
 
 rename dhh_owned dhh_owned_ind
-
 lab var dhh_owned_ind "Home ownership flag, only = 1 for benefit unit head"
 
 gen dhh_owned = dhh_owned_ind
@@ -1061,6 +1080,181 @@ bysort idbenefitunit swv (dhh_owned): replace dhh_owned = dhh_owned[_N]
 	
 lab var dhh_owned "Home ownership flag, = 1 for all benefit unit members"
 
+sort idperson swv 
+
+
+/****************** DROP DUMMY IF STILL MISSING INFORMATION *******************/
+
+* Identify benefit units to drop due to missing values 
+/*
+Variables that are maintianed in the UID. 
+Exclude:
+	- transition variables: dcpen dcpex der sedex
+	- age summaries: sprfm, sedeg
+	- lhw and obs_earnings_hourly aligned with les_c3
+	- dcpagdf covered by age variables and -9 is meaningful 
+	- not used in model: dehm_c4, dehf_c4, ypnoab
+	- ynbcpdf_dv covered by missing income 
+	- lagged economic activity variables
+	
+NOTE: Income amounts assumed not to be missing, treated as zero instead. The 
+only exception is employment income which is missing because derived from 
+working hours and wages. 
+*/
+
+* Region 
+count if drgn1 == -9 // 0 obs 
+replace dropObs = 1 if drgn1 == -9
+
+
+* Age 
+count if dag == -9 // 13 obs 
+replace dropObs = 1 if dag == -9
+
+* Age of partner (but has a partner)
+count if dagsp == -9 & idpartner != -9 // 0 obs 
+replace dropObs = 1 if dagsp == -9 & idpartner != -9
+
+* Missing gender
+count if dgn == -9  // 13 obs 
+replace dropObs = 1 if dgn == -9
+
+* Partnership status 
+count if dcpst == -9 // 0 obs  
+replace dropObs = 1 if dcpst == -9 
+
+* Same sex partnership 
+replace dropObs = 1 if ssscp == -9
+
+* Years in partnership 
+replace dropObs = 1 if dcpyy == -9 & dcpst == 1
+
+* Number of children 
+count if dnc == -9  // 0 obs 
+replace dropObs = 1 if dnc == -9
+
+* Number of children age 0-2
+count if dnc02 == -9  // 0 obs 
+replace dropObs = 1 if dnc02 == -9
+
+* Household composition 
+count if dhhtp_c4 == -9 & dag >= ${age_becomes_semi_responsible} // 0 obs 
+replace dropObs = 1 if dhhtp_c4 == -9
+
+count if dhhtp_c8 == -9 & dag >= ${age_becomes_semi_responsible} // 0 obs 
+replace dropObs = 1 if dhhtp_c8 == -9
+
+* Adult child 
+count if adultchildflag == -9 	// 2 obs
+replace dropObs = 1 if adultchildflag == -9
+
+
+* Education - remove household if missing education level for 16+
+count if deh_c4 == -9 & dag >= ${age_becomes_semi_responsible} & ded == 0 
+replace dropObs = 1 if deh_c4 == -9 & ///
+	dag >= ${age_becomes_semi_responsible} & ded == 0
+
+* Education of spouse - remove household if missing but individual has a spouse 
+count if dehsp_c4 == -9 & idpartner != -9 	// 0 obs 
+replace dropObs = 1 if dehsp_c3 == -9 & idpartner != -9
+
+* Initial education spell 
+count if ded == -9  // 0 obs 
+replace dropObs = 1 if ded == -9
+
+
+* Activity status 
+count if les_c3 == -9 & dag >= ${age_becomes_semi_responsible} 	// 5,969 obs
+replace dropObs = 1 if les_c3 == -9 & dag >= ${age_becomes_semi_responsible}
+
+* Activity status with retirement as a separate category 
+count if les_c4 == -9 & dag >= ${age_becomes_semi_responsible}  // 5,969 obs 
+replace dropObs = 1 if les_c4 == -9 & dag >= ${age_becomes_semi_responsible}
+
+* Disabled/long-term sick 
+count if dlltsd == -9 
+replace dropObs = 1 if dlltsd == -9 
+
+* Partner's activity status 
+count if lessp_c3 == -9 & idpartner != -9 // 0 obs 
+replace dropObs = 1 if lessp_c3 == -9 & idpartner != -9
+
+* Partner's activity status 
+count if lessp_c4 == -9 & idpartner != -9 // 0 obs 
+replace dropObs = 1 if lessp_c4 == -9 & idpartner != -9
+
+* Own and spousal activity status 
+count if lesdf_c4 == -9 & idpartner != -9 // 0 obs
+replace dropObs = 1 if lesdf_c4 == -9 & idpartner != -9
+
+
+* Health status - remove household if missing for those 16+ 
+count if dhe == -9 & dag > ${age_becomes_semi_responsible} 
+	// 0 obs due to imputation  
+replace dropObs = 1 if (dhe == -9) & dag > ${age_becomes_semi_responsible}
+
+* Health status of spouse - remove household if missing but ind has a spouse 
+count if dhesp == -9 & idpartner != -9 // 0 obs
+replace dropObs = 1 if (dhesp == -9) & idpartner != -9
+
+
+* Income 
+* Gross personal non-benefit income 
+//==> no missing values by construction, theoretically can be zero 
+count if ypnbihs_dv == . & dag >= ${age_becomes_semi_responsible} 
+count if ypnbihs_dv < 0 & dag >= ${age_becomes_semi_responsible} 
+count if ypnbihs_dv == 0 & dag >= ${age_becomes_semi_responsible} 
+count if ypnbihs_dv > 0 & dag >= ${age_becomes_semi_responsible} 
+
+* Gross personal employment income 
+count if yplgrs_dv == . & dag >= ${age_becomes_semi_responsible}  // 5,969 obs
+count if yplgrs_dv < 0 & dag >= ${age_becomes_semi_responsible}  
+count if yplgrs_dv == 0 & dag >= ${age_becomes_semi_responsible}  
+count if yplgrs_dv > 0 & dag >= ${age_becomes_semi_responsible}  
+
+* Gross personal non-employment capital income 
+//==> no missing values by construction 
+count if ypncp == . & dag >= ${age_becomes_semi_responsible} 
+count if ypncp < 0 & dag >= ${age_becomes_semi_responsible} 
+count if ypncp == 0 & dag >= ${age_becomes_semi_responsible} 
+count if ypncp > 0 & dag >= ${age_becomes_semi_responsible} 
+
+replace dropObs = 1 if ypnbihs_dv == . & dag >= ${age_becomes_semi_responsible}
+replace dropObs = 1 if yplgrs_dv == . & dag >= ${age_becomes_semi_responsible} 
+replace dropObs = 1 if ypncp == . & dag >= ${age_becomes_semi_responsible}
+replace dropObs = 1 if ydisp == . & dag >= ${age_becomes_semi_responsible}
+
+replace dropObs = 1 if yplgrs_dv < 0  & dag >= ${age_becomes_semi_responsible} 
+replace dropObs = 1 if ypncp < 0 & dag >= ${age_becomes_semi_responsible}
+replace dropObs = 1 if ypnbihs_dv < 0 & dag >= ${age_becomes_semi_responsible}
+
+* Household income quintile
+//==> a few missing values for kids who live w/t other adults
+count if ydses_c5 == -9 & dag >= ${age_becomes_semi_responsible}  // 0 obs 
+
+replace dropObs = 1 if ydses_c5 == -9 
+	
+	
+* Home ownership 
+count if dhh_owned == -9 
+replace dropObs = 1 if dhh_owned == -9 	
+	
+	
+* Indicator for households with missing values 
+// drops hhs containing individuals age < 18 that don't have a parent 
+cap drop dropHH
+bys swv idhh: egen dropHH = max(dropObs)
+tab dropHH, mis
+
+gen flag_drop_obs = (dropHH == 1)
+
+lab var flag_drop_obs ///
+	"FLAG: Number of observations dropped in data construction"
+	
+
+* Clean up 
+replace idfather = -9 if idfather == 0 	
+	
 sort idperson swv 
 
 
@@ -1073,7 +1267,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A72 = ("Number of orphans in dataset")
 putexcel A73 = matrix(names) B73 = matrix(freq) C73 = matrix(percent) 
 putexcel D73 = ("Children")
@@ -1087,7 +1281,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A75 = ("Number of orphans dropped")
 putexcel A76 = matrix(names) B76 = matrix(freq) C76 = matrix(percent) 
 putexcel D76 = ("Children")
@@ -1101,13 +1295,13 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A78 = ("Number of individuals that report a partnership that is not recognized by the other partner")
 putexcel A79 = matrix(names) B79 = matrix(freq) C79 = matrix(percent) 
 putexcel D79 = ("Adults")
 
 
-* Individuals that report a partnership that is not recognized 
+* Adults in a partnership with someone below the age of responsibility
 tab flag_adult_child_rel if dag >= ${age_becomes_responsible}, matcell(freq) ///
 	matrow(names)
 
@@ -1115,7 +1309,7 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
 putexcel A81 = ("Number of adults in a partnership with someone below the age of responsibility")
 putexcel A82 = matrix(names) B82 = matrix(freq) C82 = matrix(percent) 
 putexcel D82 = ("Adults")
@@ -1128,8 +1322,8 @@ scalar total = r(N)
 
 matrix percent = (freq/total)*100
 
-putexcel set "$dir_work/flag_descriptives", sheet("PL") modify
-putexcel A84 = ("Number of dropped observatioons (dropped at hh level)")
+putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
+putexcel A84 = ("Number of dropped observations (dropped at hh level)")
 putexcel A85 = matrix(names) B85 = matrix(freq) C85 = matrix(percent) 
 putexcel D85 = ("All")
 
@@ -1137,22 +1331,18 @@ putexcel D85 = ("All")
 /*********************************** SAVE *************************************/
 
 sort idperson swv 
-
-//cf _all using "$dir_data/${country}-SILC_pooled_all_obs_03.dta"
  
 save "$dir_data/${country}-SILC_pooled_all_obs_03.dta", replace  
-cap log close 
+
+//cf _all using "$dir_data/${country}-SILC_pooled_all_obs_03.dta"
 
 
 /***************************** CLEAN UP AND EXIT ******************************/
+cap log close 
 
 #delimit ;
 local files_to_drop 
-	motherinfo.dta
-	fatherinfo.dta
-	orphans.dta
-	temp_depChild_mother.dta
-	temp_depChild_father.dta
+	temp_orphans.dta
 	temp_dhh_owned.dta
 	;
 #delimit cr // cr stands for carriage return
