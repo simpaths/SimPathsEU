@@ -1,21 +1,20 @@
 ********************************************************************************
-* PROJECT:              ESPON
+* PROJECT:              SimPaths EU
 * DO-FILE NAME:         vars_05_20.do
-* DESCRIPTION:          Collects varaibles from 2005-2020 panel to merge in 
-********************************************************************************
+* DESCRIPTION:          Collects variables from 2005-2020 panel to merge in 
 * COUNTRY:              PL 
 * DATA:         	    EU-SILC panel based on the EU-SILC longitudinal datasets 
-* 						created using GESIS Stata script: 
-* 						https://www.gesis.org/gml/european-microdata/eu-silc.
+* 						        created using GESIS Stata script: 
+* 						        https://www.gesis.org/gml/european-microdata/eu-silc.
 ******************************************************************************** 
 * AUTHORS: 				Daria Popova, Ashley Burdett
 * LAST UPDATE:          Feb 2025
 * NOTE:					Collects variables from the 2005-2020 panel to merge in 
-* 						into 2005-2023 panel. Relevant for variables that were
-* 						replace sinces 2020, but the replacements have not 
-* 						been backcoded resulting in missing data. 
+* 						into the 2005-2023 panel. Relevant for variables that were
+* 						replaced since 2020, but the replacements have not 
+* 						been backcoded, resulting in missing data. 
 * 						Temporary fix. 
-* 						If input data run "prepare_pooled_data _05_20.do" first. 
+* 						If input data run "01_prepare_pooled_data _05_20.do" first. 
 ********************************************************************************
 
 
