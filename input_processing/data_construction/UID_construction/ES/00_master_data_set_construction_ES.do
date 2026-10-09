@@ -44,28 +44,28 @@
 *   -----------------------------------------------------------------------
 *    Pipeline stages (see EXECUTE FILES below, run in this order)
 *   -----------------------------------------------------------------------
-*   1. vars_05_02/prepare_pooled_data_05_20_PL.do 
+*   1. vars_05_02/prepare_pooled_data_05_20_ES.do 
 * 									   Pools the 2005-2020 vintage panel
 *                                       (one-off; produces the patch source
 *                                       read by step 3)
-*   2. 01_prepare_pooled_data_PL.do    Pools the 2005-2023 vintage panel
+*   2. 01_prepare_pooled_data_ES.do    Pools the 2005-2023 vintage panel
 *                                       into the main person-level dataset
-*   3. 02_create_variables_PL.do       Builds SimPaths model variables;
+*   3. 02_create_variables_ES.do       Builds SimPaths model variables;
 *                                       opens by merging in patch variables
 *                                       from step 1 (pl030, pl031, rb210,
 *                                       pe040, pl051 - definitions that
 *                                       changed after 2020 and were never
 *                                       backcoded)
-*   4. 03_create_benefit_units_PL.do   Screens data, constructs benefit units
-*   5. 04_reweight_PL.do               Reweights sample for benefit-unit basis
-*   6. 05_drop_hholds_slice_and_refactoring_PL.do
+*   4. 03_create_benefit_units_ES.do   Screens data, constructs benefit units
+*   5. 04_reweight_ES.do               Reweights sample for benefit-unit basis
+*   6. 05_drop_hholds_slice_and_refactoring_ES.do
 *                                       Finalises the UID dataset
 *                                       (${country}_pooled_ipop.dta) used
 *                                       for estimation, and slices the UID
 *                                       into cross-sections to use as the
 *                                       initial populations file to set
 *                                       up SimPaths.
-*   7. 06_check_yearly_data_PL.do      Checks new data against previous release
+*   7. 06_check_yearly_data_ES.do      Checks new data against previous release
 *
 *   -----------------------------------------------------------------------
 *    Assumptions imposed to align the SILC data with simulation rules:
@@ -189,7 +189,7 @@ global dir_work "$dir_ind/CeMPA shared area/_SimPaths/_SimPathsEU/input_processi
 * Directory containing do-files
 global dir_do "$dir_work/do_files"
 
-* Directory containing data ouput files 
+* Directory containing data output files 
 global dir_data "$dir_work/data" 
 
 * Directory containing log files 
