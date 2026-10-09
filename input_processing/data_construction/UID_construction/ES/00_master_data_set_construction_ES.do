@@ -155,7 +155,6 @@ ssc install filelist
 ssc install gologit2, replace
 
 
-
 /*******************************************************************************
 * DEFINE DIRECTORIES
 *******************************************************************************/
@@ -185,7 +184,6 @@ folder containing this do-file is contained.
 This is the main folder that will contain the relevant UID construction data and
 log files.
 */
-
 global dir_work "$dir_ind/CeMPA shared area/_SimPaths/_SimPathsEU/input_processing/initial_populations/ES"
 
 * Directory containing do-files

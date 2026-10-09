@@ -187,7 +187,6 @@ format Int_Date %d
 lab var Int_Date "Interview Date"
 
 fre Int_Date
-// Mar 2004 - June 2024
 
 
 /**************************** HOUSEHOLD IDENTIFIER ****************************/
@@ -267,7 +266,6 @@ sort idperson year
 
 
 /***************************** DECEASED FLAG **********************************/
-
 gen flag_deceased = 0 
 replace flag_deceased = 1 if rb110 == 6 
 
@@ -333,7 +331,6 @@ combine urtgrp with the relevant id variable.
 
 Only captures the id of parents that live in the same household. 
 */
-
 tostring rb220, replace format(%18.0g)   
 gen idfather = (urtgrp + rb220)
 destring rb220, replace
@@ -403,7 +400,6 @@ randomly drawing from a gender-specific log-normal distribution, with parameters
 informed by SHARE data. Longitudinal consistency is also imposed in these 
 cases.  
 */
-
 gen dag = stm - rb080
 replace dag = rx010 if rx010 != . 
 	
@@ -486,6 +482,7 @@ replace turn_78 = 1 if idperson == idperson[_n-1] & turn_78[_n-1] == 1
 
 replace dag = dag[_n-1] + 1 if turn_78 == 1 
 	
+	
 * For the remaining top-coded cases
 /*
 We will impute the ages by randomly drawing from a log normal charactersized by 
@@ -527,7 +524,6 @@ gen dag_sim = floor(exp(meanlog + sdlog * invnormal(u_truncated))) if ///
 * Impose panel consistency 
 replace dag_sim = dag_sim[_n-1] + 1 if idperson == idperson[_n-1] & ///
 	dag_sim[_n-1] != . 
-	// could add swv == swv[_n-1] + 1 to ensure observed in every way 
 	
 * Populate main age var
 replace dag = dag_sim if topcoded78 == 1 & dag_sim >= 78	
@@ -653,10 +649,12 @@ Note, in the future may want to adjust the distributions used to draw from.
 preserve
 
 	keep swv idperson dag turn_78 topcoded78
+	
 	rename idperson idpartner
 	rename dag dagsp 
 	rename turn_78 turn_78sp 
 	rename topcoded78 topcoded78sp
+	
 	save "$dir_data/temp_age", replace
 
 restore
@@ -729,6 +727,7 @@ tab part_pers father_pers
 If a parent id is more persistent and the age diff is reasonable assume 
 parent not partner
 */
+
 * Mother
 tab age_diff if mother_pers == 1 & part_pers == 0 
 
@@ -776,6 +775,7 @@ tab same
 
 drop same same_mother same_father age_diff part_pers mother_pers father_pers
 
+
 * Update top-coded ages to account for empirical joint age distribution 
 /*
 Statistics related to partnership age difference for couples 
@@ -790,16 +790,13 @@ age 78+ in the SHARE data.
 
 NOTE: Could adjust parameters to be the age gap for those 70 to empirically 
 account for Cases A and B below. 
-
 */
-
 
 * Define spouse gap parameters as variables (gap = husband age - wife age)
 gen mean_gap = 4.496
 gen sd_gap   = 4.639
 
 * Adjust imputed own age accounting for empirical distribution of age gap 
-
 gen dag_sim2 = . 
 
 bysort idperson (turn_78sp): gen turn_78sp_panel = (turn_78sp[_N] == 1)
@@ -828,6 +825,7 @@ replace dag_sim2 = 78 if topcoded78 == 1 & dgn == 0 & dun == 1 & ///
 	
 replace dag_sim2 = 78 if topcoded78 == 1 & dgn == 0 & dun == 1 & ///
 	dagsp == 78 & turn_78sp == 1 & dagsp != . & dag_sim2 < 78 	
+			
 			
 * Case B: Male top-coded, Female is NOT 
 * 	Update: male age = female age + gap
@@ -882,7 +880,7 @@ replace dag_sim2 = dag_sim2[_n+4] - 4 if idperson == idperson[_n+4] & ///
 replace dag_sim2 = round(dagsp - rnormal(mean_gap, sd_gap)) if ///
     topcoded78 == 1 & topcoded78sp == 1 &  dgn == 0 &  dun == 1 & dagsp != .	
 
-* Impose ower bound 
+* Impose lower bound 
 replace dag_sim2 = 78 if topcoded78 == 1 & topcoded78sp == 1 & dgn == 0 & ///
 	dun == 1 & dagsp != . & dag_sim2 < 78 	
 
@@ -910,10 +908,12 @@ replace dag = dag_sim2 if dag_sim2 != .
 preserve
 
 	keep swv idperson dag turn_78 topcoded78
+	
 	rename idperson idpartner
 	rename dag dagsp2 
 	rename turn_78 turn_78sp 
 	rename topcoded78 topcoded78sp
+	
 	save "$dir_data/temp_age", replace
 
 restore
@@ -963,7 +963,7 @@ count if dun == 1 & dagsp == .
 /************************** PARTNERSHIP STATUS ********************************/
 /* 
 Construct a variable that only indicates whether the individual is single or 
-partnered, we don't differenciate between those that have previosuly been in a 
+partnered, we don't differenciate between those that have previously been in a 
 partnership and those that have never. 
 
 For consistency utilize idpartner variable. 
@@ -1193,7 +1193,7 @@ replace dcpen = 1 if (dcpst == 1 & l.dcpst == 2)
 replace dcpen = 1 if dcpst == 1 & dag == ${age_form_partnership}
 
 lab val dcpen dummy
-lab var dcpen "Enter partnership, only populated if eligable"
+lab var dcpen "Enter partnership, only populated if eligible"
 
 * Impose partnership age restriction 
 replace dcpen = -9 if dag < ${age_form_partnership}
@@ -1244,7 +1244,7 @@ replace dcpex = 0 if l.dcpst == 1
 replace dcpex = 1 if dcpst == 2 & l.dcpst == 1 
 replace dcpex = -9 if widow == 1 & dcpex == 1 & l.pb190 != 4
 
-// are there old people that remain married but their partner disappears? 
+* Are there old people that remain married but their partner disappears? 
 count if dag >= 65 & pb190 == 2 & idpartner == -9 
 count if dag >= 65 & pb200 == 1 & idpartner == -9 
 count if dag >= 65 & pb200 == 2 & idpartner == -9 
@@ -1284,12 +1284,12 @@ hist dag if dcpex == 1
 graph drop _all 
 
 lab val dcpex dummy
-lab var dcpex "Exit partnership, only populated if eligable" 
+lab var dcpex "Exit partnership, only populated if eligible" 
 
 * Impose partnership age restriction 
 replace dcpex = -9 if dag < ${age_form_partnership}
 
-fre dcpex //65% missing 
+fre dcpex // 65% missing 
 tab dcpex year, col
 bys swv: sum dcpex if dcpex >= 0 
 
@@ -1384,10 +1384,11 @@ KNOWN DATA GAP — ES rotation group 4, year 2020:
     These observations have valid data from 2021 onwards.	
 */
 
-* Add in values of variables from 2005-2020 for individuals where post-2021
-  * setup files do not carry forward pl031/rb210 under old variable names
+/*
+Add in values of variables from 2005-2020 for individuals where post-2021
+setup files do not carry forward pl031/rb210 under old variable names.
+*/
 merge 1:1 upid uhid year using "$dir_data/temp_orig_econ_status_${country}"
-//merge 1:1 upid year using "$dir_data/temp_orig_econ_status_${country}"
 
 * Diagnostics 
 tab year _merge
@@ -1436,11 +1437,13 @@ replace les_c3 = 1 if les_c3 == . & pl040a == 1
 replace les_c3 = 1 if les_c3 == . & pl040a == 2
 replace les_c3 = 1 if les_c3 == . & pl040a == 3
 
-* pl040a == 4 (family worker, unpaid) intentionally left as missing. Treating
-* as employed is problematic in the simulation as they have no earnings. In
-* pl031 years (2009-2020) this group was folded into self-employed (values 3,4)
-* and coded as employed, but the inconsistency is minor as pl040a is only a
-* last-resort fallback.
+/*
+pl040a == 4 (family worker, unpaid) intentionally left as missing. Treating
+as employed is problematic in the simulation as they have no earnings. In
+pl031 years (2009-2020) this group was folded into self-employed (values 3,4)
+and coded as employed, but the inconsistency is minor as pl040a is only a
+last-resort fallback.
+*/
 
 * Utilizing alternative raw variables from register dataset
 * 2005-2020 
@@ -1504,7 +1507,7 @@ gen flag_no_retire_young = (dag < ${age_can_retire} & les_c4 == 4)
 lab var flag_no_retire_young ///
 	"FLAG: Made non-employed because stated to retire before the age of 50"
 
-replace les_c4 = 3 if dag < ${age_can_retire} & les_c4 == 4 	// 888 changes
+replace les_c4 = 3 if dag < ${age_can_retire} & les_c4 == 4 	
 
 
 * Make retirement an absorbing state - primarily eliminates returning to 
@@ -1548,10 +1551,9 @@ bys swv: sum les_c4
 
 /************************ LONG-TERM SICK OR DISABLED **************************/
 /*
-Effectively treat disabled/long-term sick as a mututlly exclusive activity 
+Effectively treat disabled/long-term sick as a mutually exclusive activity 
 status.
 */
-
 gen dlltsd = 0 
 replace dlltsd = 1 if pl030 == 6 | pl031 == 8 | pl032 == 4
 
@@ -1761,7 +1763,6 @@ additional rule.
 
 Impute hours using surrounding observations for longitudinal consistency and 
 then use hot deck imputation by age group and sex. 
-
 */	
 	
 * Consistency of zero hours cases
@@ -2085,6 +2086,8 @@ lab var liwwh "LABOUR MARKET: Number of years spent in paid work"
 fre liwwh 
 tab liwwh year, col 
 bys swv: sum liwwh if liwwh >= 0
+
+// missing values imputed below
 
 
 /************************* EDUCATIONAL ATTAINMENT *****************************/
@@ -2478,7 +2481,7 @@ replace der = 1 if les_c3 == 2 & der == 0
 replace der = -9 if les_c3 == -9 
 
 lab val der dummy
-lab var der "Return to education, only populated if eligable"
+lab var der "Return to education, only populated if eligible"
 
 fre der // 52% of observation missing value 
 tab der year, col 
@@ -2539,7 +2542,7 @@ sort idperson swv
 
 lab var dlrtrd "DEMOGRAPHIC : Retired"
 
-fre dlrtrd // 31.36% retired
+fre dlrtrd 
 tab dlrtrd year, col
 
 tab les_c3 dlrtrd
@@ -2552,6 +2555,7 @@ Only populated if at risk of transition.
 */
 sort idperson swv 
 xtset idperson swv 
+
 gen drtren = -9 
 
 replace drtren = 0 if l.dlrtrd == 0 & dlrtrd != -9 
@@ -2560,9 +2564,8 @@ replace drtren = 1 if dlrtrd == 1 & drtren == 0
 * Impose simulation eligability 
 replace drtren = -9 if dag < ${age_can_retire}
 
-
 lab val drtren dummy
-lab var drtren "DEMOGRAPHIC: Enter retirement, only populated if eligable"
+lab var drtren "DEMOGRAPHIC: Enter retirement, only populated if eligible"
 
 fre drtren // 84.5% missing
 tab drtren year, col
@@ -2635,7 +2638,7 @@ replace dagpns = 1 if dgn == 0 & dag >= 66 & stm >= 2021 & stm <= 2024
 
 fre dagpns // 20% of retirement age 
 
-* Become eligable for the state pension dummy 
+* Become eligible for the state pension dummy 
 gen dagpns_y = 0 
 
 * Men 
@@ -2646,7 +2649,7 @@ replace dagpns_y = 1 if dgn == 1 & dag == 66 & stm >= 2021 & stm <= 2024
 replace dagpns_y = 1 if dgn == 0 & dag == 65 & stm >= 2005 & stm < 2021
 replace dagpns_y = 1 if dgn == 0 & dag == 66 & stm >= 2021 & stm <= 2024 
 
-* Became eligable for state pension last year 
+* Became eligible for state pension last year 
 gen dagpns_y1 = 0 
 
 * Men 
@@ -2657,8 +2660,8 @@ replace dagpns_y1 = 1 if dgn == 1 & dag == 67 & stm >= 2021 & stm <= 2024
 replace dagpns_y1 = 1 if dgn == 0 & dag == 66 & stm >= 2005 & stm < 2021
 replace dagpns_y1 = 1 if dgn == 0 & dag == 67 & stm >= 2021 & stm <= 2024 
 
-lab var dagpns_y "Year became eligable for pension"
-lab var dagpns_y1 "Year+1 became eligable for pension"
+lab var dagpns_y "Year became eligible for pension"
+lab var dagpns_y1 "Year+1 became eligible for pension"
 
 tab dag dagpns_y
 tab dag dagpns_y1
@@ -2700,8 +2703,8 @@ merge m:1 swv idpartner idhh using "$dir_data/temp_dagpns_y"
 keep if _merge == 1 | _merge == 3
 drop _merge
 
-lab var dagpns_y_sp "Year became eligable for pension - partner"
-lab var dagpns_y1_sp "Year+1 became eligable for pension - partner"
+lab var dagpns_y_sp "Year became eligible for pension - partner"
+lab var dagpns_y1_sp "Year+1 became eligible for pension - partner"
 
 replace dagpns_y_sp = -9 if idpartner < 0
 replace dagpns_y1_sp = -9 if idpartner < 0
@@ -3107,7 +3110,7 @@ tab dag if adultchildflag == 1 & swv > 2010
 
 /************************ EXIT THE PARENTAL HOME ******************************/
 /* 
-Only populated if eligable for transition, = 1 means that the individual exits  
+Only populated if eligible for transition, = 1 means that the individual exits  
 the parental home. 
 Leaving the parental home corresponds with the defintion of adult child; 
 an individual can leave the parental home they move out of the hh or if they 
@@ -3131,7 +3134,7 @@ replace adultchildflag = 0 if dag == ${age_leave_parental_home} - 1
 	
 lab val dlftphm dummy
 lab var dlftphm ///
-	"DEMOGRAPHIC: Exit the Parental Home, only populated if eligable"
+	"DEMOGRAPHIC: Exit the Parental Home, only populated if eligible"
 
 * Check consistency 
 bys swv: fre dlftphm 
@@ -3199,6 +3202,13 @@ fre dhhtp_c8 // 1.71% single parents
 tab dhhtp_c8 year, col 	
 bys swv: sum dhhtp_c8 
 
+/*
+Updated at the bottom of the file after update non-emplpoyment to include those 
+working 0-5 hours. 
+ 
+Also updatd in file 03 to account for alternative constrcution of dnc variable. 
+*/
+
 
 /************************** OECD EQUIVALENCE SCALE ****************************/
 * Temporary number of children 0-13 and 14-18 to create OECD hh equiv scale
@@ -3210,7 +3220,7 @@ bys swv idhh: egen dnc013 = sum(depChild_013)
 bys swv idhh: egen dnc1418 = sum(depChild_1418)
 drop depChild_013 depChild_1418
 
-gen moecd_eq = . //Modified OECD equivalence scale
+gen moecd_eq = . // Modified OECD equivalence scale
 replace moecd_eq = 1.5 if dhhtp_c4 == 1
 replace moecd_eq = 0.3*dnc013 + 0.5*dnc1418 + 1.5 if dhhtp_c4 == 2
 replace moecd_eq = 1 if dhhtp_c4 == 3
@@ -3283,7 +3293,6 @@ lab val sedrsmpl sedrsmpl
 Generated from sedcsmpl and ded variables. Sample: Respondents who were in 
 initial education spell and left it. 
 */
-//fre ded
 gen scedsmpl = 0 
 replace scedsmpl = 1 if sedcsmpl == 1 & ded == 0 
 
@@ -3610,18 +3619,18 @@ count if obs_earnings_hourly == 0 & les_c3 == 1 & yplgrs_annual[_n+1] == 0 & ///
 	
 /*
 Missing wage observations:
-1- almost all due to being the last observation in individual's panel 
-2- missing activity information 
-3- missing adjacent observation 
+	1 - almost all due to being the last observation in individual's panel 
+	2 - missing activity information 
+	3 - missing adjacent observation 
 
 Zero wage observations
-4- next year is missing labour income information 
-5- next year reports zero labour income 
+	4 - next year is missing labour income information 
+	5 - next year reports zero labour income 
 
 How to address each case:
-- up-rate previously reported wages 
-- use last years earnings and this years hours
-- use next years wages 
+	- up-rate previously reported wages 
+	- use last years earnings and this years hours
+	- use next years wages 
 
 - use hot deck imputation
 
@@ -3708,112 +3717,169 @@ count if obs_earnings_hourly == 0 & les_c3 == 1		// 0
 	
 * Use hot deck imputation for the remaining missing observations among the 
 * working
+* Use hot deck imputation for the remaining missing observations among the 
+* working
+
+/*
+Hot-deck imputation of missing hourly wages for individuals classified as 
+working.
+
+The imputation is conducted in two stages.
+
+Stage 1:
+Individuals with missing hourly wages are matched to donor observations within
+strata defined by:
+    - survey wave
+    - 10-year age band
+    - gender
+    - region
+
+Individuals aged 70+ are grouped with the 60+ age category to increase the
+number of potential donors. The donor pool consists of working individuals with
+an observed hourly wage. Within each stratum, one donor observation is selected
+at random (with replacement), and the donor's hourly wage is assigned to the
+recipient.
+
+Stage 2:
+If any working individuals remain without an observed or imputed wage after the
+first stage, the matching criteria are relaxed by dropping region. The remaining
+observations are therefore matched within strata defined by:
+    - survey wave
+    - 10-year age band
+    - gender
+
+This broader donor pool reduces the likelihood that observations remain
+unmatched because no wage donor is available within their region.
+
+A fixed random-number seed is used to make the random donor selection
+reproducible. Observations are sorted before the first-stage random draw so that
+the assignment of random numbers is reproducible with respect to the ordering
+of the data.
+*/
 
 set seed 987
 
+* Identify recipients: working individuals with missing hourly wages
 gen flag_wage_hotdeck = (les_c3 == 1 & missing(obs_earnings_hourly))
 
 lab var flag_wage_hotdeck "FLAG: wage imputed using hotdeck imputation"
 
-* Strata
+* Define first-stage matching strata
 cap drop ageband 
 gen ageband = floor(dag/10)*10
+
+* Pool individuals aged 70+ with the 60+ to increase donor availability
 replace ageband = 60 if ageband == 70  
-	// group 70+ year olds with 60+ to ensure matches 
 
 cap drop stratum 
 egen stratum = group(ageband drgn1 dgn swv), label(stratum, replace)  
 
-* Define donor pool
+* Construct first-stage donor pool: working individuals with observed wages
 preserve
 
 	keep if les_c3 == 1 & obs_earnings_hourly != . 
 	keep obs_earnings_hourly stratum idperson swv 
 	
+	* Number donor observations within each stratum
 	bys stratum (idperson swv): gen draw = _n
+
+	* Record number of available donors within each stratum
 	bys stratum (idperson swv): gen n_donors  = _N
 	
-rename obs_earnings_hourly donor_wages
+	rename obs_earnings_hourly donor_wages
 	drop idperson swv
 	
 	save "$dir_data/temp_wages_donors", replace
 
+	* Create lookup containing number of available donors in each stratum
 	keep stratum n_donors
 	bys stratum: keep if _n == 1
+	
 	save "$dir_data/temp_donorsN", replace
 
 restore
 
-* Attached number of donors in each stratum
+* Attach number of available donors to each recipient's stratum
 merge m:1 stratum using "$dir_data/temp_donorsN", nogen
 
-* Assign random donor 
+* Randomly select one donor observation from the recipient's stratum
 gen draw = . 
 
 sort stratum idperson swv
 
 by stratum (idperson swv): replace draw = ceil(runiform()*n_donors[1]) if ///
-	flag_wage_hotdeck == 1 & n_donors > 0 
+	flag_wage_hotdeck == 1 & n_donors > 0  & !missing(n_donors)
 
-* Attach donor	
+* Attach hourly wage from selected donor
 merge m:1 stratum draw using "$dir_data/temp_wages_donors", ///
 	keepusing(donor_wages draw) 
 
 drop if _merge == 2 
 drop _merge
 	
+* Impute hourly wage using selected donor	
 replace obs_earnings_hourly = donor_wages if flag_wage_hotdeck == 1 
 
+* Clean up variables specific to first-stage matching
 drop donor_wages stratum draw n_donors
 
-count if obs_earnings_hourly == . & les_c3 == 1   // 7
+* Check for working individuals remaining without an hourly wage after Stage 1
+count if obs_earnings_hourly == . & les_c3 == 1   
 
 
-* Check for remaining issing observations among the working
-count if obs_earnings_hourly == . & les_c3 == 1
-
+* Stage 2: relax matching criteria by dropping region for unmatched recipients
 if r(N) > 0 {
-	
-    di "Handling `r(N)' orphans by dropping Region from criteria..."
-    
+	    
+	* Define broader strata using survey wave, age and gender only	
     cap drop stratum_v2
     egen stratum_v2 = group(swv ageband dgn), label(replace)
 
+	* Construct second-stage donor pool
     preserve
+	
         keep if les_c3 == 1 & obs_earnings_hourly != .
-        keep obs_earnings_hourly stratum_v2
-        bys stratum_v2: gen draw_v2 = _n
+		keep obs_earnings_hourly stratum_v2
+        
+		* Number donors and record donor-pool size within each broader stratum
+		bys stratum_v2: gen draw_v2 = _n
         bys stratum_v2: gen n_v2 = _N
-        tempfile donors2
+        
+		tempfile donors2
         save `donors2'
+		
     restore
 
-    * Merge the count of available donors in the broader pool
-    * We use a separate merge to avoid the "not unique" error
+     * Create lookup containing number of donors in each broader stratum
     preserve
-        use `donors2', clear
+       
+		use `donors2', clear
         bys stratum_v2: keep if _n == 1
         keep stratum_v2 n_v2
-        tempfile counts2
+        
+		tempfile counts2
         save `counts2'
-    restore
+    
+	restore
 
+	* Attach number of available second-stage donors
     merge m:1 stratum_v2 using `counts2', keep(1 3) nogen
     
-    * Randomly select which donor row to take
-    gen draw_v2 = ceil(runiform() * n_v2) if obs_earnings_hourly == . & les_c3 == 1
+    * Randomly select one donor from the broader stratum
+    gen draw_v2 = ceil(runiform() * n_v2) if obs_earnings_hourly == . & ///
+		les_c3 == 1
     
-    * Now merge the specific wage using BOTH stratum and the random draw number
-    * This combination IS unique, so r(459) won't trigger
+    * Attach hourly wage from selected second-stage donor
     merge m:1 stratum_v2 draw_v2 using `donors2', update replace keep(1 3) ///
-	nogen keepusing(obs_earnings_hourly)
+		nogen keepusing(obs_earnings_hourly)
 
 }
 
 * Clean up
 drop ageband stratum* n_v2 draw_v2
 
+* Final check: all working individuals should now have an hourly wage
 count if obs_earnings_hourly == . & les_c3 == 1   // 0
+
 
 * Lagged wage 
 xtset idperson swv 
@@ -3846,7 +3912,7 @@ various related variables:
 	lessp_c3	
 	lessp_c4
 	lesdf_c4 
-	dhhtp_c4
+	dhhtp_c8
 	lhw
 	obs_earnings_hourly	
 */
@@ -4265,6 +4331,7 @@ lab var yhhnb_asinh "Gross real monthly household non-benefit income, asinh"
 sum ypnbihs_dv ypnbihs_dv_sp yptciihs_dv yplgrs_dv ypncp ypnoab
 */ 
 
+
 /************************ LOG CAPTIAL INCOME **********************************/
 
 gen ln_ypncp = ln(sinh(ypncp))
@@ -4371,13 +4438,12 @@ tab dhh_owned year, col
 
 /**************************** DISABILITY BENEFIT ******************************/
 /* 
-In EU-SILC, the variables 
-- py130n: 	(disability benefits net), 
-- py130g: 	(disability benefits gross), 
-- py131g: 	(contributory and means-tested), 
-- py132g: 	(contributory and non means-tested), 
-- py133g: 	(non-contributory and means-tested), 
-- py134g: 	(non-contributory and non means-tested) 
+py130n: 	(disability benefits net), 
+py130g: 	(disability benefits gross), 
+py131g: 	(contributory and means-tested), 
+py132g: 	(contributory and non means-tested), 
+py133g: 	(non-contributory and means-tested), 
+py134g: 	(non-contributory and non means-tested) 
 
 All may contain information on disability benefits. 
 

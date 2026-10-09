@@ -1,7 +1,7 @@
 /*******************************************************************************
 * PROJECT:              SimPaths EU
-* DO-FILE NAME:         05_drop_hhold_an_slice_ES.do
-* DESCRIPTION:          Creates the initial population file for SimPaths.
+* DO-FILE NAME:         05_drop_hhold_an_slice.do
+* DESCRIPTION:          Creates the UID and initial population files
 * COUNTRY:              ES
 * DATA:                 EU-SILC panel dataset
 * AUTHORS:              Daria Popova, Ashley Burdett
@@ -43,13 +43,13 @@ use "$dir_data/${country}-SILC_pooled_all_obs_04.dta", clear
 /****************************** LIMIT SAMPLE **********************************/
 
 * If any person in the household has missing values, drop the whole household:
-drop if dropHH == 1 /*(102,582 observations deleted)*/
+drop if dropHH == 1 
 
 drop dropObs dropHH 
 	
 * Drop if hh weight = 0:
 count if dwt == 0 
-drop if dwt == 0 // 752 obs
+drop if dwt == 0 
 
 * Final check for same sex households
 assert ssscp != 1 
@@ -91,12 +91,12 @@ cap drop duplicate
 duplicates tag swv idperson , generate(duplicate)
 assert duplicate == 0 
 
+
 sort idperson swv 
 
 //cf _all using "$dir_data/${country}_pooled_ipop_pre.dta"
 
 save "$dir_data/${country}_pooled_ipop_pre.dta", replace 
-// panel dataset with missing values removed
 
 
 /*************************** GENERATE FREQUENCY WEIGHTS ***********************/
@@ -123,7 +123,6 @@ replace ${country}_pop = 48873996 if stm == 2024
 sort stm idperson
 
 cap drop surv_pop
-//bys stm: gen surv_pop = _N //gen survey hhs population for each calendar year 
 bys stm: egen surv_pop = total(dwt_adjusted)
 bys stm: sum surv_pop
 
@@ -131,6 +130,8 @@ cap drop multiplier
 gen multiplier = ${country}_pop / surv_pop 
 
 cap gen dwtfq = round(dwt * multiplier)  
+	// rounding causes some slight difference across runs
+	
 //cap drop dwt_sampling
 //rename dwt dwt_sampling
 replace dwt = dwtfq 
@@ -138,7 +139,9 @@ bys stm: sum dwt*
 
 * Check the populations sum correctly, allowing for rounding error
 preserve 
+
 	collapse (sum) dwt, by(stm)
+
 restore
 
 sort idperson swv 
@@ -146,10 +149,10 @@ sort idperson swv
 //cf _all using "$dir_data/${country}_pooled_ipop.dta"
 
 save "$dir_data/${country}_pooled_ipop.dta", replace  
-// our unique data set :)
+// This is the complete UID, ready to use to estimate the SimPaths processes :) 
 
 
-/*************** SLICE UP DATA INTO CROSS SECTIONS AND RENAME *****************/
+/******** SLICE UP DATA INTO CROSS SECTIONS FOR INITIAL POP AND RENAME ********/
 forvalues yy = $first_sim_year/$last_sim_year {
 	
 	* Load pooled data with missing values removed  
@@ -347,12 +350,12 @@ cap log close
 
 #delimit ;
 local files_to_drop 
-	//was_wealthdata.dta
+	${country}_pooled_ipop_pre.dta
 	;
 #delimit cr // cr stands for carriage return
-/*
+
 foreach file of local files_to_drop { 
 	erase "$dir_data/`file'"
 }
-*/
+
 

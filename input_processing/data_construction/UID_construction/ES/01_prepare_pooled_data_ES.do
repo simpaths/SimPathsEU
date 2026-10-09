@@ -83,7 +83,7 @@ save "$dir_data/${country}-SILC_pooled_all_obs_01.dta", replace
 
 
 /****************** LOAD AND MERGE PERSONAL DATA (P-FILE) *********************/ 
-* i.e. people aged 16 and above ****/
+* i.e. people aged 16 and above
 use "$dir_eusilc/20 L-2024/MasterP", clear
 keep if country == "$country"
 drop *_f *_i
@@ -134,16 +134,18 @@ drop _merge
 drop db050 //db050 -- Primary strata (Only CH)
 sort year uhid upid
 
+* Label vars 
+lab var db010 "year"
+lab var db020 "country"
+lab var db040 "region"
+lab var db090 "household cross-sectional weight"
+
 
 /*********************************** SAVE *************************************/
 save "$dir_data/${country}-SILC_pooled_all_obs_01.dta", replace
 
 	
 /***************************** CLEAN UP AND EXIT ******************************/
-lab var db010 "year"
-lab var db020 "country"
-lab var db040 "region"
-lab var db090 "household cross-sectional weight"
 
 display "Compiled EU-SILC panel for ${country}!"
 

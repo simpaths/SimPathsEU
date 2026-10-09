@@ -113,9 +113,10 @@ replace ssscp = 0 if idpartner == -9
 
 
 * Establish Adult/Child status
-* Adult is defined as 18+ and not in a partnership and doesn't have their own 
-* kids 
 /*
+Individuals below the age of responsibility are classified as children unless
+they are in a partnership or have their own dependent children
+
 Use flag here to capture the individuals < 18 who are in a partnership.
 */
 gen child = dag < ${age_becomes_responsible} & flag_young_partnership == 0 ///
@@ -163,23 +164,27 @@ Valid   12020348901  |          1       5.26       5.26       5.26
         420233614501 |          1       5.26       5.26     100.00
         Total        |         19     100.00     100.00           
 ------------------------------------------------------------------
-
 */
 
 /*
-This is due to errors in their idhh — these kids have a different idhh from
-their mother/father. Automated fix: look up the parent's idhh by idmother /
-idfather and assign it to the child. Children with no parent in the sample
-fall through as true leftovers and are handled in the orphan section below.
+Assign orphans to adults in the household who are most likely to be their
+parent based on age. Assume a target age difference of twenty years.
+
+Note: Could add an additional condition imposing a minimum age at which the
+theoretical birth could have taken place, to avoid assigning an orphan to
+someone who would have been implausibly young at the time of birth.
 */
 
+* Automated update 
 * Save lookup: swv + idperson → idhh  (error is on the child's side only)
 preserve
 
 	keep swv idperson idhh
+
 	duplicates drop swv idperson, force
 	rename idperson lookup_id
 	rename idhh idhh_parent
+	
 	save "$dir_data/hh_lookup.dta", replace
 
 restore
@@ -220,6 +225,7 @@ fre idhh if child == 1 & num_adults == 0
 Leftovers: 3 children < 18 in adult-less hholds with no parent in the sample.
 These are handled in the orphan assignment section below.
 */
+
 drop needs_hh_fix
 
 
@@ -233,7 +239,7 @@ format idbupartner %19.0g
 ** Populate benefit units 
 * Assign first couples 
 /*
-Logic of code here is to populate all in the hh and remove if not not in the 
+Logic of code here is to populate all in the hh and remove if not in the 
 same benefit unit. 
 */ 
 order swv idhh idbenefitunit idbupartner idperson idpartner idmother ///
@@ -261,7 +267,7 @@ replace idbupartner = . if (adult == 1 & idperson != idbenefitunit & ///
 
 replace idbenefitunit = . if (adult == 1 & idperson != idbenefitunit & ///
 	idpartner != idbenefitunit) 
-	//remove bu id or other adults in hh who are not head or partner 
+	//remove bu id for other adults in hh who are not head or partner 
 
 * Children
 replace idbupartner = . if (child == 1 & idfather != idbenefitunit & ///
@@ -277,7 +283,7 @@ replace idbenefitunit = . if (child == 1 & idfather != idbenefitunit & ///
 //count if idhh == idhh[_n-1] & partnered == 0 & partner[_n-1] == 1 & ///
 //	idbenefitunit[_n-1] == . 
 
-* Assign single adults iving with parents to their own ben unit 
+* Assign single adults living with parents to their own ben unit 
 /* 
 Their children are assigned to them later.
 */	
@@ -296,7 +302,7 @@ forvalues i = 1/3 {
 		/* 
 		Sort so those without a partner go before those with and partnered
 		individual who have been assigned a ben unit come before those who 
-		haven't. Have children adn sinlge adults before the partnered so that 
+		haven't. Have children and sinlge adults before the partnered so that 
 		they are not impacted by the fill down. 
 		*/
 			
@@ -378,7 +384,7 @@ gsort swv idhh -partnered idbenefitunit -dag idperson
 count if child == 1 & idbenefitunit == . // 2,437 children not assigned
 
 cap gen orphan = (idfather < 0 & idmother < 0 & child == 1)
-fre orphan if idbenefitunit == . // 2,437
+fre orphan if idbenefitunit == . // 2,437 obs 
 /*
 => all remaining are orphans i.e. don't have any information in the dataset 
 about the mother or the father. 
@@ -403,18 +409,17 @@ Valid   0     |     594261      98.64      98.64      98.64
         5     |         20       0.00       0.00     100.00
         Total |     602427     100.00     100.00           
 -----------------------------------------------------------
-
 */
 order swv idhh idperson idpartner idfather idmother dag dgn adult orphan ///
 	n_orphan 
 
 /*
-Assign orphans to adults in hh according that are most likely to be the parent 
-by age. Assume an age difference of twenty years. 
+Assign orphans to adults in hh that are most likely to be the parent by age. 
+Assume an age difference of twenty years. 
 
 Note: Could add an additional condition imposing a min age at which the 
-theoretical birth is allowed to have taken place to to avoid theretical births 
-happening too young. May have some cases in which the orphn is assigned to 
+theoretical birth is allowed to have taken place to to avoid thoeretical births 
+happening too young. May have some cases in which the orphan is assigned to 
 someone in their late teens/early twenties instead of their parents. 
 */	
 	
@@ -548,7 +553,6 @@ replace idfather = -9 if idfather == .
 replace idmother = -9 if idmother == . 
 
 
-
 ** Run checks 
 * Any remaining orphans?
 count if idbenefitunit == . // 8 obs
@@ -566,13 +570,12 @@ drop if orphan == 1 & idbenefitunit == .
 
 /* Alternatively could make the eldest an adult? */
 /*
-* Recode the first child in be nunit as adult
+* Recode the first child in ben unit as adult
 bys swv idhh: replace child = 0 if child == 1 & idperson == idperson[1] & ///
 	orphan == 1 & num_adults == 0  
 bys swv idhh: replace adult = 1 if idperson == idperson[1] & orphan == 1 & ///
 	num_adults == 0 
 */
-
 
 * Check if everyone is assigned to ben units 
 count if idbenefitunit == .  // 0 obs unassigned
@@ -591,28 +594,30 @@ replace idbupartner = -9 if idbupartner == .
 assert idbupartner != idbenefitunit
 
 
-/************ IDENTITFY REMAINING NON-STANDARD BENEFIT UNITS ******************/
-/*
-Remaining to benefit units necessary to make consistent with simluation 
-	assumptions: 
+/************ IDENTIFY REMAINING NON-STANDARD BENEFIT UNITS *******************/
 
-Can only leave the parental home at 18. Therefore )nly adults (18+) can be head 
-of a benefit unit: 
-	- Remains some children without idenitifed parents. 
-		=> Remove from sample 
-	- Currently teenage mothers who live with their parents are in the sample 
-		and head of their own benefit unit. 
-		=> Assign the young child to the 
-		grandparents effectively making the mother and child siblings. 
-		
-Only adults can form partnerships
-	- There are some partnerships that involve individuals <18.
-		=> Convert the underage teenager into an 18 yo. 
-		
-Partnerships require two indiviudals 
-	- There are some non-reciprocated partnerships. 
-		=> Remove the ben unit of the individuals that say their in an 
-		unrecognized partnership. 
+/*
+Identify and correct remaining benefit units that are inconsistent with 
+simulation assumptions.
+
+Individuals can only leave the parental home from age 18. Therefore, only 
+adults (18+) can head a benefit unit:
+    - Children without identified parents are flagged for removal.
+    - Teenage parents living with their parents cannot head their own benefit 
+      unit. The teenage parent and their child are reassigned to the 
+      grandparents' benefit unit, with the grandparents assigned as the 
+      child's parents for simulation purposes.
+
+Partnerships require two adults:
+    - Individuals who report being partnered but are the only adult in their 
+      benefit unit are recoded as single, and the associated partnership 
+      variables are updated accordingly.
+    - Remaining benefit units containing an underage partnership that is 
+      inconsistent with the benefit-unit structure are flagged for removal.
+
+The resulting benefit-unit structure is therefore consistent with the 
+simulation assumptions regarding age of leaving the parental home, benefit-unit 
+responsibility and partnership formation.
 */
 
 * Check for benefit units with multiple adults of same sex
@@ -635,14 +640,14 @@ duplicates report swv idperson // no cases
 sort swv idbenefitunit idperson 
 
 
-* Idenitfy benefit units to drop due to benefit unit inconsistencies
+* Identify benefit units to drop due to benefit unit inconsistencies
 cap gen dropObs = . 
 
 
-* Child (<18) living without a parents 
+* Child (<18) living without parents 
 /*
-Age < that can leave the parental home (18) and do not have an adult in the 
-benefit unit 
+Children below the age at which they can leave the parental home (18) who do
+not have an identified parent
 	==> Drop orphans from sample 
 	
 NOTE: Removes underage partners if they don't live with parents 	
@@ -663,11 +668,11 @@ drop orphan_check
 
 * Teenage parent (<18) living with parents 
 /* 
-If a teenage parent and live with parents.
+If a teenage parent lives with their parents.
 	==> Assign the new child to their grandparents (idmother & idfather) thus 
 	treat the teenage parent and their child as siblings in the code. 
 	
-NOTE: Drops partner if they live with the family. Vary rare, tyically if 
+NOTE: Drops partner if they live with the family. Very rare, tyically if 
 partnership between two children.
 */     
 gen childhead = (idperson == idbenefitunit & ///
@@ -684,7 +689,7 @@ lab var flag_child_parent "FLAG: Child parent"
 
 bys swv idbenefitunit: egen childhead_bu = max(childhead) 
 
-* Drop partner of child parent living in parental household if they are also a 
+* Drop partner of child parent living in parental household if they are also 
 * underage 
 drop if childhead_bu == 1 & childhead == 0 & dag > 12
 replace idpartner = -9 if childhead == 1 
@@ -755,7 +760,7 @@ drop x childhead childhead_bu childhead_hh idchildhead idnewmum idnewdad idnewbu
  
 * Reports being partnered but one adult in ben unit
 /*
-Descrepancy about whether in a partnership or not, one partner doesn't report. 
+Discrepancy about whether in a partnership or not, one partner doesn't report. 
 	==> Make the partner reporting the relationship single to preserve 
 	benefit unit structures
 	
@@ -773,7 +778,7 @@ fre partner1_bu // 578 obs
 gen flag_1partner = (partner1_bu)
 
 lab var flag_1partner ///
-	"FLAG: Number of benefit unit obervations adjusted to single because individual reports being in a partnership but partner does not recognise"
+	"FLAG: Number of benefit unit observations adjusted to single because individual reports being in a partnership but partner does not recognise"
 
 * Update partnership related variables
 xtset idperson swv 
@@ -834,7 +839,7 @@ drop partner1 partner1_bu
 This is because in file 02 forced individuals with underage partners to be 
 single. 	
  => Drop all benefit units in which there is a partnership that involves an 
-under age individual and they don't have a kid whilst living with parents. 
+underage individual and they don't have a kid whilst living with parents. 
 */
 gen part1adult = (num_adult == 2 & dcpst == 2 & adult == 1) 
 	
@@ -875,11 +880,10 @@ drop part1adult part1adult_bu
 
 
 /**************************** UPDATE VARIABLES ********************************/
-
 /*
 24/09/2026: Agreed to update number of children variable to align with SimPaths 
-imputation so counts the number of children in the benefit unit, rather than 
-using the the parent ID variables.  
+imputation so that it counts the number of children in the benefit unit, rather 
+than using the parent ID variables.  
 */
 
 /*
@@ -1129,12 +1133,11 @@ sort idperson swv
 
 * Identify benefit units to drop due to missing values 
 /*
-Variables that are maintians in the UID. 
+Variables that are maintained in the UID. 
 Exclude:
 	- transition variables: dcpen dcpex der sedex
-	- age summies: sprfm, sedeg
+	- age summaries: sprfm, sedeg
 	- lhw and obs_earnings_hourly aligned with les_c3
-	- liwwh many missing so remove condition 
 	- dcpagdf covered by age variables and -9 is meaningful 
 	- not used in model: dehm_c4, dehf_c4, ypnoab
 	- ynbcpdf_dv covered by missing income 
@@ -1345,7 +1348,7 @@ putexcel A79 = matrix(names) B79 = matrix(freq) C79 = matrix(percent)
 putexcel D79 = ("Adults")
 
 
-* Individuals that report a partnership that is not recognized 
+* Adults in a partnership with someone below the age of responsibility
 tab flag_adult_child_rel if dag >= ${age_becomes_responsible}, matcell(freq) ///
 	matrow(names)
 
@@ -1367,7 +1370,7 @@ scalar total = r(N)
 matrix percent = (freq/total)*100
 
 putexcel set "$dir_work/flag_descriptives", sheet("${country}") modify
-putexcel A84 = ("Number of dropped observatioons (dropped at hh level)")
+putexcel A84 = ("Number of dropped observations (dropped at hh level)")
 putexcel A85 = matrix(names) B85 = matrix(freq) C85 = matrix(percent) 
 putexcel D85 = ("All")
 

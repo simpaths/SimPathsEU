@@ -35,7 +35,7 @@
 *******************************************************************************/
 
 cap log close 
-og using "$dir_log/06_reweight_and_slice.log", replace
+log using "$dir_log/06_reweight_and_slice.log", replace
 
 * Load data 
 use "$dir_data/${country}-SILC_pooled_all_obs_03.dta", clear
@@ -52,7 +52,7 @@ sort stm idhh
 * Define a dummy variable classifying households as complete or not
 cap gen complete_hh = (dropHH != 1)
 
-* 1.2. Define independent variables for probit
+* Define independent variables for probit
 sum dgn dag drgn1
 cap gen drop_indicator = .
 replace drop_indicator = 1 if dgn < 0 | dag < 0 | drgn1 < 0
@@ -126,7 +126,7 @@ sample, so drop the rest
 keep if complete_hh == 1 // (10,435 observations deleted)
 
 
-*2. Multiply ind weights by the inverse of the predicted prob of inclusion
+* Multiply ind weights by the inverse of the predicted prob of inclusion
 gen dwt_adjusted = dwt*inv_pr_comphh
 
 replace dwt_adjusted = dwt if missing(dwt_adjusted) 
@@ -166,10 +166,11 @@ merge m:1 stm idhh using "$dir_data/temp_adjusted_dwt.dta", ///
 
 keep if _merge == 1 | _merge == 3
 
-gen dwt_sampling = dwt //keep original weights before any adjustment 
+* Keep original weights before any adjustment 
+gen dwt_sampling = dwt 
 
+* Keep weights adjusted for probability of being complete hhs 
 replace dwt = dwt_adjusted if (!missing(dwt_adjusted)) 
-	//keep weights adjusted for probability of being complete hhs 
 
 	drop _merge
 
@@ -192,6 +193,7 @@ foreach vv of varlist dwt drgn1 dhhtp_c4 ydses_c5 dnc02 dnc {
 	bys stm idbenefitunit /*(`vv')*/: replace `vv' = `vv'[1] if (`vv'!=`vv'[1])
 
 }
+
 
 /******************************* SAVE AND SLICE *******************************/
 sort idperson swv 
