@@ -4,7 +4,6 @@
 * DESCRIPTION:         	Sets out the assumptions and conditions imposed in the 
 * 						creation of the unique dataset and the if conditions 
 * 						imposed when estimating the processes for SimPaths.  
-********************************************************************************
 * COUNTRY:              ES
 * AUTHORS: 				Ashley Burdett
 * LAST UPDATE:          April 2026 AB
