@@ -1,0 +1,19 @@
+# Dynare writes these into the working directory unconditionally.
++Macromodel_*/
+Macromodel_*/
+*.log
+*.asv
+*.mat
+params_*_estimated.txt
+
+# Run artefacts. data/ and country_params/ are tracked; these are not.
+output/
+logs/
+figures/
+
+# Stata working frames and logs; the two HICP caches are the only .dta tracked.
+stata/*.dta
+!stata/HICP.dta
+!stata/hicp_q_sa.dta
+stata/*.dtas
+stata/*.log
