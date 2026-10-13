@@ -1,0 +1,30 @@
+Data vintage for Poland
+=========================================
+generated_by     make_datasets.do
+generated_at     13 Oct 2026 14:19:29
+stata_version    19
+country          Poland
+sample_requested 2005q1 to 2025q1
+observed_span    2005q1 to 2025q1
+observations     81
+covid_censored   2020q1-2021q2 (y c inv pi w n u_rate L h)
+hicp_seasonal    reused existing hicp_q_sa.dta
+series_fetched   yes (dbnomics)
+script_checksum  4014600139 (length 54959)
+git_head         ref: refs/heads/JW/dev/macro-model
+
+Files written by this run
+-----------------------------------------
+  macromodel/data/data_for_dynare_levels_Poland.csv  Ramsey calibration input
+  macromodel/data/data_for_dynare_hp_Poland.csv      HP benchmark only
+  data_Poland.dta                                    Stata working frame
+  data_for_dynare_Poland.dta                         Stata frame WITH HP cycles
+
+NAMING TRAP: data_for_dynare_Poland.dta is NOT the Stata form of
+macromodel/data/data_for_dynare_Poland.csv. The CSV is RAMSEY-detrended
+and written by ramsey_trend.m; the .dta is this script's HP frame. Same stem,
+different producer, different content -- a leftover from when Stata owned that
+filename (integration contract #12).
+
+Series definitions: see the mata series_codes_* blocks in make_datasets.do
+at the checksum above.
