@@ -435,6 +435,34 @@ class MacroModelManagerTest {
         assertDoesNotThrow(() -> manager.initializeRamseyTrend(macroDir.toString()));
     }
 
+    /**
+     * Contract #36: a bundle the MATLAB exporter refused carries BUNDLE_NOT_VERIFIED.txt and
+     * sits in the folder SimPaths reads. Every other file in it may look valid, so the marker
+     * is the only signal, and the loader must stop on it.
+     */
+    @Test
+    void testBundleWithNotVerifiedMarkerIsRefused(@TempDir Path tempDir) throws Exception {
+        Path macroDir = tempDir.resolve("MacroModel");
+        Files.createDirectories(macroDir);
+        Files.writeString(macroDir.resolve("policy_A.csv"), "x\n");
+        Files.writeString(macroDir.resolve("BUNDLE_NOT_VERIFIED.txt"),
+                "THIS BUNDLE IS NOT VERIFIED - DO NOT COMMIT IT, SimPaths MUST NOT RUN ON IT\n");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> MacroModelManager.requireVerifiedBundle(macroDir),
+                "A bundle carrying the exporter's refusal marker must not load");
+        assertTrue(ex.getMessage().contains("BUNDLE_NOT_VERIFIED.txt"),
+                "Error should name the marker file, got: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains(macroDir.toString()),
+                "Error should name the bundle folder, got: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("regenerated"),
+                "Error should say the bundle must be regenerated, got: " + ex.getMessage());
+
+        Files.delete(macroDir.resolve("BUNDLE_NOT_VERIFIED.txt"));
+        assertDoesNotThrow(() -> MacroModelManager.requireVerifiedBundle(macroDir),
+                "Without the marker the same folder must pass the check");
+    }
+
     @Test
     void testSmoothTerminalDemographicClosureTapersGrowthToZero() throws Exception {
         double[] path = new double[12];
@@ -478,7 +506,7 @@ class MacroModelManagerTest {
 
     /**
      * Tripwire for the cross-repository conventions that no artefact carries. The upstream
-     * MATLAB {@code macromodel/ramsey_trend.m} extends the demographic path with window 20 and
+     * MATLAB {@code input_processing/macromodel/ramsey_trend.m} extends the demographic path with window 20 and
      * the hours path with window 1; Java must match, or the two sides build different paths
      * from the same bundle. Java used 20 for hours until 2026-08-18, which was invisible only
      * because the exported {@code h} column is a pure exponential under

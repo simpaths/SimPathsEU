@@ -660,7 +660,8 @@ public class MacroModelManager {
             }
             throw new RuntimeException(msg);
         }
-        
+        requireVerifiedBundle(macroDir.toPath());
+
         try {
             // Create shared labor supply aggregator
             laborSupplyAggregator = new LaborSupplyAggregator();
@@ -777,8 +778,29 @@ public class MacroModelManager {
         }
     }
     
+    /** Written into the bundle by the MATLAB exporter (input_processing/macromodel/internal/mark_bundle_unverified.m). */
+    static final String BUNDLE_NOT_VERIFIED_MARKER = "BUNDLE_NOT_VERIFIED.txt";
+
+    /**
+     * Refuse a bundle the MATLAB side marked as unverified (contract #36). The exporters
+     * write the marker before their first file and remove it only when
+     * {@code verify_export_bundle} passes, and the calibration steps write it when they
+     * rewrite the bundle's growth-params JSON, so its presence means the folder is
+     * incomplete or mixes vintages even though every file in it looks valid.
+     */
+    static void requireVerifiedBundle(Path bundleDir) {
+        Path marker = bundleDir.resolve(BUNDLE_NOT_VERIFIED_MARKER);
+        if (Files.exists(marker)) {
+            throw new IllegalStateException(String.format(
+                    "%s found in %s: the macro bundle was refused by the MATLAB exporter (or a "
+                    + "calibration step changed it after the last export) and must be regenerated "
+                    + "from input_processing/macromodel/ before SimPaths can run on it. The marker file lists the reason.",
+                    BUNDLE_NOT_VERIFIED_MARKER, bundleDir));
+        }
+    }
+
     // ========== Capital Deepening / Ramsey Trend ==========
-    
+
     /**
      * Initialize the Ramsey growth model for forward trend projection.
      * 

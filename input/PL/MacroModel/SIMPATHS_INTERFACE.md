@@ -1,6 +1,6 @@
 # DSGE Policy Function Export for SimPaths
 
-**Generated:** 19-Aug-2026 10:41:33
+**Generated:** 14-Oct-2026 12:57:03
 **Model:** Macromodel_Poland_frozen
 
 ## 1. State-Space Representation
@@ -112,14 +112,14 @@ by convention and a downstream tripwire test.
 
 | Index | Shock | Description | ρ | σ |
 |-------|-------|-------------|---|---|
-| 0 | `eps_a` | technology | 0.950 | 1.0558 |
-| 1 | `eps_r` | monetary policy | 0.800 | 0.7606 |
-| 2 | `eps_d` | demand/preference | 0.800 | 0.4210 |
-| 3 | `eps_p` | price-setting / cost-push | 0.000 | 2.4040 |
-| 4 | `eps_L` | labor force (from microsim) | 0.000 | 0.7535 |
+| 0 | `eps_a` | technology | 0.950 | 1.0536 |
+| 1 | `eps_r` | monetary policy | 0.800 | 0.7505 |
+| 2 | `eps_d` | demand/preference | 0.800 | 0.4391 |
+| 3 | `eps_p` | price-setting / cost-push | 0.000 | 2.4068 |
+| 4 | `eps_L` | labor force (from microsim) | 0.000 | 0.7495 |
 | 5 | `eps_sep` | separation | 0.800 | 0.1000 |
 | 6 | `eps_h` | hours worked (from microsim) | 0.000 | 0.3574 |
-| 7 | `eps_inv` | investment-specific | 0.850 | 3.4598 |
+| 7 | `eps_inv` | investment-specific | 0.850 | 3.4871 |
 
 ## 4. Java Implementation
 
