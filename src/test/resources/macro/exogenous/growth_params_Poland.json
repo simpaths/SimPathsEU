@@ -45,12 +45,12 @@
     "x_comment": "NBP (National Bank of Poland) inflation target is 2.5% (+/- 1pp). Differs from ECB 2% target used for Germany."
   },
   "labor_trends": {
-    "nawru_source": "AMECO",
+    "nawru_source": "PLACEHOLDER: HP trend (lambda=160000) of the in-sample ILO unemployment rate, written by calibrate_growth_model.m. Intended source: AMECO.",
     "nawru_file": "nawru_poland.csv",
-    "demographic_L_source": "Eurostat population projections + GUS labor force participation",
+    "demographic_L_source": "Up to the SimPaths handoff quarter: HP trend (lambda=160000) of the labour force, written by calibrate_growth_model.m. After it: growth path of SimPaths align_popProjections.xlsx (ages 15-64), written by build_population_projection.m.",
     "demographic_L_file": "demographic_L_poland.csv",
     "hours_trend_method": "log_linear",
-    "x_comment": "NAWRU from AMECO (or OECD). L_demo from Eurostat/GUS. Hours: log-linear trend fitted to observed."
+    "x_comment": "nawru_file is read for diagnostics only. The rows of demographic_L_file beyond the estimation sample override the default N extrapolation in ramsey_trend.m. Hours: log-linear trend fitted to observed."
   },
   "solver": {
     "method": "stacked_newton_lbj",
