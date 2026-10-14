@@ -24,6 +24,7 @@ SimPathsEU/
 │   └── <CC>/InitialPopulations/{,training/}
 │   └── <CC>/EUROMODoutput/{,training/}
 ├── input_processing/      # Stata do-files that prepare regression estimates and inputs
+│   └── macromodel/        # MATLAB/Dynare macro model (Ramsey trend + DSGE cycle) and its Stata data stage; see input_processing/macromodel/README.md
 ├── config/                # YAML configs (default.yml, alignment_*.yml, test_*.yml)
 ├── scripts/               # Bash wrappers for batch multi-run scenarios
 ├── validation/            # Stata validation against EU-SILC / EUROMOD targets
