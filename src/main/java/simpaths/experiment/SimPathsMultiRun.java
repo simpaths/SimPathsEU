@@ -8,6 +8,9 @@ import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Level;
 import org.apache.commons.cli.*;
 import org.yaml.snakeyaml.Yaml;
+import simpaths.model.enums.ConfigEnumValue;
+import simpaths.model.enums.MacroLogLevel;
+import simpaths.model.enums.MacroModelMode;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -28,6 +31,8 @@ import org.apache.log4j.FileAppender;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PatternLayout;
 import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import microsim.data.ExperimentManager;
 
 
@@ -65,6 +70,7 @@ public class SimPathsMultiRun extends MultiRun {
 	private static Country country;
 	private static double interestRateInnov = 0.0;
 	private static double disposableIncomeFromLabourInnov = 0.0;
+	private static boolean outputToFile = false;
 	private Long counter = 0L;
 	public static Logger log = Logger.getLogger(SimPathsMultiRun.class);
 
@@ -127,12 +133,19 @@ public class SimPathsMultiRun extends MultiRun {
         DatabaseUtils.databaseInputUrl = Experiment.inputFolder + File.separator + "input";
 
 		if (flagDatabaseSetup) {
-
+			// Define country string before database setup
+			Parameters.defineCountryString(country);
 			Parameters.databaseSetup(country, executeWithGui, startYear);
 		} else {
 			// standard simulation
 
 			log.info("Starting run with seed = " + randomSeed);
+
+			// Set up file logging early (before engine.setup) so logs directory is created
+			// in the same timestamped folder that will be used for CSV output
+			if (outputToFile) {
+				setupFileLogging(randomSeed);
+			}
 
 			SimulationEngine engine = SimulationEngine.getInstance();
 
@@ -212,6 +225,17 @@ public class SimPathsMultiRun extends MultiRun {
 		trainingOption.setArgName("true/false");
 		options.addOption(trainingOption);
 
+		// Macro module options
+		Option macroOption = new Option("macro", "macroModel", true,
+				"Macro layers to run: " + ConfigEnumValue.valueList(MacroModelMode.class));
+		macroOption.setArgName(ConfigEnumValue.valueList(MacroModelMode.class));
+		options.addOption(macroOption);
+
+		Option macroLogOption = new Option("macroLog", "macroLogging", true,
+				"Macro logging verbosity: " + ConfigEnumValue.valueList(MacroLogLevel.class));
+		macroLogOption.setArgName(ConfigEnumValue.valueList(MacroLogLevel.class));
+		options.addOption(macroLogOption);
+
 		Option helpOption = new Option("h", "help", false, "Print this help message");
 		options.addOption(helpOption);
 
@@ -259,27 +283,23 @@ public class SimPathsMultiRun extends MultiRun {
 			if (cmd.hasOption("p")) {
 				popSize = Integer.parseInt(cmd.getOptionValue("p"));
 			}
-			if (cmd.hasOption("f")) {
-				try {
-					File logDir = new File("output/logs");
-					if (!logDir.exists()) {
-						logDir.mkdirs();
-					}
-					// Writing console outputs to `run_[seed].txt
-					System.setOut(new PrintStream(new BufferedOutputStream(new FileOutputStream(logDir.getPath() + "/run_" + randomSeed + ".txt")), true));
 
-					// Writing logs to `run_[seed].log`
-					FileAppender appender = new FileAppender();
-					appender.setName("Run logging");
-					appender.setFile(logDir.getPath() + "/run_" + randomSeed + ".log");
-					appender.setAppend(false);
-					appender.setLayout(new PatternLayout("%d{yyyy MMM dd HH:mm:ss} - %m%n"));
-					appender.activateOptions();
-					Logger.getRootLogger().setLevel(Level.DEBUG);
-					Logger.getRootLogger().addAppender(appender);
-				} catch (FileNotFoundException e) {
-					throw new RuntimeException(e);
+			// Parse macro module options and add to modelArgs
+			if (cmd.hasOption("macro")) {
+				if (modelArgs == null) {
+					modelArgs = new java.util.HashMap<>();
 				}
+				modelArgs.put("mm_macroModel", MacroModelMode.fromConfigValue(cmd.getOptionValue("macro")));
+			}
+			if (cmd.hasOption("macroLog")) {
+				if (modelArgs == null) {
+					modelArgs = new java.util.HashMap<>();
+				}
+				modelArgs.put("mm_macroLogging", MacroLogLevel.fromConfigValue(cmd.getOptionValue("macroLog")));
+			}
+
+			if (cmd.hasOption("f")) {
+				outputToFile = true;
 			}
 		} catch (ParseException e) {
 			System.err.println("Error parsing command line arguments: " + e.getMessage());
@@ -440,6 +460,14 @@ public class SimPathsMultiRun extends MultiRun {
 		}
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static Object parseConfigEnum(Class<?> targetType, Object value) {
+		Class rawType = targetType;
+		Enum[] constants = (Enum[]) targetType.getEnumConstants();
+		Enum disabled = constants.length > 0 ? constants[0] : null;
+		return ConfigEnumValue.parse(rawType, value, disabled, targetType.getSimpleName());
+	}
+
 	private static Object convertToType(Object value, Class<?> targetType) {
 		// Convert the YAML value to the target type
 		if (int.class.equals(targetType)) {
@@ -454,6 +482,10 @@ public class SimPathsMultiRun extends MultiRun {
 			return ((Number) value).doubleValue();
 		} else if (Double.class.equals(targetType)) {
 			return Double.parseDouble(value.toString());
+		} else if (targetType.isEnum()) {
+			// SnakeYAML resolves YAML 1.1 booleans first, so an unquoted `off` arrives here as
+			// Boolean.FALSE rather than "off"; ConfigEnumValue maps it to the disabled constant.
+			return parseConfigEnum(targetType, value);
 		} else {
 			// If it's none of the known types, return the value as is
 			return value;
@@ -486,6 +518,55 @@ public class SimPathsMultiRun extends MultiRun {
 		model.setRandomSeedIfFixed(randomSeed);
 		model.setInterestRateInnov(interestRateInnov);
 		model.setDisposableIncomeFromLabourInnov(disposableIncomeFromLabourInnov);
+	}
+
+	/**
+	 * Set up file logging to a timestamped output folder.
+	 * Creates a 'logs' subdirectory containing run_[seed].txt and run_[seed].log.
+	 * 
+	 * Also sets Experiment.testOutputFolder so that the database and CSV outputs
+	 * use the same folder, avoiding multiple timestamped folders.
+	 * 
+	 * @param seed The random seed (used for folder naming and log file names)
+	 */
+	private static void setupFileLogging(Long seed) {
+		try {
+			// Generate timestamped folder path (same format as Experiment.initialiseOutputFolder())
+			// Include run label suffix to match Experiment run-folder naming
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+			String timestamp = sdf.format(new Date());
+			String runLabel = buildRunLabel(seed, 0L);
+			// Use "./" prefix for H2 database compatibility (requires explicit relative or absolute path)
+			String outputFolder = "." + File.separator + "output" + File.separator + timestamp + "_" + runLabel;
+			
+			// Set the shared output folder for all JAS-mine components (database, CSV, etc.)
+			// This prevents multiple timestamped folders from being created
+			Experiment.testOutputFolder = outputFolder;
+			
+			File logDir = new File(outputFolder + File.separator + "logs");
+			if (!logDir.exists()) {
+				logDir.mkdirs();
+			}
+			
+			// Writing console outputs to run_[seed].txt
+			System.setOut(new PrintStream(new BufferedOutputStream(
+				new FileOutputStream(logDir.getPath() + File.separator + "run_" + seed + ".txt")), true));
+			
+			// Writing logs to run_[seed].log
+			FileAppender appender = new FileAppender();
+			appender.setName("Run logging " + seed);  // Unique name per run
+			appender.setFile(logDir.getPath() + File.separator + "run_" + seed + ".log");
+			appender.setAppend(false);
+			appender.setLayout(new PatternLayout("%d{yyyy MMM dd HH:mm:ss} - %m%n"));
+			appender.activateOptions();
+			Logger.getRootLogger().setLevel(Level.DEBUG);
+			Logger.getRootLogger().addAppender(appender);
+			
+			log.info("File logging enabled. Output folder: " + outputFolder);
+		} catch (FileNotFoundException e) {
+			System.err.println("Failed to set up file logging: " + e.getMessage());
+			throw new RuntimeException(e);
+		}
 	}
 
 	private void iterateParameters(Long counter) {
@@ -521,6 +602,52 @@ public class SimPathsMultiRun extends MultiRun {
 
 	@Override
 	public String setupRunLabel() {
-		return randomSeed.toString() + "_" + counter.toString();
+		return buildRunLabel(randomSeed, counter);
+	}
+
+	private static String buildRunLabel(Long seed, Long runCounter) {
+		StringBuilder label = new StringBuilder();
+		label.append(seed).append("_").append(runCounter);
+
+		String dsgeShock = extractScenarioNameWithoutCsv("mm_dsgeShockScenario");
+		if (dsgeShock != null) {
+			label.append("_").append(dsgeShock);
+		}
+
+		String ramseyScenario = extractScenarioNameWithoutCsv("mm_ramseyScenario");
+		if (ramseyScenario != null) {
+			label.append("_").append(ramseyScenario);
+		}
+
+
+		return label.toString();
+	}
+
+	private static String extractScenarioNameWithoutCsv(String key) {
+		if (modelArgs == null) {
+			return null;
+		}
+
+		Object raw = modelArgs.get(key);
+		if (raw == null) {
+			return null;
+		}
+
+		String value = raw.toString().trim();
+		if (value.isEmpty()) {
+			return null;
+		}
+
+		int slashIdx = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
+		String fileName = (slashIdx >= 0) ? value.substring(slashIdx + 1) : value;
+		if (fileName.isEmpty()) {
+			return null;
+		}
+
+		if (fileName.toLowerCase().endsWith(".csv")) {
+			fileName = fileName.substring(0, fileName.length() - 4);
+		}
+
+		return fileName.isEmpty() ? null : fileName;
 	}
 }

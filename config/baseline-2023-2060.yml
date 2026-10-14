@@ -1,0 +1,45 @@
+# config/baseline_2023-2060.yml - Long-horizon baseline forecast
+maxNumberOfRuns: 1
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation: true
+    alignRetirement: true
+    alignDisability: true
+    alignEducation: true
+    alignInSchool: true
+    alignCohabitation: true
+    alignEmployment: true
+    alignFertility: true
+    
+
+    # Macro Model
+    mm_macroModel: ramsey
+    # off | ramsey | dsge | ramsey_dsge   (dsge alone is diagnostic: the cycle was
+    # estimated on Ramsey-detrended data, so without the trend layer it deviates
+    # around SimPaths' own wage trend instead)
+    mm_macroLogging: verbose          # off | state | verbose (verbose implies state)
+    mm_dsgeMaxStateDeviation: 30
+
+    mm_ramseyFeedbackMargins: employment_and_hours
+    # none | employment | hours | employment_and_hours
+    mm_ramseyFeedbackPersistence: 1.0
+    mm_ramseyFeedbackHoursPersistence: 1.0
+
+    # mm_useMacroPathRecorder: true  # (works with mm_macroModel: off); defaults to true
+    # mm_ramseyScenario: "_macroScenario_ramsey_high_gA.csv"
+    # mm_ramseyScenario: "_macroScenario_ramsey_high_gA_2040.csv"
+    # mm_ramseyScenario: "_macroScenario_ramsey_high_gA_0_5pp.csv"
+    # mm_ramseyScenario: "_macroScenario_ramsey_high_gA_0_5pp_2040.csv"
+    # mm_dsgeShockScenario: "_macroScenario_energy_shock_1sd_20q.csv" 
+    # mm_dsgeShockScenario: "_macroScenario_demand_shock_neg1sd_8q.csv"
+    # mm_dsgeShockScenario: "_macroScenario_energy_plus_demand_shock.csv"
+    # mm_dsgeShockScenario: "_macroScenario_energy_shock_1sd_40_quarters.csv"
+    # mm_dsgeShockScenario: "_macroScenario_energy_shock_1_5sd_60_quarters.csv"
+
+collector_args:
+    exportToCSV: true

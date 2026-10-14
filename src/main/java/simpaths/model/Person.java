@@ -156,6 +156,11 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 //	individual in the simulated population, in each simulated period.
     private Double labWageHrly;		//Is hourly rate.  Initialised with value: ils_earns / (4.34 * lhw), where lhw is the weekly hours a person worked in EUROMOD input data
     private Double labWageHrlyL1; // Lag(1) of potentialHourlyEarnings
+    // Pre-overlay regression wage of the current year (exp(wage regression), before the
+    // macro/Ramsey multiplier and the experimental permanent wage shift). The wage-equation
+    // AR(1) lag must propagate this, NOT the macro-multiplied wage, or the secular macro
+    // trend is re-amplified by ~1/(1-rho) every year. See updateLaggedVariables.
+    @Transient private Double labWageHrlyRegression;
     @Transient private Series.Double yearlyEquivalisedDisposableIncomeSeries;
     private Double xEquivYear;
     @Transient private Series.Double yearlyEquivalisedConsumptionSeries;
@@ -526,6 +531,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         } else {
             labWageHrlyL1 = labWageHrly;
         }
+        labWageHrlyRegression = (originalPerson.labWageHrlyRegression != null) ? originalPerson.labWageHrlyRegression : labWageHrlyL1;
     }
 
     // used by other constructors
@@ -1493,6 +1499,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         double upratedLevelPotentialHourlyEarnings = Math.exp(logPotentialHourlyEarnings);
         setFullTimeHourlyEarningsPotential(upratedLevelPotentialHourlyEarnings);
         setL1_fullTimeHourlyEarningsPotential(upratedLevelPotentialHourlyEarnings);
+        labWageHrlyRegression = upratedLevelPotentialHourlyEarnings; // no macro overlay at init
     }
 
 
@@ -1538,6 +1545,30 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
         // Uprate and set level of potential earnings
         double upratedFullTimeHourlyEarnings = Math.exp(logFullTimeHourlyEarnings);
+
+        // Snapshot the pre-overlay regression wage (same MIN/MAX clamp as the effective wage)
+        // so the AR(1) lag propagates the SimPaths wage process, not the macro-multiplied wage.
+        if (upratedFullTimeHourlyEarnings < Parameters.MIN_HOURLY_WAGE_RATE) {
+            labWageHrlyRegression = Parameters.MIN_HOURLY_WAGE_RATE;
+        } else if (upratedFullTimeHourlyEarnings > Parameters.MAX_HOURLY_WAGE_RATE) {
+            labWageHrlyRegression = Parameters.MAX_HOURLY_WAGE_RATE;
+        } else {
+            labWageHrlyRegression = upratedFullTimeHourlyEarnings;
+        }
+
+        // Apply DSGE macro wage deviation if macro model is enabled
+        // wageDeviation is in % (e.g., 2.5 means 2.5% above steady state)
+        if (model.getMm_macroModel().isOn()) {
+            double wageDeviation = model.getMm_wageDeviation();
+            if (Math.abs(wageDeviation) > 1e-9) {  // Only adjust if deviation is non-zero
+                double originalWage = upratedFullTimeHourlyEarnings;
+                double wageMultiplier = 1.0 + wageDeviation / 100.0;
+                upratedFullTimeHourlyEarnings *= wageMultiplier;
+                // Track for logging summary (includes sample individual logging)
+                model.trackWageAdjustment(this, originalWage, upratedFullTimeHourlyEarnings, wageDeviation);
+            }
+        }
+
         if (upratedFullTimeHourlyEarnings < Parameters.MIN_HOURLY_WAGE_RATE) {
             setFullTimeHourlyEarningsPotential(Parameters.MIN_HOURLY_WAGE_RATE);
         } else if (upratedFullTimeHourlyEarnings > Parameters.MAX_HOURLY_WAGE_RATE) {
@@ -1822,7 +1853,10 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         yNonBenPersGrossMonthL1 = getYpnbihs_dv(); //Update lag(1) of gross personal non-benefit income
         labHrsWorkEnumWeekL1 = getLabourSupplyWeekly(); // Lag(1) of labour supply
         yBenReceivedFlagL1 = yBenReceivedFlag; // Lag(1) of flag indicating if individual receives benefits
-        labWageHrlyL1 = labWageHrly; // Lag(1) of potential hourly earnings
+        // Lag(1) of the wage process must be the PRE-overlay regression wage, so the macro
+        // (Ramsey/DSGE) trend is applied once per year and not re-amplified through the AR(1)
+        // term. Fall back to labWageHrly only if the regression wage was not set this year.
+        labWageHrlyL1 = (labWageHrlyRegression != null) ? labWageHrlyRegression : labWageHrly;
 
         if (initialUpdate) {
             yEmpPersGrossMonthL1 = getYplgrs_dv(); //Lag(1) of gross personal employment income
@@ -3605,7 +3639,12 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                 return 0.;
             }
             case RealWageGrowth -> { // Note: the values provided to the wage regression must be rebased to 2015, the default BASE_PRICE_YEAR.
-                return 100*Parameters.getTimeSeriesIndex(getYear(), UpratingCase.Earnings); //wage estimates use WageGrowth upscaled to 100 base
+                // When Ramsey supplies the secular wage trend, freeze this index at the last
+                // in-sample year so the trend is not double-counted (see Parameters).
+                int wageGrowthYear = getYear();
+                if (Parameters.freezeWageGrowthForRamseyTrend && wageGrowthYear > Parameters.wageGrowthLastInSampleYear)
+                    wageGrowthYear = Parameters.wageGrowthLastInSampleYear;
+                return 100*Parameters.getTimeSeriesIndex(wageGrowthYear, UpratingCase.Earnings); //wage estimates use WageGrowth upscaled to 100 base
             }
             case RealGDPGrowth -> {
                 return Parameters.getTimeSeriesIndex(getYear(), UpratingCase.Capital);

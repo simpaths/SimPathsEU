@@ -1552,6 +1552,13 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
             }
             try {
                 MultiKeyMap<Labour, Double> labourSupplyUtilityRegressionProbabilitiesByLabourPairs = convertRegressionScoresToProbabilities(labourSupplyUtilityRegressionScoresByLabourPairs);
+                
+                // Log labor supply decision details if DSGE logging enabled
+                if (model.getMm_macroLogging().logsState() && model.getMm_macroModel().isOn()) {
+                    model.trackLaborSupplyDecision(this, disposableIncomeMonthlyByLabourPairs, 
+                        labourSupplyUtilityRegressionProbabilitiesByLabourPairs);
+                }
+                
                 labourSupplyChoice = ManagerRegressions.multiEvent(labourSupplyUtilityRegressionProbabilitiesByLabourPairs, labourInnov);
                 // labourRandomUniform is not updated here to avoid issues with search routine for labour market alignment
             } catch (RuntimeException e) {

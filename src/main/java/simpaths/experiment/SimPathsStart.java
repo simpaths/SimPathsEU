@@ -35,6 +35,9 @@ import microsim.gui.shell.MicrosimShell;
 
 // import SimPaths packages
 import simpaths.model.enums.Country;
+import simpaths.model.enums.ConfigEnumValue;
+import simpaths.model.enums.MacroLogLevel;
+import simpaths.model.enums.MacroModelMode;
 import simpaths.data.*;
 import simpaths.model.taxes.database.TaxDonorDataParser;
 import simpaths.model.taxes.database.TaxDonorParserTraining;
@@ -66,6 +69,10 @@ public class SimPathsStart implements ExperimentBuilder {
 	// auto-detect (empty InitialPopulations folder → flip to training) is allowed
 	// to run; when true, the explicit CLI value wins and auto-detect is skipped.
 	private static boolean trainingFlagExplicit = false;
+
+	// Macro module options
+	private static MacroModelMode mm_macroModel = null;
+	private static MacroLogLevel mm_macroLogging = null;
 
 
 	/**
@@ -234,6 +241,17 @@ public class SimPathsStart implements ExperimentBuilder {
 		trainingOption.setArgName("true/false");
 		options.addOption(trainingOption);
 
+		// Macro module options
+		Option macroOption = new Option("macro", "macroModel", true,
+				"Macro layers to run: " + ConfigEnumValue.valueList(MacroModelMode.class));
+		macroOption.setArgName(ConfigEnumValue.valueList(MacroModelMode.class));
+		options.addOption(macroOption);
+
+		Option macroLogOption = new Option("macroLog", "macroLogging", true,
+				"Macro logging verbosity: " + ConfigEnumValue.valueList(MacroLogLevel.class));
+		macroLogOption.setArgName(ConfigEnumValue.valueList(MacroLogLevel.class));
+		options.addOption(macroLogOption);
+
 		Option helpOption = new Option("h", "help", false, "Print help message");
 		options.addOption(helpOption);
 
@@ -299,6 +317,14 @@ public class SimPathsStart implements ExperimentBuilder {
 			if (setupOnly) {
 				reuseExistingDatabase = false;
 			}
+
+			// Parse macro module options
+			if (cmd.hasOption("macro")) {
+				mm_macroModel = MacroModelMode.fromConfigValue(cmd.getOptionValue("macro"));
+			}
+			if (cmd.hasOption("macroLog")) {
+				mm_macroLogging = MacroLogLevel.fromConfigValue(cmd.getOptionValue("macroLog"));
+			}
 		} catch (ParseException | IllegalArgumentException e) {
 			System.err.println("Error parsing command line arguments: " + e.getMessage());
 			formatter.printHelp("SimPathsStart", options);
@@ -327,6 +353,8 @@ public class SimPathsStart implements ExperimentBuilder {
 		rewritePolicySchedule = false;
 		reuseExistingDatabase = defaultReuseExistingDatabase;
 		trainingFlagExplicit = false;
+		mm_macroModel = null;
+		mm_macroLogging = null;
 	}
 
 
@@ -344,6 +372,15 @@ public class SimPathsStart implements ExperimentBuilder {
 		SimPathsModel model = new SimPathsModel(country, startYear);
 		model.setEndYear(endYear);
 		model.setPopSize(popSize);
+
+		// Apply macro module options if specified via CLI
+		if (mm_macroModel != null) {
+			model.setMm_macroModel(mm_macroModel);
+		}
+		if (mm_macroLogging != null) {
+			model.setMm_macroLogging(mm_macroLogging);
+		}
+
 		SimPathsCollector collector = new SimPathsCollector(model);
 
 		engine.addSimulationManager(model);
@@ -402,8 +439,9 @@ public class SimPathsStart implements ExperimentBuilder {
 		Parameters.loadTimeSeriesFactorMaps(country);
 		Parameters.instantiateAlignmentMaps();
 
-        // define country string for Parameters
-        Parameters.defineCountryString(country);
+		// define country string for Parameters
+		Parameters.defineCountryString(country);
+		
 		// set-up database
 		Parameters.databaseSetup(country, showGui, startYear);
 	}

@@ -1,0 +1,14 @@
+Frozen ENDOGENOUS-mode fixture — NOT covered by refresh_java_parity_fixtures.
+
+MATLAB-Java parity is exogenous-only by design (WELLSIM_SVEC's CLAUDE.md, "Ramsey
+Solver (LBJ) And The Endogenous-Labour Asymmetry"). The endogenous tests in
+RamseyTrendModelTest use this set as a SANITY anchor at 5e-4, not as a parity
+contract, and they build their projection inputs locally rather than through
+the production loader.
+
+Vintage: pre-2026-08-18. This directory intentionally has no
+population_projection / hours_projection files. If endogenous mode ever becomes
+the production configuration, regenerate this set from an endogenous WELLSIM
+run and extend refresh_java_parity_fixtures — do not reuse the exogenous
+refresher output here (psi scales differ; see the endoGrowthParamsContent
+javadoc in RamseyTrendModelTest).
