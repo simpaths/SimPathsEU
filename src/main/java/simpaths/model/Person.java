@@ -542,7 +542,10 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                 labC4L1 = Les_c4.NotEmployed;
             }
         }
-        labWageHrlyRegression = (originalPerson.labWageHrlyRegression != null) ? originalPerson.labWageHrlyRegression : labWageHrlyL1;
+        // The start-year lag roll uses this before any wage update, so a start-population person
+        // (no pre-overlay wage of its own; input wages carry no macro overlay) seeds it with the
+        // current wage, as the lag roll did before labWageHrlyRegression existed.
+        labWageHrlyRegression = (originalPerson.labWageHrlyRegression != null) ? originalPerson.labWageHrlyRegression : labWageHrly;
     }
 
     // used by other constructors
