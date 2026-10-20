@@ -495,41 +495,48 @@ now reports no shock and rolls the baseline to its own snapshot (`LaborSupplyAgg
 live `epsilon_L` is in `startYear+3`. Pinned by `LaborSupplyAggregatorTest` and, end to end through
 `updateEquilibrium`, by `LaborShockProjectionTest`.
 
-### 7.2 Anchor-year asymmetry: L/N lag the demographic indices by one year
+### 7.2 Anchor-year asymmetry: the level indices start to move at different points
 
-The recorded level indices do **not** all share the same base year, and `l_level`
-(and `n_ramsey`) are exactly zero for the first **two** recorded years, not one.
-This is by design, not a bug, and consumers (plots, `compare_scenarios.do`) must
-account for it.
+The recorded level indices do **not** all share the same base, and they start to
+move at different points in the first two years. This is by design, not a bug, and
+consumers (plots, `compare_scenarios.do`) must account for it.
 
-Cause — two latches at different schedule phases:
+Cause — two latches at different schedule phases, and an end-of-year rewrite:
 
 - **Demographic anchors** (`startTotalPop`, `startWAP`, `startAtRisk`) are latched
-  *eagerly, pre-labour-market, in the first simulation year* (`latchDemographicAnchors`).
-  They are labour-market-invariant head counts, so this is safe and makes
-  `total_population` / `wap_level` / `atrisk_level` correct from year 1
-  (start year = 0, first real move in year 2).
+  *eagerly, at the start year's `DSGEMacroUpdate`* (`latchDemographicAnchors`), before
+  that year's mortality and population alignment. They are labour-market-invariant
+  head counts, so this is safe.
 - **L/h anchors** (`startL`, `startH`) are deliberately latched *post-labour-market*,
   and only in the **second** simulation year (`latchBaselineFromPostLaborMarket`),
   because `L_0`/`h_0` must use SimPaths' model-assigned hours, not the input-DB
-  hours present before the first labour-market update. This is the same
-  correctness constraint that protects `eps_L` and the MATLAB↔Java
-  `growth_model_reference` parity, so it must not be moved earlier.
+  hours present before the first labour-market update; the DSGE's reference is first
+  latched after a labour market for the same reason (§7.1). It must not be moved
+  earlier.
+- **End-of-year rewrite.** At `MacroEndYearCapture`, `updateLevelAggregatesPostAlignment`
+  recomputes the year's level columns from the post-alignment population, against the
+  same anchors (`demographicIndexUpdates`, shared with the in-year pass), so the value
+  a row keeps is the end-of-year one.
 
-Because the recorder samples at the pre-labour-market macro event, the year-2
-sample is taken before `startL` is set that tick, so `l_level` is skipped (0) in
-years 1 and 2; the first non-zero `l_level` is year 3. Net effect for a
-2023-start run:
+Net effect for a 2023-start run (checked on two runs of 2026-10-20):
 
-- `Pop`/`WAP`/`atRisk` are indexed to **2023** (first move 2024).
-- `L`/`N` are indexed to **2024** (first non-zero 2025); 2023 and 2024 are both
-  exactly 0.
+- `total_population`, `wap_level`, `atrisk_level` are anchored on the 2023 population
+  before its mortality and alignment, so the **2023** row already moves: it shows what
+  2023's mortality and alignment did.
+- `l_level`, `h_level` are anchored after the **2024** labour market. The 2023 row has
+  no value (0); the 2024 row shows what 2024's mortality and alignment did to the
+  post-labour-market count; from 2025 on a row is the change since the 2024 labour
+  market.
+- `n_ramsey` is the planner's annual-average labour input against the handoff quarter
+  (`advanceRamseyTrend`), so it is nonzero from 2023 (§8.1 for its meaning under
+  feedback).
 
 Implications:
 
-- The "% from first year" axis means a *different base year* for the two groups;
-  do not read the 2024 `l_level=0` as "labour supply did not respond" — it is a
-  placeholder before L's baseline exists.
+- The "% from first year" axis means a *different base* for the groups; do not read
+  the 2023 `l_level = 0`, or the 2024 value, as "labour supply did not respond": the
+  first is a placeholder before L's anchor exists, the second a within-year
+  composition effect.
 - In `compare_scenarios.do` the macro-impact panel is a scenario−baseline
   *difference*, so the lag cancels provided both arms use identical code and
   seed (the standard requirement); the asymmetry only matters for level plots.
