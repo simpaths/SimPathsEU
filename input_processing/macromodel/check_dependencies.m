@@ -4,8 +4,9 @@ function report = check_dependencies(options)
 %   check_dependencies                   print a report, return it
 %   check_dependencies('strict', true)   error check_dependencies:Missing on a hard failure
 %
-% Hard requirements (README, "Dependencies"): MATLAB R2020a or newer (arguments
-% blocks, readtable 'VariableNamingRule', exportgraphics; tested on R2025b),
+% Hard requirements (README, "Dependencies"): MATLAB R2020a or newer (readtable
+% 'VariableNamingRule', exportgraphics; the arguments blocks need R2019b; tested
+% on R2025b),
 % Statistics and Machine Learning Toolbox (the only
 % toolbox matlab.codetools.requiredFilesAndProducts reports for the entry
 % points; re-run it if the code changes), Dynare on the path (6.5 produced the

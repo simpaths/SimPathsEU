@@ -19,5 +19,24 @@ function test_check_dependencies
         threw = true;
     end
     assert(threw == ~r.ok, 'strict must throw check_dependencies:Missing exactly when the report is not ok');
+
+    % On a complete machine the report is ok, so the throw above is never seen:
+    % take Dynare off the path for a moment to make the report fail.
+    if ~isempty(which('dynare'))
+        saved = path;
+        restore = onCleanup(@() path(saved));
+        rmpath(fileparts(which('dynare')));
+        bad = check_dependencies();
+        assert(~bad.ok && any(contains(bad.problems, 'Dynare')), 'without Dynare the report must fail and say why');
+        try
+            check_dependencies('strict', true);
+            threw = false;
+        catch ME
+            if ~strcmp(ME.identifier, 'check_dependencies:Missing'), rethrow(ME); end
+            threw = true;
+        end
+        assert(threw, 'strict must throw check_dependencies:Missing when Dynare is missing');
+        clear restore
+    end
     fprintf('test_check_dependencies: PASS\n');
 end
