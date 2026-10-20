@@ -7,7 +7,7 @@ unenforced contract.
 
 This file inventories those contracts and records, for each, what enforces it. A
 contract with no enforcement is a defect waiting to happen — the FOC disagreement
-below ran for three months while every run reported success.
+(contracts 5 and 6, since retired) ran for three months while every run reported success.
 
 ## The rule
 
