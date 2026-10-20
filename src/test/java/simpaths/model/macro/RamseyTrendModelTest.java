@@ -11,9 +11,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Validation tests for RamseyTrendModel.
@@ -36,21 +34,12 @@ import java.util.Map;
  *   <li>Edge cases and error handling</li>
  * </ol>
  *
- * <p>Test data: frozen fixtures under {@code src/test/resources/macro/}
- * ({@code exogenous/} and {@code endogenous/}), decoupled from the live
- * {@code input/PL/MacroModel/} bundle so swapping the SimPaths runtime input
- * between Ramsey labour modes cannot break this suite.</p>
- *
- * <p><b>MATLAB↔Java parity is exogenous-mode only — by design.</b> The LBJ
- * stacked-time solver is mirrored between {@code ramsey_trend.m} and
- * {@code RamseyTrendModel.java} <i>only</i> in exogenous labour mode. In
- * endogenous mode the two intentionally differ: MATLAB is hybrid (observed
- * participation in-sample so the DSGE estimation sample detrends cleanly, FOC
- * out-of-sample), whereas Java solves the full FOC over all periods because it
- * is purely the forward-projection engine. Do <b>not</b> add a MATLAB↔Java
- * cross-validation/parity assertion for endogenous mode — it will fail by
- * design, not due to a regression. See CLAUDE.md "Ramsey Solver (LBJ) And The
- * Endogenous-Labour Asymmetry" and chats WS_CHATS_141/151, SP_CHATS_91/93.</p>
+ * <p>Test data: the frozen fixture under {@code src/test/resources/macro/exogenous/},
+ * decoupled from the live {@code input/PL/MacroModel/} bundle and refreshed only by
+ * {@code refresh_java_parity_fixtures('Poland')}. The LBJ stacked-time solver is
+ * mirrored between {@code ramsey_trend.m} and {@code RamseyTrendModel.java}; labour
+ * input is exogenous on both sides (the endogenous-labour variant was removed on
+ * 2026-10-20, JuergenWiemers/SimPathsEU#28).</p>
  */
 public class RamseyTrendModelTest {
 
@@ -58,22 +47,13 @@ public class RamseyTrendModelTest {
     Path tempDir;
 
     /**
-     * Frozen test fixtures, decoupled from the live {@code input/PL/MacroModel}
-     * bundle. Each directory holds a self-contained, pinned MacroModel export
+     * Frozen test fixture, decoupled from the live {@code input/PL/MacroModel}
+     * bundle: a self-contained, pinned MacroModel export
      * ({@code growth_params_Poland.json}, {@code growth_model_reference_poland.csv},
-     * {@code growth_terminal_state.json}) so swapping the live SimPaths input
-     * between exogenous and endogenous Ramsey can never break this suite.
-     *
-     * <ul>
-     *   <li>{@code MACRO_MODEL_PATH} → frozen <b>exogenous</b> bundle: the
-     *       MATLAB↔Java parity, extension and JSON-surgery tests run against
-     *       this (parity is exogenous-only by design — see class javadoc).</li>
-     *   <li>{@code ENDO_MODEL_PATH} → frozen <b>endogenous</b> bundle: the
-     *       Section 7 endogenous-labour tests run against this.</li>
-     * </ul>
+     * {@code growth_terminal_state.json} and the two projections). The MATLAB↔Java
+     * parity, extension and JSON-surgery tests run against this.
      */
     private static final String MACRO_MODEL_PATH = resolveFixtureDir("exogenous");
-    private static final String ENDO_MODEL_PATH  = resolveFixtureDir("endogenous");
 
     /** The live export bundle, which the fixtures are snapshots of. */
     private static final String BUNDLE_PATH = "input/PL/MacroModel";
@@ -130,20 +110,6 @@ public class RamseyTrendModelTest {
     /** Growth params JSON content, frozen EXOGENOUS fixture (cached) */
     private static String growthParamsContent;
 
-    /** MATLAB reference data (frozen ENDOGENOUS fixture; carries WAP/l columns) */
-    private static List<RamseyTrendModel.ReferenceRow> endoReferenceData;
-
-    /**
-     * Growth params JSON content, frozen ENDOGENOUS fixture (cached).
-     *
-     * <p>Endogenous-mode tests must source psi from here, not from the exogenous
-     * fixture. psi carries the units of w·h·c^{-sigma}, so it scales with hours per
-     * quarter (~500); an exogenous export does not calibrate it at all. Reusing the
-     * exogenous fixture's stale psi under the corrected w·h FOC drives participation
-     * straight into the 0.99 clamp.</p>
-     */
-    private static String endoGrowthParamsContent;
-
     /** Model instance for tests */
     private RamseyTrendModel model;
 
@@ -158,8 +124,6 @@ public class RamseyTrendModelTest {
                 && Files.exists(referenceFile)
                 && Files.exists(terminalFile);
 
-        Path endoReferenceFile = Paths.get(ENDO_MODEL_PATH, "growth_model_reference_poland.csv");
-
         if (!testDataAvailable) {
             System.out.println("WARNING: Ramsey test fixtures not found at " + MACRO_MODEL_PATH);
             System.out.println("Required files: growth_params_Poland.json, "
@@ -169,12 +133,8 @@ public class RamseyTrendModelTest {
             try {
                 referenceData = RamseyTrendModel.loadReferenceCSV(referenceFile);
                 growthParamsContent = Files.readString(paramsFile);
-                endoGrowthParamsContent = Files.readString(
-                        Paths.get(ENDO_MODEL_PATH, "growth_params_Poland.json"));
-                endoReferenceData = RamseyTrendModel.loadReferenceCSV(endoReferenceFile);
                 System.out.println("Loaded " + referenceData.size()
-                        + " exogenous + " + endoReferenceData.size()
-                        + " endogenous reference quarters from frozen fixtures.");
+                        + " reference quarters from the frozen fixture.");
             } catch (IOException e) {
                 testDataAvailable = false;
                 System.out.println("ERROR loading test fixtures: " + e.getMessage());
@@ -188,14 +148,6 @@ public class RamseyTrendModelTest {
         if (testDataAvailable) {
             model.setLogEnabled(true);
             model.loadParams(Paths.get(MACRO_MODEL_PATH, "growth_params_Poland.json"));
-
-            // Always force exogenous mode for the shared model instance.
-            // Existing tests (cross-validation, constant exogenous, forward projection)
-            // pass N arrays directly and expect exogenous solver behavior.
-            // Endogenous-specific tests (Section 7) create their own model instances.
-            if (model.isEndogenousLabor()) {
-                model.setEndogenousLabor(false);
-            }
         }
     }
 
@@ -234,6 +186,26 @@ public class RamseyTrendModelTest {
             assertEquals(expectedRho, model.getTerminalGrowthRhoQ(), PARAM_TOLERANCE,
                 "Terminal growth persistence should match JSON");
         }
+    }
+
+    /**
+     * The endogenous-labour variant was removed (JuergenWiemers/SimPathsEU#28). A bundle
+     * whose growth params still declare it must be refused at load, not silently solved as
+     * exogenous on an N path that was {@code l * WAP}.
+     */
+    @Test
+    public void testEndogenousBundleIsRejected() throws IOException {
+        assumeTestDataAvailable();
+        Path json = tempDir.resolve("growth_params_endogenous.json");
+        // The current fixture carries no labor_supply key at all; inject the removed
+        // variant's declaration into the parameters block of an otherwise valid file.
+        String content = growthParamsContent.replaceFirst("\"parameters\"\\s*:\\s*\\{",
+                "\"parameters\": {\n    \"labor_supply\": \"endogenous\",");
+        assertNotEquals(growthParamsContent, content, "fixture should have a parameters block");
+        Files.writeString(json, content);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new RamseyTrendModel().loadParams(json));
+        assertTrue(e.getMessage().contains("removed"), e.getMessage());
     }
 
         @Test
@@ -317,7 +289,7 @@ public class RamseyTrendModelTest {
         assumeTestDataAvailable();
 
         Path paramsPath = tempDir.resolve("growth_params_terminal_decay.json");
-        Files.writeString(paramsPath, withTerminalGrowth(growthParamsContent, 0.04, 0.01, 0.8, false));
+        Files.writeString(paramsPath, withTerminalGrowth(growthParamsContent, 0.04, 0.01, 0.8));
 
         RamseyTrendModel decayModel = solveSimpleExogenous(paramsPath, 60);
 
@@ -366,7 +338,7 @@ public class RamseyTrendModelTest {
         assumeTestDataAvailable();
 
         Path paramsPath = tempDir.resolve("growth_params_terminal_scenario.json");
-        Files.writeString(paramsPath, withTerminalGrowth(growthParamsContent, 0.04, 0.01, 0.8, false));
+        Files.writeString(paramsPath, withTerminalGrowth(growthParamsContent, 0.04, 0.01, 0.8));
 
         RamseyTrendModel baselineModel = solveSimpleExogenous(paramsPath, 40);
 
@@ -380,7 +352,6 @@ public class RamseyTrendModelTest {
 
         RamseyTrendModel scenarioModel = new RamseyTrendModel();
         scenarioModel.loadParams(paramsPath);
-        scenarioModel.setEndogenousLabor(false);
         scenarioModel.setScenario(overlayScenario, 2025);
         solveSimpleExogenous(scenarioModel, 40);
 
@@ -473,7 +444,7 @@ public class RamseyTrendModelTest {
      */
     @Test
     public void referenceCsvIsSpelledTheWayTheLoaderDerivesIt() {
-        for (String dirPath : new String[] {MACRO_MODEL_PATH, ENDO_MODEL_PATH, BUNDLE_PATH}) {
+        for (String dirPath : new String[] {MACRO_MODEL_PATH, BUNDLE_PATH}) {
             java.io.File dir = new java.io.File(dirPath);
             Assumptions.assumeTrue(dir.isDirectory(), "Not a directory: " + dirPath);
 
@@ -961,7 +932,7 @@ public class RamseyTrendModelTest {
     public void testShiftedHorizonReSolveReproducesOriginalTail() throws IOException {
         Assumptions.assumeTrue(testDataAvailable, "Macro fixtures not available");
         model.loadTerminalState(Paths.get(MACRO_MODEL_PATH, "growth_terminal_state.json"));
-        ProjectionInputs inputs = buildForwardProjectionInputs(false);
+        ProjectionInputs inputs = buildForwardProjectionInputs();
         model.solveForPath(model.getK(), model.getA(), inputs.labor(), inputs.h(),
                 inputs.gY(), inputs.nxY(), inputs.projLen());
 
@@ -979,7 +950,6 @@ public class RamseyTrendModelTest {
 
         RamseyTrendModel reSolved = new RamseyTrendModel();
         reSolved.loadParams(Paths.get(MACRO_MODEL_PATH, "growth_params_Poland.json"));
-        if (reSolved.isEndogenousLabor()) reSolved.setEndogenousLabor(false);
         reSolved.setTfpPhaseOffsetQuarters(shift);
         reSolved.solveForPath(k0, a0,
                 tail(inputs.labor(), shift), tail(inputs.h(), shift),
@@ -1145,274 +1115,6 @@ public class RamseyTrendModelTest {
         assertThrows(IndexOutOfBoundsException.class, () -> model.getAAtQuarter(T));
     }
 
-    // ========== 7. Endogenous Labor Supply Tests ==========
-
-    @Test
-    public void testEndogenousLaborParameterLoading() throws IOException {
-        assumeTestDataAvailable();
-
-        var endoModel = new RamseyTrendModel();
-        endoModel.setLogEnabled(true);
-        endoModel.loadParams(Paths.get(ENDO_MODEL_PATH, "growth_params_Poland.json"));
-
-        // The JSON has labor_supply: "endogenous", phi: ~1.3, psi: >0
-        if (endoModel.isEndogenousLabor()) {
-            assertTrue(endoModel.getPhi() > 0, "phi should be positive");
-            assertTrue(endoModel.getPsi() > 0, "psi should be positive");
-            assertTrue(endoModel.getPhi() >= 0.5 && endoModel.getPhi() <= 5.0, "phi should be in reasonable range");
-            // psi has the units of w·h·c^{-sigma}, so its scale follows hours per
-            // quarter (~500 for Poland) and it lands near 1. The pre-2026-08
-            // hourly-wage FOC put it near 2.5e-3; the band below spans both by
-            // orders of magnitude, so it catches a genuine units error without
-            // re-encoding one particular convention.
-            assertTrue(endoModel.getPsi() > 1e-4 && endoModel.getPsi() < 1e3,
-                    "psi should be in reasonable range, got: " + endoModel.getPsi());
-            System.out.println("Endogenous labor params loaded: phi="
-                    + endoModel.getPhi() + ", psi=" + endoModel.getPsi());
-        } else {
-            System.out.println("JSON does not specify endogenous labor â€” skipping phi/psi checks");
-        }
-    }
-
-    /**
-     * Solve with endogenous labor using constant WAP and h.
-     * Verifies convergence and that participation rate is in a plausible range.
-     */
-    @Test
-    public void testEndogenousLaborSolverConvergence() throws IOException {
-        assumeTestDataAvailable();
-
-        Path endoParams = Paths.get(ENDO_MODEL_PATH, "growth_params_Poland.json");
-        var endoModel = new RamseyTrendModel();
-        endoModel.setLogEnabled(true);
-        endoModel.loadParams(endoParams);
-        Assumptions.assumeTrue(endoModel.isEndogenousLabor(),
-                "JSON does not specify endogenous labor");
-
-        // Calibration-consistent scenario: drive the FOC with the fixture's own
-        // base-year state (WAP, h, K, A) instead of arbitrary magnitudes, so the
-        // solved participation is comparable to the calibrated l_base. With
-        // off-calibration inputs the FOC lands at an unrelated l (the old
-        // 55000/9e6/0.058 scenario produced ~0.25), which tests nothing useful.
-        String endoContent = Files.readString(endoParams);
-        double WAP = extractJsonDouble(endoContent, "WAP");
-        double h = extractJsonDouble(endoContent, "h");
-        double K0 = extractJsonDouble(endoContent, "K");
-        double A0 = extractJsonDouble(endoContent, "A_implied");
-        double lBase = extractJsonDouble(endoContent, "l_base");
-
-        int T = 200;
-        double[] wapArr = new double[T];
-        double[] hArr = new double[T];
-        java.util.Arrays.fill(wapArr, WAP);
-        java.util.Arrays.fill(hArr, h);
-
-        endoModel.solveForPath(K0, A0, wapArr, hArr, new double[T], new double[T], T);
-        assertTrue(endoModel.isSolved(), "Endogenous solver should converge");
-
-        // Verify participation rate at quarter 0
-        var q0 = endoModel.getTrendAtQuarter(0);
-        assertTrue(q0.participationRate() > 0.3 && q0.participationRate() < 0.95,
-                String.format("Participation rate should be in (0.3, 0.95), got: %.4f",
-                        q0.participationRate()));
-        assertEquals(lBase, q0.participationRate(), 0.10,
-                String.format("Base-year participation should track calibrated l_base=%.4f, got: %.4f",
-                        lBase, q0.participationRate()));
-
-        // N should equal l * WAP
-        double expectedN = q0.participationRate() * WAP;
-        assertEquals(expectedN, q0.labor(), expectedN * 1e-10,
-                "N should equal l Ã— WAP");
-
-        // Print summary
-        System.out.printf("=== Endogenous Labor Convergence ===\n");
-        System.out.printf("  q=0:   l=%.4f, N=%.0f, Y=%.0f, w=%.6f\n",
-                q0.participationRate(), q0.labor(), q0.output(), q0.wage());
-        var lastQ = endoModel.getTrendAtQuarter(T - 1);
-        System.out.printf("  q=%d: l=%.4f, N=%.0f, Y=%.0f, w=%.6f\n",
-                T - 1, lastQ.participationRate(), lastQ.labor(), lastQ.output(), lastQ.wage());
-    }
-
-        @Test
-        public void testEndogenousTerminalGrowthSolveRemainsStable() throws IOException {
-        assumeTestDataAvailable();
-
-        // Source the ENDOGENOUS fixture: psi has to be on the w·h scale the FOC uses.
-        Path paramsPath = tempDir.resolve("growth_params_endogenous_terminal.json");
-        Files.writeString(paramsPath, withTerminalGrowth(endoGrowthParamsContent, 0.04, 0.01, 0.8, true));
-
-        RamseyTrendModel endoModel = new RamseyTrendModel();
-        endoModel.setLogEnabled(true);
-        endoModel.loadParams(paramsPath);
-        Assumptions.assumeTrue(endoModel.isEndogenousLabor(),
-            "Modified JSON should force endogenous labor mode");
-
-        int T = 80;
-        double[] wapArr = new double[T];
-        double[] hArr = new double[T];
-        java.util.Arrays.fill(wapArr, 55000.0);
-        java.util.Arrays.fill(hArr, 345.0);
-
-        endoModel.solveForPath(9e6, 0.058, wapArr, hArr, new double[T], new double[T], T);
-        assertTrue(endoModel.isSolved(), "Endogenous solver should converge with terminal-growth enabled");
-
-        var q0 = endoModel.getTrendAtQuarter(0);
-        var q20 = endoModel.getTrendAtQuarter(20);
-        double g0 = annualizedQuarterGrowth(endoModel, 0);
-        double g20 = annualizedQuarterGrowth(endoModel, 20);
-
-        // Re-baselined for the exact stacked-time Newton solver. The legacy
-        // forward solver used a Path-A Euler approximation (l_{t+1} ≈ l_t) and
-        // reported l₀≈0.34 here; the exact endogenous solution for this
-        // synthetic high-TFP fixture is l₀≈0.26, rising toward the BGP. The
-        // guard checks an interior, stable solution well off the FOC clamp
-        // bounds [0.01, 0.99] that still transitions upward over the horizon.
-        assertTrue(q0.participationRate() > 0.15 && q0.participationRate() < 0.95,
-            "Participation should remain in a plausible interior range, got: "
-                + q0.participationRate());
-        assertTrue(q20.participationRate() >= q0.participationRate(),
-            "Participation should transition upward toward the BGP, got q0="
-                + q0.participationRate() + ", q20=" + q20.participationRate());
-        assertTrue(g0 > g20,
-            "Endogenous mode should still inherit the declining terminal-growth baseline path");
-        assertEquals(0.04, g0, 1e-12,
-            "Endogenous mode should start from the configured baseline annual TFP growth");
-        assertEquals(expectedAnnualGrowth(0.04, 0.01, 0.8, 20), g20, 1e-12,
-            "Endogenous mode should follow the same convergence path by quarter 20");
-        }
-
-    /**
-     * In the inelastic limit (Ï† â†’ âˆž), the endogenous solver should produce
-     * results close to the exogenous solver with N = l_base Ã— WAP.
-     * This verifies the FOC reverts to near-constant labor at high Ï†.
-     */
-    @Test
-    public void testEndogenousHighPhiApproachesExogenous() throws IOException {
-        assumeTestDataAvailable();
-
-        // Create a modified JSON with very high phi (forcing near-constant l)
-        Path paramsPath = Paths.get(ENDO_MODEL_PATH, "growth_params_Poland.json");
-        String content = Files.readString(paramsPath);
-
-        // Replace phi value with a large number
-        Path highPhiJson = tempDir.resolve("growth_params_highphi.json");
-        String modified = content
-                .replaceFirst("\"phi\"\\s*:\\s*[\\d.eE+\\-]+", "\"phi\": 50.0")
-                .replaceFirst("\"psi\"\\s*:\\s*[\\d.eE+\\-]+", "\"psi\": 0.002");
-        Files.writeString(highPhiJson, modified);
-
-        var endoModel = new RamseyTrendModel();
-        endoModel.setLogEnabled(true);
-        endoModel.loadParams(highPhiJson);
-        Assumptions.assumeTrue(endoModel.isEndogenousLabor(),
-                "Modified JSON should still be endogenous");
-
-        int T = 120;
-        double[] WAP = new double[T];
-        double[] h = new double[T];
-        java.util.Arrays.fill(WAP, 55000.0);
-        java.util.Arrays.fill(h, 345.0);
-
-        double K0 = 9e6;
-        double A0 = 0.058;
-        double[] gY = new double[T];
-        double[] nxY = new double[T];
-
-        endoModel.solveForPath(K0, A0, WAP, h, gY, nxY, T);
-        assertTrue(endoModel.isSolved());
-
-        // With very high phi, l should be nearly constant across all quarters
-        double l0 = endoModel.getTrendAtQuarter(0).participationRate();
-        double lEnd = endoModel.getTrendAtQuarter(T - 1).participationRate();
-        double lRange = Math.abs(lEnd - l0);
-
-        assertTrue(lRange < 0.02,
-                String.format("With phi=50, l range should be tiny: |%.4f - %.4f| = %.4f",
-                        l0, lEnd, lRange));
-
-        System.out.printf("=== High-phi inelastic limit ===\n");
-        System.out.printf("  phi=50: l_0=%.6f, l_end=%.6f, range=%.6f\n", l0, lEnd, lRange);
-    }
-
-        /**
-         * Validate the endogenous forward-projection anchor against the MATLAB terminal export
-         * when the reference CSV contains WAP/l columns.
-         *
-         * <p>SANITY anchor at 5e-4 — deliberately NOT a parity contract (parity is
-         * exogenous-only by policy). Inputs are rebuilt locally via
-         * buildForwardProjectionInputs rather than through the production loader,
-         * because the endogenous fixture predates the projection artefacts; see
-         * src/test/resources/macro/endogenous/FIXTURE_PROVENANCE.txt.</p>
-         */
-        @Test
-        public void testEndogenousForwardProjectionAnchorMatchesMATLABExport() throws IOException {
-        assumeTestDataAvailable();
-
-        boolean hasWAP = endoReferenceData != null && !endoReferenceData.isEmpty()
-            && endoReferenceData.get(endoReferenceData.size() - 1).WAP() > 0
-            && endoReferenceData.get(endoReferenceData.size() - 1).l() > 0;
-        Assumptions.assumeTrue(hasWAP,
-            "Endogenous fixture reference CSV lacks WAP/l columns for forward anchor parity");
-
-        var endoModel = new RamseyTrendModel();
-        endoModel.setLogEnabled(true);
-        endoModel.loadParams(Paths.get(ENDO_MODEL_PATH, "growth_params_Poland.json"));
-        Assumptions.assumeTrue(endoModel.isEndogenousLabor(),
-                "JSON does not specify endogenous labor");
-
-        ProjectionInputs projection = buildForwardProjectionInputs(true, endoReferenceData);
-        endoModel.loadTerminalState(Paths.get(ENDO_MODEL_PATH, "growth_terminal_state.json"));
-        double kTerminal = endoModel.getK();
-        double aTerminal = endoModel.getA();
-
-        endoModel.solveForPath(kTerminal, aTerminal,
-            projection.labor(), projection.h(), projection.gY(), projection.nxY(), projection.projLen());
-        assertTrue(endoModel.isSolved());
-
-        var expected = endoReferenceData.get(endoReferenceData.size() - 1);
-        var actual = endoModel.getTrendAtQuarter(0);
-        double endoTolerance = 5e-4;
-
-        assertRelativeClose(actual.capitalStock(), expected.K(), endoTolerance,
-            "Endogenous terminal-quarter capital should match MATLAB export");
-        assertRelativeClose(actual.output(), expected.Y(), endoTolerance,
-            "Endogenous terminal-quarter output should match MATLAB export");
-        assertRelativeClose(actual.labor(), expected.N(), endoTolerance,
-            "Endogenous terminal-quarter labor should match MATLAB export");
-        assertRelativeClose(actual.participationRate(), expected.l(), endoTolerance,
-            "Endogenous terminal-quarter participation should match MATLAB export");
-        assertRelativeClose(actual.wage(), expected.w(), endoTolerance,
-            "Endogenous terminal-quarter wage should match MATLAB export");
-        assertRelativeClose(actual.rQuarterly(), expected.rStar(), endoTolerance,
-            "Endogenous terminal-quarter natural rate should match MATLAB export");
-        assertRelativeClose(kTerminal, expected.K(), endoTolerance,
-            "Endogenous terminal-state K should match last MATLAB reference quarter");
-
-        assertTrue(aTerminal > 0, "growth_terminal_state A should be positive in endogenous mode");
-    }
-
-    /**
-     * Verify that TrendState.participationRate() returns 0 in exogenous mode.
-     */
-    @Test
-    public void testExogenousModeParticipationRateIsZero() throws IOException {
-        assumeTestDataAvailable();
-        // model is already forced to exogenous in setUp()
-        assertFalse(model.isEndogenousLabor(), "Model should be in exogenous mode");
-
-        int T = 40;
-        double[] N = new double[T];
-        double[] h = new double[T];
-        java.util.Arrays.fill(N, 35000.0);
-        java.util.Arrays.fill(h, 345.0);
-
-        model.solveForPath(9e6, 0.058, N, h, new double[T], new double[T], T);
-
-        var q0 = model.getTrendAtQuarter(0);
-        assertEquals(0.0, q0.participationRate(), 0.0,
-                "Participation rate should be 0 in exogenous mode");
-    }
-
     // ========== Helper Methods ==========
 
     /**
@@ -1435,7 +1137,6 @@ public class RamseyTrendModelTest {
     private RamseyTrendModel solveSimpleExogenous(Path paramsPath, int quarters) throws IOException {
         RamseyTrendModel simpleModel = new RamseyTrendModel();
         simpleModel.loadParams(paramsPath);
-        simpleModel.setEndogenousLabor(false);
         solveSimpleExogenous(simpleModel, quarters);
         return simpleModel;
     }
@@ -1461,82 +1162,15 @@ public class RamseyTrendModelTest {
         return terminalAnnual + Math.pow(rhoQuarterly, quarterIdx) * (baselineAnnual - terminalAnnual);
     }
 
-    /**
-     * CONTRACT: Java's intratemporal FOC must match MATLAB's to machine precision.
-     *
-     * <p>The FOC exists in both runtimes by architecture — MATLAB detrends and
-     * projects, Java projects inside SimPaths — and nothing structural keeps them in
-     * step. They disagreed for three months in 2026 (MATLAB priced the extensive
-     * margin at w·h, Java at the hourly wage w) and every run still succeeded.</p>
-     *
-     * <p>{@code foc_parity_cases.csv} is generated by MATLAB's
-     * generate_foc_parity_cases.m and asserted by BOTH suites, so drift on either
-     * side fails immediately without a full pipeline run. If this fails, do not
-     * regenerate the fixture to make it pass — the fixture is the contract.</p>
-     */
-    @Test
-    public void testLaborFOCMatchesMATLABParityCases() throws IOException {
-        Path parityFile = Paths.get(resolveFixtureDir("")).resolve("foc_parity_cases.csv");
-        Assumptions.assumeTrue(Files.exists(parityFile),
-                "FOC parity fixture not found at " + parityFile
-                + " — run generate_foc_parity_cases.m");
-
-        List<String> lines = Files.readAllLines(parityFile);
-        assertTrue(lines.size() > 1, "Parity fixture should contain cases");
-
-        String[] header = lines.get(0).split(",");
-        Map<String, Integer> col = new HashMap<>();
-        for (int i = 0; i < header.length; i++) {
-            col.put(header[i].trim(), i);
-        }
-        for (String required : new String[] {
-                "c", "K", "A", "WAP", "h", "alpha", "sigma", "phi", "psi", "expected_l"}) {
-            assertTrue(col.containsKey(required),
-                    "Parity fixture missing column: " + required);
-        }
-
-        RamseyTrendModel focModel = new RamseyTrendModel();
-        double worst = 0.0;
-        int checked = 0;
-        for (int i = 1; i < lines.size(); i++) {
-            String line = lines.get(i).trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-            String[] f = line.split(",");
-            double expected = Double.parseDouble(f[col.get("expected_l")]);
-            double actual = focModel.solveLaborFOC(
-                    Double.parseDouble(f[col.get("c")]),
-                    Double.parseDouble(f[col.get("K")]),
-                    Double.parseDouble(f[col.get("A")]),
-                    Double.parseDouble(f[col.get("WAP")]),
-                    Double.parseDouble(f[col.get("h")]),
-                    Double.parseDouble(f[col.get("alpha")]),
-                    Double.parseDouble(f[col.get("sigma")]),
-                    Double.parseDouble(f[col.get("psi")]),
-                    Double.parseDouble(f[col.get("phi")]));
-            worst = Math.max(worst, Math.abs(actual / expected - 1.0));
-            assertRelativeClose(actual, expected, 1e-12,
-                    "FOC parity case " + i + " (h=" + f[col.get("h")]
-                    + ", psi=" + f[col.get("psi")] + "): Java and MATLAB disagree");
-            checked++;
-        }
-        System.out.println("FOC parity: " + checked
-                + " cases matched MATLAB, worst relative deviation " + worst);
-    }
-
     private static String withTerminalGrowth(String jsonContent, double baselineAnnual,
-                                             double terminalAnnual, double rhoQuarterly,
-                                             boolean endogenousLabor) {
+                                             double terminalAnnual, double rhoQuarterly) {
         String updated = jsonContent
                 .replaceFirst("\\\"tfp_growth_annual\\\"\\s*:\\s*[\\d.eE+\\-]+",
                         "\"tfp_growth_annual\": " + baselineAnnual)
                 .replaceFirst("\\\"g_A_terminal_annual\\\"\\s*:\\s*[\\d.eE+\\-]+",
                         "\"g_A_terminal_annual\": " + terminalAnnual)
                 .replaceFirst("\\\"rho_quarterly\\\"\\s*:\\s*[\\d.eE+\\-]+",
-                        "\"rho_quarterly\": " + rhoQuarterly)
-                .replaceFirst("\\\"labor_supply\\\"\\s*:\\s*\\\"[^\\\"]+\\\"",
-                        "\"labor_supply\": \"" + (endogenousLabor ? "endogenous" : "exogenous") + "\"");
+                        "\"rho_quarterly\": " + rhoQuarterly);
         if (!updated.contains("\"terminal_growth\"")) {
             throw new IllegalStateException("Expected terminal_growth block in test fixture JSON");
         }
@@ -1558,12 +1192,8 @@ public class RamseyTrendModelTest {
         return stripped;
     }
 
-    private ProjectionInputs buildForwardProjectionInputs(boolean useWap) {
-        return buildForwardProjectionInputs(useWap, referenceData);
-    }
-
-    private ProjectionInputs buildForwardProjectionInputs(boolean useWap,
-            List<RamseyTrendModel.ReferenceRow> ref) {
+    private ProjectionInputs buildForwardProjectionInputs() {
+        List<RamseyTrendModel.ReferenceRow> ref = referenceData;
         int refSize = ref.size();
         double[] refLabor = new double[refSize];
         double[] refH = new double[refSize];
@@ -1572,7 +1202,7 @@ public class RamseyTrendModelTest {
 
         for (int i = 0; i < refSize; i++) {
             var row = ref.get(i);
-            refLabor[i] = useWap ? row.WAP() : row.N();
+            refLabor[i] = row.N();
             refH[i] = row.h();
             refGY[i] = row.gY();
             refNXY[i] = row.nxY();

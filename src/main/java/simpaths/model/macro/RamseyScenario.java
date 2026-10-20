@@ -36,9 +36,11 @@ import org.apache.log4j.Logger;
  *   <li><b>sigma</b>: deviation in CRRA coefficient (e.g., 0.5 = less willing to substitute)</li>
  *   <li><b>g_Y</b>: deviation in government spending share of GDP (e.g., 0.01 = +1 pp G/Y)</li>
  *   <li><b>nx_Y</b>: deviation in net exports share of GDP (e.g., -0.02 = -2 pp NX/Y)</li>
- *   <li><b>psi</b>: deviation in labor disutility weight (e.g., 5.0)</li>
- *   <li><b>phi</b>: deviation in inverse Frisch elasticity of labor supply (e.g., 0.5)</li>
  * </ul>
+ *
+ * <p>Any other column is an error: a file that names a parameter the model does not
+ * have (for example the {@code psi} column of the removed endogenous-labour variant,
+ * JuergenWiemers/SimPathsEU#28) must not run as a silent baseline.</p>
  *
  * <p>Not all parameter columns need to be present — missing columns default to zero.
  * Years not listed in the file also default to zero (baseline values).
@@ -65,7 +67,7 @@ public class RamseyScenario {
     private static final Logger log = Logger.getLogger(RamseyScenario.class);
 
     /** Recognized parameter names (case-insensitive matching against CSV headers) */
-    static final String[] PARAM_NAMES = {"g_A", "delta", "alpha_K", "beta", "sigma", "g_Y", "nx_Y", "psi", "phi"};
+    static final String[] PARAM_NAMES = {"g_A", "delta", "alpha_K", "beta", "sigma", "g_Y", "nx_Y"};
 
     /** Map from year → parameter deviations (indexed by PARAM_NAMES order) */
     private final TreeMap<Integer, double[]> deviationsByYear = new TreeMap<>();
@@ -133,10 +135,10 @@ public class RamseyScenario {
                 columnToParamIndex[col] = paramIdx;
                 mappedColumns++;
             } else if (!headers[col].isEmpty()) {
-                if (logEnabled) {
-                    log.warn("Ramsey scenario column '" + headers[col]
-                            + "' does not match any Ramsey parameter — ignored");
-                }
+                throw new IllegalArgumentException(
+                        "Ramsey scenario column '" + headers[col] + "' in " + csvPath
+                                + " is not a Ramsey parameter. Valid columns: year, "
+                                + String.join(", ", PARAM_NAMES));
             }
         }
 
@@ -388,10 +390,4 @@ public class RamseyScenario {
 
     /** Index of nx_Y (net exports share) in PARAM_NAMES / deviation arrays */
     public static final int IDX_NX_Y = 6;
-
-    /** Index of psi (labor disutility weight) in PARAM_NAMES / deviation arrays */
-    public static final int IDX_PSI = 7;
-
-    /** Index of phi (inverse Frisch elasticity) in PARAM_NAMES / deviation arrays */
-    public static final int IDX_PHI = 8;
 }

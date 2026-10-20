@@ -41,10 +41,10 @@ import org.apache.log4j.Logger;
  * </ol>
  *
  * <p>Both implementations read the same {@code growth_params_{COUNTRY}.json}
- * and must produce identical results in exogenous labour mode (verified by
- * {@code RamseyTrendModelTest}). Endogenous mode is intentionally asymmetric:
- * MATLAB is hybrid for detrending, while Java solves the full FOC for forward
- * projection.</p>
+ * and must produce identical results (verified by {@code RamseyTrendModelTest}
+ * at a relative tolerance of 1e-9). Labour input is exogenous on both sides;
+ * the endogenous-labour variant was removed on 2026-10-20
+ * (JuergenWiemers/SimPathsEU#28).</p>
  *
  * <h3>SimPaths integration</h3>
  * <p>In forward projection mode, the model initializes from the terminal
@@ -189,23 +189,6 @@ public class RamseyTrendModel {
     /** Balanced growth path capital-output ratio (quarterly) */
     private double kyBgp;
 
-    // ========== Endogenous Labor Supply ==========
-
-    /** Inverse Frisch elasticity on extensive margin (from JSON) */
-    private double phi;
-
-    /** Labor disutility weight (from JSON, calibrated by MATLAB) */
-    private double psi;
-
-    /** Whether endogenous labor supply is active */
-    private boolean endogenousLabor = false;
-
-    /** Solved participation rate path (null in exogenous mode) */
-    private double[] solvedL;
-
-    /** Exogenous WAP path (stored when endogenous labor is active) */
-    private double[] pathWAP;
-
     // ========== Constructor ==========
 
     /**
@@ -282,21 +265,17 @@ public class RamseyTrendModel {
         // BGP capital-output ratio uses terminal-period growth, not the zero-growth shortcut.
         kyBgp = calculateBgpCapitalOutputRatio(alphaK, deltaQ, betaQ, sigma, gATerminalQ);
 
-        // Endogenous labor supply parameters
+        // The endogenous-labour variant (participation FOC on phi/psi) was removed on
+        // 2026-10-20 (JuergenWiemers/SimPathsEU#28). A bundle that still declares it was
+        // exported against a different model: its N path is l*WAP and its reference CSV
+        // carries columns this solver no longer reads, so refuse it instead of solving
+        // it as if it were exogenous. An absent key or "exogenous" is the normal case.
         String laborSupplyMode = extractJsonString(content, "labor_supply");
-        endogenousLabor = "endogenous".equalsIgnoreCase(laborSupplyMode);
-        if (endogenousLabor) {
-            phi = requireJsonDouble(content, "phi");
-            psi = requireJsonDouble(content, "psi");
-            if (phi <= 0) {
-                throw new IllegalArgumentException("phi must be positive for endogenous labor, got: " + phi);
-            }
-            if (psi <= 0) {
-                throw new IllegalArgumentException("psi must be positive for endogenous labor, got: " + psi);
-            }
-        } else {
-            phi = 0;
-            psi = 0;
+        if ("endogenous".equalsIgnoreCase(laborSupplyMode)) {
+            throw new IllegalArgumentException(
+                    "growth_params declares labor_supply=endogenous, but the endogenous-labour "
+                    + "variant was removed (JuergenWiemers/SimPathsEU#28). Re-export the bundle: "
+                    + jsonPath);
         }
 
         validateParams();
@@ -310,11 +289,7 @@ public class RamseyTrendModel {
                 log.info(String.format("  Terminal TFP growth convergence: g_A_a %.4f -> %.4f, rho_q=%.4f",
                         gAAnnual, gATerminalAnnual, terminalGrowthRhoQ));
             }
-            if (endogenousLabor) {
-                log.info(String.format("  Endogenous labor: phi=%.4f, psi=%.6e", phi, psi));
-            } else {
-                log.info("  Labor supply: exogenous (N taken as given)");
-            }
+            log.info("  Labor supply: exogenous (N taken as given)");
         }
     }
 
@@ -330,14 +305,6 @@ public class RamseyTrendModel {
         K = extractJsonDouble(content, "K_terminal");
         A = extractJsonDouble(content, "A_terminal");
 
-        // Use terminal wedge for endogenous labor projection (hybrid detrending approach)
-        if (endogenousLabor) {
-            double psiTerminal = extractJsonDouble(content, "psi_terminal");
-            if (psiTerminal > 0) {
-                this.psi = psiTerminal;
-            }
-        }
-
         if (K <= 0 || A <= 0) {
             throw new IllegalArgumentException(String.format(
                     "Invalid terminal state: K=%.2f, A=%.6f (must be positive)", K, A));
@@ -345,9 +312,6 @@ public class RamseyTrendModel {
 
         if (logEnabled) {
             log.info(String.format("Terminal state loaded: K=%.2f, A=%.8f", K, A));
-            if (endogenousLabor) {
-                log.info(String.format("  Updated labor wedge (psi) to terminal value: %.6e", psi));
-            }
         }
     }
 
@@ -390,18 +354,14 @@ public class RamseyTrendModel {
     /**
      * Solve the Ramsey model for the optimal consumption and capital paths.
      *
-    * <p>Given exogenous paths for labor or WAP, hours (h), government spending share (gY),
+    * <p>Given exogenous paths for labor (N, employees), hours (h), government spending share (gY),
     * net exports share (nxY), initial capital K_0, and initial TFP A_0, this method solves
     * the full stacked perfect-foresight system subject to the Euler equation and terminal
     * transversality condition.</p>
      *
-     * <p>When {@link #endogenousLabor} is true, the {@code N} parameter is interpreted as
-     * the working-age population (WAP) path, and the model solves for the participation rate
-     * at each period using the intratemporal labor FOC.</p>
-     *
      * @param K0      Initial capital stock
      * @param A0      Initial TFP level
-     * @param N       Labor path: exogenous N (employees) or WAP when endogenous labor
+     * @param N       Exogenous labor path (employees, quarterly, length = simQuarters)
      * @param h       Exogenous hours per worker path (quarterly, length = simQuarters)
      * @param gY      Exogenous government spending share path (quarterly, length = simQuarters)
      * @param nxY     Exogenous net exports share path (quarterly, length = simQuarters)
@@ -450,9 +410,7 @@ public class RamseyTrendModel {
         double[] betaArr = new double[totalQ];
         double[] sigmaArr = new double[totalQ];
         double[] gAQArr = new double[totalQ];
-        double[] psiArr = new double[totalQ];
-        double[] phiArr = new double[totalQ];
-        buildParameterArrays(totalQ, alphaArr, deltaArr, betaArr, sigmaArr, gAQArr, psiArr, phiArr);
+        buildParameterArrays(totalQ, alphaArr, deltaArr, betaArr, sigmaArr, gAQArr);
 
         // Store for use in getTrendAtQuarter
         this.solvedAlpha = alphaArr;
@@ -487,16 +445,7 @@ public class RamseyTrendModel {
         this.pathGY = gYExt;
         this.pathNXY = nxYExt;
         System.arraycopy(hExt, 0, pathH, 0, totalQ);
-
-        // In endogenous mode, nExt is WAP; store it separately and defer N computation
-        if (endogenousLabor) {
-            this.pathWAP = new double[totalQ];
-            System.arraycopy(nExt, 0, pathWAP, 0, totalQ);
-            // pathN will be filled after solving (N = l * WAP)
-        } else {
-            this.pathWAP = null;
-            System.arraycopy(nExt, 0, pathN, 0, totalQ);
-        }
+        System.arraycopy(nExt, 0, pathN, 0, totalQ);
 
         // Terminal BGP uses terminal-period parameters
         double termAlpha = alphaArr[totalQ - 1];
@@ -511,8 +460,7 @@ public class RamseyTrendModel {
         double gTerminal = terminalGrossGrowth(aExt, nExt, alphaArr, totalQ);
 
         if (logEnabled) {
-            log.info(String.format("Solving Ramsey%s (stacked-time Newton): %d quarters (+%d extension), K0=%.1f%s",
-                    endogenousLabor ? " (endogenous labor)" : "",
+            log.info(String.format("Solving Ramsey (stacked-time Newton): %d quarters (+%d extension), K0=%.1f%s",
                     quarters, terminalExtensionQuarters, K0,
                     hasScenario() ? " [SCENARIO: " + scenario.getScenarioName() + "]" : ""));
             if (hasScenario()) {
@@ -532,17 +480,10 @@ public class RamseyTrendModel {
         solvedK = new double[totalQ];
         solvedC = new double[totalQ];
         solvedY = new double[totalQ];
-        solvedL = endogenousLabor ? new double[totalQ] : null;
 
         int iter = stackedNewtonSolve(K0, aExt, nExt, hExt, gYExt, nxYExt, totalQ,
-                alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr, gTerminal,
-                solvedK, solvedC, solvedY, solvedL);
-
-        if (endogenousLabor) {
-            for (int t = 0; t < totalQ; t++) {
-                pathN[t] = solvedL[t] * pathWAP[t];
-            }
-        }
+                alphaArr, deltaArr, betaArr, sigmaArr, gTerminal,
+                solvedK, solvedC, solvedY);
 
         solved = true;
 
@@ -552,10 +493,6 @@ public class RamseyTrendModel {
             log.info(String.format("  K_0 = %.4f (calibrated K0 = %.4f)", solvedK[0], K0));
             log.info(String.format("  Terminal K/Y = %.4f (BGP target = %.4f)",
                     solvedK[totalQ - 1] / solvedY[totalQ - 1], kyBgp));
-            if (endogenousLabor) {
-                log.info(String.format("  Participation rate: l_0=%.4f, l_T=%.4f",
-                        solvedL[0], solvedL[totalQ - 1]));
-            }
         }
     }
 
@@ -566,7 +503,7 @@ public class RamseyTrendModel {
      * With a scenario, deviations are added per year (4 quarters each), with the annual-to-quarterly
      * conversion applied after adding the deviation.</p>
      */
-    private void buildParameterArrays(int totalQ, double[] alphaArr, double[] deltaArr, double[] betaArr, double[] sigmaArr, double[] gAQArr, double[] psiArr, double[] phiArr) {
+    private void buildParameterArrays(int totalQ, double[] alphaArr, double[] deltaArr, double[] betaArr, double[] sigmaArr, double[] gAQArr) {
         double[] baselineGAAnnualArr = buildBaselineAnnualGrowthPath(totalQ);
 
         if (!hasScenario()) {
@@ -575,8 +512,6 @@ public class RamseyTrendModel {
             Arrays.fill(deltaArr, deltaQ);
             Arrays.fill(betaArr, betaQ);
             Arrays.fill(sigmaArr, sigma);
-            Arrays.fill(psiArr, psi);
-            Arrays.fill(phiArr, phi);
             for (int t = 0; t < totalQ; t++) {
                 gAQArr[t] = annualToQuarterlyGrowth(baselineGAAnnualArr[t]);
             }
@@ -604,10 +539,6 @@ public class RamseyTrendModel {
             // g_A: annual deviation → quarterly conversion
             double gAADev = baselineGAAnnualArr[t] + devs[RamseyScenario.IDX_G_A];
             gAQArr[t] = Math.pow(1.0 + gAADev, 0.25) - 1.0;
-
-            // psi and phi: absolute deviations
-            psiArr[t] = Math.max(1e-6, psi + devs[RamseyScenario.IDX_PSI]);
-            phiArr[t] = Math.max(1e-6, phi + devs[RamseyScenario.IDX_PHI]);
 
                 validateQuarterlyParameters(alphaArr[t], deltaArr[t], betaArr[t], sigmaArr[t], gAQArr[t],
                     calendarYear, t);
@@ -650,7 +581,7 @@ public class RamseyTrendModel {
         double kVal = solvedK[quarterIdx];
         double yVal = solvedY[quarterIdx];
         double cVal = solvedC[quarterIdx];  // per capita
-        double nVal = pathN[quarterIdx];    // employees (derived from l*WAP in endogenous mode)
+        double nVal = pathN[quarterIdx];    // employees
         double hVal = pathH[quarterIdx];
 
         // Use time-varying alpha if solved with scenario, otherwise baseline
@@ -667,10 +598,8 @@ public class RamseyTrendModel {
         double nxVal = pathNXY[quarterIdx] * yVal;
         double iVal = yVal - cAgg - gVal - nxVal;
 
-        double partRate = (endogenousLabor && solvedL != null) ? solvedL[quarterIdx] : 0.0;
-
         return new TrendState(yVal, cAgg, iVal, kVal, wage, rQuarterly, rAnnual, nVal,
-                pathA[quarterIdx], gVal, nxVal, partRate);
+                pathA[quarterIdx], gVal, nxVal);
     }
 
     /**
@@ -694,7 +623,7 @@ public class RamseyTrendModel {
 
         double ySum = 0, cSum = 0, iSum = 0, kSum = 0;
         double wSum = 0, rqSum = 0, nSum = 0;
-        double gSum = 0, nxSum = 0, lSum = 0;
+        double gSum = 0, nxSum = 0;
 
         for (int q = 0; q < 4; q++) {
             TrendState qs = getTrendAtQuarter(currentQuarterIdx + q);
@@ -707,7 +636,6 @@ public class RamseyTrendModel {
             nSum += qs.labor();
             gSum += qs.government();
             nxSum += qs.netExports();
-            lSum += qs.participationRate();
         }
 
         currentQuarterIdx += 4;
@@ -727,8 +655,7 @@ public class RamseyTrendModel {
                 nSum / 4.0,   // average N
                 aVal,         // end-of-year A
                 gSum / 4.0,   // average quarterly G
-                nxSum / 4.0,  // average quarterly NX
-                lSum / 4.0    // average participation rate
+                nxSum / 4.0   // average quarterly NX
         );
     }
 
@@ -761,75 +688,22 @@ public class RamseyTrendModel {
     }
 
     /**
-     * Solve the intratemporal labor FOC for the participation rate (closed-form under Cobb-Douglas).
+     * Per-quarter economics: labor and output for given (K_t, c_t).
      *
-     * <p>The choice variable is PARTICIPATION, so the margin is priced at what a
-     * participant earns over the period — per-participant earnings w·h — not at the
-     * hourly wage w. Hours per participant are exogenous here, so they scale the
-     * return to participating.</p>
-     *
-     * <p>From the household FOC:  ψ l^φ = w·h·c^{-σ},  w = (1-α) A K^α (l·WAP·h)^{-α}</p>
-     * <p>Rearranging:  l^{φ+α} = (1-α) A K^α WAP^{-α} h^{1-α} c^{-σ} / ψ</p>
-     * <p>Therefore:    l = [RHS]^{1/(φ+α)}</p>
-     *
-     * <p>Hours enter with exponent (1-α)/(φ+α) &gt; 0: a falling hours trend lowers
-     * participation, because each participant earns less per period. Pricing the
-     * margin at the hourly wage instead gives exponent -α/(φ+α) &lt; 0 and reverses
-     * that sign — what both implementations did before 2026-08.</p>
-     *
-     * <p>Mirrored in MATLAB's solve_labor_foc.m — the two must move together.</p>
-     *
-     * @param c     Per-capita consumption
-     * @param K     Capital stock
-     * @param A     TFP level
-     * @param WAP   Working-age population
-     * @param h     Hours per worker
-     * @param alpha Capital share
-     * @param sigma CRRA parameter
-     * @return Participation rate l, clamped to [0.01, 0.99]
-     */
-    // Package-private rather than private so RamseyTrendModelTest can assert this
-    // directly against the shared MATLAB parity fixture (foc_parity_cases.csv).
-    // Visibility only - no behavioural difference.
-    double solveLaborFOC(double c, double K, double A, double WAP, double h,
-                                  double alpha, double sigma, double currentPsi, double currentPhi) {
-        double rhs = (1.0 - alpha) * A * Math.pow(K, alpha)
-                * Math.pow(WAP, -alpha) * Math.pow(h, 1.0 - alpha)
-                * Math.pow(c, -sigma) / currentPsi;
-        double l = Math.pow(rhs, 1.0 / (currentPhi + alpha));
-        return Math.max(0.01, Math.min(0.99, l));
-    }
-
-    /**
-     * Per-quarter economics: participation, labor and output for given (K_t, c_t).
-     *
-     * @return {N_t, Y_t, l_t} (l_t = 0 in exogenous mode), or null if infeasible
+     * @return {N_t, Y_t}, or null if infeasible
      */
     private double[] periodEconomics(int t, double Kt, double ct, double[] aPath,
-                                     double[] nPath, double[] hPath, double[] alphaArr,
-                                     double[] sigmaArr, double[] psiArr, double[] phiArr,
-                                     double lFixed) {
+                                     double[] nPath, double[] hPath, double[] alphaArr) {
         if (!(Kt > 0) || !(ct > 0) || !Double.isFinite(Kt) || !Double.isFinite(ct)) {
             return null;
         }
-        double lT = 0.0;
-        double nT;
-        if (endogenousLabor) {
-            // lFixed >= 0 pins participation (continuation phase 1); NaN = full FOC.
-            lT = (lFixed >= 0.0)
-                    ? lFixed
-                    : solveLaborFOC(ct, Kt, aPath[t], nPath[t], hPath[t],
-                            alphaArr[t], sigmaArr[t], psiArr[t], phiArr[t]);
-            nT = lT * nPath[t];
-        } else {
-            nT = nPath[t];
-        }
+        double nT = nPath[t];
         double effLabor = nT * hPath[t];
         double yT = aPath[t] * Math.pow(Kt, alphaArr[t]) * Math.pow(effLabor, 1.0 - alphaArr[t]);
         if (!Double.isFinite(yT) || yT <= 0) {
             return null;
         }
-        return new double[]{nT, yT, lT};
+        return new double[]{nT, yT};
     }
 
     /**
@@ -849,8 +723,7 @@ public class RamseyTrendModel {
     private double[] stackedResiduals(double[] u, double K0, double[] aPath, double[] nPath,
                                       double[] hPath, double[] gYPath, double[] nxYPath, int T,
                                       double[] alphaArr, double[] deltaArr, double[] betaArr,
-                                      double[] sigmaArr, double[] psiArr, double[] phiArr,
-                                      double lFixed) {
+                                      double[] sigmaArr) {
         int m = 2 * T - 1;
         double[] f = new double[m];
         for (int t = 0; t < T - 1; t++) {
@@ -859,7 +732,7 @@ public class RamseyTrendModel {
             double Knext = u[2 * t + 1];
             double cNext = u[2 * t + 2];
 
-            double[] e = periodEconomics(t, Kt, ct, aPath, nPath, hPath, alphaArr, sigmaArr, psiArr, phiArr, lFixed);
+            double[] e = periodEconomics(t, Kt, ct, aPath, nPath, hPath, alphaArr);
             if (e == null) return null;
             double nT = e[0], yT = e[1];
 
@@ -868,8 +741,7 @@ public class RamseyTrendModel {
             if (!(rhsK > 0) || !Double.isFinite(rhsK) || !(Knext > 0)) return null;
             f[2 * t] = Knext / rhsK - 1.0;
 
-            double[] eN = periodEconomics(t + 1, Knext, cNext, aPath, nPath, hPath,
-                    alphaArr, sigmaArr, psiArr, phiArr, lFixed);
+            double[] eN = periodEconomics(t + 1, Knext, cNext, aPath, nPath, hPath, alphaArr);
             if (eN == null) return null;
             double yNext = eN[1];
             double rNext = alphaArr[t + 1] * yNext / Knext - deltaArr[t + 1];
@@ -882,8 +754,7 @@ public class RamseyTrendModel {
 
         double Klast = u[2 * (T - 1) - 1];
         double cLast = u[2 * (T - 1)];
-        double[] eL = periodEconomics(T - 1, Klast, cLast, aPath, nPath, hPath,
-                alphaArr, sigmaArr, psiArr, phiArr, lFixed);
+        double[] eL = periodEconomics(T - 1, Klast, cLast, aPath, nPath, hPath, alphaArr);
         if (eL == null) return null;
         double yLast = eL[1];
         f[m - 1] = Klast / (kyBgp * yLast) - 1.0;
@@ -895,25 +766,22 @@ public class RamseyTrendModel {
     }
 
     /**
-     * Damped Newton on the stacked-time system for a given labour treatment.
+     * Damped Newton on the stacked-time system.
      *
-     * <p>{@code lFixed} >= 0 pins participation (continuation phase 1, used to
-     * land in the saddle-path basin before turning on the intratemporal FOC);
-     * NaN solves the full endogenous/exogenous system. The finite-difference
-     * Jacobian is tridiagonal (each quarter couples only adjacent unknowns) and
-     * is factorised by banded LU with partial pivoting. {@code u} is updated
-     * in place to the converged solution.</p>
+     * <p>The finite-difference Jacobian is tridiagonal (each quarter couples only
+     * adjacent unknowns) and is factorised by banded LU with partial pivoting.
+     * {@code u} is updated in place to the converged solution.</p>
      *
      * @return number of Newton iterations used
      */
-    private int stackedNewtonCore(double[] u, double lFixed, double K0,
+    private int stackedNewtonCore(double[] u, double K0,
                                    double[] aPath, double[] nPath, double[] hPath,
                                    double[] gYPath, double[] nxYPath, int T,
                                    double[] alphaArr, double[] deltaArr, double[] betaArr,
-                                   double[] sigmaArr, double[] psiArr, double[] phiArr) {
+                                   double[] sigmaArr) {
         int m = 2 * T - 1;
         double[] f = stackedResiduals(u, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr, lFixed);
+                alphaArr, deltaArr, betaArr, sigmaArr);
         if (f == null) {
             throw new IllegalStateException(
                     "Ramsey stacked-time Newton: infeasible starting point. Check scenario/path assumptions.");
@@ -946,12 +814,12 @@ public class RamseyTrendModel {
                 double step = 1e-7 * Math.max(1.0, Math.abs(uj));
                 u[j] = uj + step;
                 double[] fp = stackedResiduals(u, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                        alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr, lFixed);
+                        alphaArr, deltaArr, betaArr, sigmaArr);
                 u[j] = uj;
                 if (fp == null) {
                     u[j] = uj - step;
                     fp = stackedResiduals(u, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                            alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr, lFixed);
+                            alphaArr, deltaArr, betaArr, sigmaArr);
                     u[j] = uj;
                     step = -step;
                     if (fp == null) {
@@ -1003,7 +871,7 @@ public class RamseyTrendModel {
             while (lambda > 1e-10) {
                 for (int i = 0; i < m; i++) uTrial[i] = u[i] + lambda * rhs[i];
                 fTrial = stackedResiduals(uTrial, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                        alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr, lFixed);
+                        alphaArr, deltaArr, betaArr, sigmaArr);
                 if (fTrial != null) {
                     newNorm = infNorm(fTrial);
                     if (newNorm < (1.0 - 1e-4 * lambda) * norm || lambda < 1e-8) break;
@@ -1029,34 +897,24 @@ public class RamseyTrendModel {
 
     /**
      * Solve the Ramsey perfect-foresight transition. Builds a feasible BGP-like
-     * guess, then runs the stacked-time Newton. In endogenous-labour mode a
-     * continuation is used: phase 1 fixes participation to land in the
-     * saddle-path basin, phase 2 turns on the intratemporal FOC warm-started
-     * from phase 1 (the substituted FOC makes the raw system non-convex, so a
-     * cold endogenous solve can converge to a spurious low-participation root).
-     * Fills {@code kOut,cOut,yOut,lOut}.
+     * guess, then runs the stacked-time Newton. Fills {@code kOut,cOut,yOut}.
      *
-     * @return number of Newton iterations used in the final phase
+     * @return number of Newton iterations used
      */
     private int stackedNewtonSolve(double K0, double[] aPath, double[] nPath, double[] hPath,
                                     double[] gYPath, double[] nxYPath, int T,
                                     double[] alphaArr, double[] deltaArr, double[] betaArr,
-                                    double[] sigmaArr, double[] psiArr, double[] phiArr,
+                                    double[] sigmaArr,
                                     double gTerminal, double[] kOut, double[] cOut,
-                                    double[] yOut, double[] lOut) {
+                                    double[] yOut) {
         int m = 2 * T - 1;
         double[] u = new double[m];
 
-        // Phase-1 fixed participation. Its exact value only needs to place the
-        // fixed-labour solve in the saddle-path basin; phase 2 refines l via the
-        // FOC. A few continuation steps bridge phase 1 → full endogenous.
-        double lAnchor = 0.6;
-
         // Feasible BGP-like initial guess: integrate forward with a constant
-        // BGP investment share and the participation anchor for endogenous labor.
+        // BGP investment share.
         double Kg = K0;
         for (int t = 0; t < T; t++) {
-            double nG = endogenousLabor ? lAnchor * nPath[t] : nPath[t];
+            double nG = nPath[t];
             double yG = aPath[t] * Math.pow(Kg, alphaArr[t])
                     * Math.pow(nG * hPath[t], 1.0 - alphaArr[t]);
             double invShare = (gTerminal - 1.0 + deltaArr[t]) * kyBgp;
@@ -1074,29 +932,17 @@ public class RamseyTrendModel {
             }
         }
 
-        int it;
-        if (endogenousLabor) {
-            // Phase 1: fixed participation (selects the saddle-path basin).
-            stackedNewtonCore(u, lAnchor, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                    alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr);
-            // Phase 2: full endogenous FOC, warm-started from phase 1.
-            it = stackedNewtonCore(u, Double.NaN, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                    alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr);
-        } else {
-            it = stackedNewtonCore(u, Double.NaN, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
-                    alphaArr, deltaArr, betaArr, sigmaArr, psiArr, phiArr);
-        }
+        int it = stackedNewtonCore(u, K0, aPath, nPath, hPath, gYPath, nxYPath, T,
+                alphaArr, deltaArr, betaArr, sigmaArr);
 
         // Reconstruct full paths from the converged unknowns.
         for (int t = 0; t < T; t++) {
             double Kt = (t == 0) ? K0 : u[2 * t - 1];
             double ct = u[2 * t];
-            double[] e = periodEconomics(t, Kt, ct, aPath, nPath, hPath,
-                    alphaArr, sigmaArr, psiArr, phiArr, Double.NaN);
+            double[] e = periodEconomics(t, Kt, ct, aPath, nPath, hPath, alphaArr);
             kOut[t] = Kt;
             cOut[t] = ct;
             yOut[t] = e[1];
-            if (lOut != null) lOut[t] = e[2];
         }
         return it;
     }
@@ -1559,9 +1405,9 @@ public class RamseyTrendModel {
     /**
      * Load the MATLAB reference CSV for cross-validation.
      *
-     * <p>Expected columns: time,K,Y,C,I,w,r_star,N,L,h[,g_Y,nx_Y][,l,WAP]</p>
-     * <p>The g_Y, nx_Y, l, and WAP columns are optional for backward compatibility
-     * with older reference CSVs (defaults to 0).</p>
+     * <p>Expected columns: time,K,Y,C,I,w,r_star,N,L,h[,g_Y,nx_Y]</p>
+     * <p>The g_Y and nx_Y columns are optional for backward compatibility
+     * with older reference CSVs (defaults to 0). Further columns are ignored.</p>
      *
      * @param csvPath Path to growth_model_reference_{country}.csv
      * @return List of ReferenceRow records
@@ -1577,20 +1423,10 @@ public class RamseyTrendModel {
         String[] headers = MacroCsv.splitRow(lines.get(0));
         int gYCol = -1;
         int nxYCol = -1;
-        int lCol = -1;
-        int wapCol = -1;
         for (int i = 0; i < headers.length; i++) {
             String h = headers[i].trim();
             if (h.equalsIgnoreCase("g_Y")) gYCol = i;
             if (h.equalsIgnoreCase("nx_Y")) nxYCol = i;
-            // Case-SENSITIVE: "l" is the optional participation rate in [0,1] while
-            // "L" is the mandatory labour-force level (~16719). A case-insensitive
-            // match picks up the latter, so exogenous-format rows reported l as a
-            // labour-force level ~40000x its expected scale. The endogenous format
-            // only worked because its lowercase "l" comes after "L" and the last
-            // match won.
-            if (h.equals("l")) lCol = i;
-            if (h.equalsIgnoreCase("WAP")) wapCol = i;
         }
 
         // Skip header
@@ -1605,10 +1441,6 @@ public class RamseyTrendModel {
                     ? Double.parseDouble(parts[gYCol].trim()) : 0.0;
             double nxYVal = (nxYCol >= 0 && nxYCol < parts.length)
                     ? Double.parseDouble(parts[nxYCol].trim()) : 0.0;
-            double lVal = (lCol >= 0 && lCol < parts.length)
-                    ? Double.parseDouble(parts[lCol].trim()) : 0.0;
-            double wapVal = (wapCol >= 0 && wapCol < parts.length)
-                    ? Double.parseDouble(parts[wapCol].trim()) : 0.0;
 
             rows.add(new ReferenceRow(
                     parts[0].trim(),                    // time
@@ -1622,9 +1454,7 @@ public class RamseyTrendModel {
                     Double.parseDouble(parts[8].trim()), // L
                     Double.parseDouble(parts[9].trim()), // h
                     gYVal,                               // g_Y
-                    nxYVal,                              // nx_Y
-                    lVal,                                // l (participation rate)
-                    wapVal                               // WAP
+                    nxYVal                               // nx_Y
             ));
         }
 
@@ -1648,21 +1478,6 @@ public class RamseyTrendModel {
     public int getCurrentQuarterIdx() { return currentQuarterIdx; }
     public void setLogEnabled(boolean enabled) { this.logEnabled = enabled; }
 
-    /** Whether endogenous labor supply is active (φ/ψ FOC). */
-    public boolean isEndogenousLabor() { return endogenousLabor; }
-
-    /**
-     * Override endogenous labor mode after parameter loading.
-     * <p>Primarily for testing: allows forcing exogenous mode even when the JSON
-     * specifies endogenous, e.g., when cross-validating against an older reference
-     * CSV that was generated without endogenous labor support.</p>
-     *
-     * @param enabled true for endogenous, false for exogenous
-     */
-    public void setEndogenousLabor(boolean enabled) {
-        this.endogenousLabor = enabled;
-    }
-
     /**
      * Set the TFP terminal-growth convergence phase offset (see field javadoc). Applies
      * to the next {@link #solveForPath}.
@@ -1677,12 +1492,6 @@ public class RamseyTrendModel {
     }
 
     public int getTfpPhaseOffsetQuarters() { return tfpPhaseOffsetQuarters; }
-
-    /** Inverse Frisch elasticity (only meaningful when endogenousLabor is true). */
-    public double getPhi() { return phi; }
-
-    /** Labor disutility weight (only meaningful when endogenousLabor is true). */
-    public double getPsi() { return psi; }
 
     /** Get the active Ramsey scenario, or null if none set. */
     public RamseyScenario getScenario() { return scenario; }
@@ -1732,7 +1541,6 @@ public class RamseyTrendModel {
      * @param tfp              Total factor productivity level (A)
      * @param government       Quarterly government spending (G = g_Y × Y)
      * @param netExports       Quarterly net exports (NX = nx_Y × Y)
-     * @param participationRate Participation rate (l = N/WAP) when endogenous, 0 when exogenous
      */
     public record TrendState(
             double output,
@@ -1745,8 +1553,7 @@ public class RamseyTrendModel {
             double labor,
             double tfp,
             double government,
-            double netExports,
-            double participationRate
+            double netExports
     ) {}
 
     /**
@@ -1764,14 +1571,12 @@ public class RamseyTrendModel {
      * @param h      Hours per employee
      * @param gY     Government spending share of GDP (0 if not available)
      * @param nxY    Net exports share of GDP (0 if not available)
-     * @param l      Participation rate (0 if not available)
-     * @param WAP    Working-age population (0 if not available)
      */
     public record ReferenceRow(
             String time,
             double K, double Y, double C, double I,
             double w, double rStar, double N, double L, double h,
-            double gY, double nxY, double l, double WAP
+            double gY, double nxY
     ) {}
 }
 

@@ -120,7 +120,7 @@ class MacroJsonTest {
 
     /**
      * Task 7 of the 2026-08-19 contract-fixes plan rewrites growth_terminal_state.json
-     * numbers as %.16e (K_terminal/A_terminal join psi_terminal). A number reader that
+     * numbers as %.16e (K_terminal and A_terminal). A number reader that
      * silently truncated at 'e' would be exactly the class of bug this plan removes,
      * so the format is pinned here before the writer changes.
      */
@@ -128,9 +128,9 @@ class MacroJsonTest {
     void numberParsesScientificNotation() {
         String json = "{\n  \"K_terminal\": 1.3607012165440000e+06,\n"
                 + "  \"A_terminal\": 3.4518608300000002e-02,\n"
-                + "  \"psi_terminal\": 1.2397643478786207e+00\n}";
+                + "  \"ratio\": 1.2397643478786207e+00\n}";
         assertEquals(1.3607012165440000e+06, MacroJson.number(json, "K_terminal", 0.0));
         assertEquals(3.4518608300000002e-02, MacroJson.number(json, "A_terminal", 0.0));
-        assertEquals(1.2397643478786207e+00, MacroJson.number(json, "psi_terminal", 0.0));
+        assertEquals(1.2397643478786207e+00, MacroJson.number(json, "ratio", 0.0));
     }
 }

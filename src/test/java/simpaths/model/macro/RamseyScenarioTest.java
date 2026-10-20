@@ -215,13 +215,13 @@ public class RamseyScenarioTest {
     public void testGetDeviationsArray() throws IOException {
         Path csv = tempDir.resolve("test_array.csv");
         Files.writeString(csv,
-            "year, g_A, delta, alpha_K, beta, sigma, g_Y, nx_Y, psi, phi\n" +
-            "2025, 0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009\n");
+            "year, g_A, delta, alpha_K, beta, sigma, g_Y, nx_Y\n" +
+            "2025, 0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007\n");
 
         scenario.loadFromFile(csv);
 
         double[] devs = scenario.getDeviations(2025);
-        assertEquals(9, devs.length);
+        assertEquals(7, devs.length);
         assertEquals(0.001, devs[RamseyScenario.IDX_G_A], 1e-10);
         assertEquals(0.002, devs[RamseyScenario.IDX_DELTA], 1e-10);
         assertEquals(0.003, devs[RamseyScenario.IDX_ALPHA_K], 1e-10);
@@ -229,8 +229,20 @@ public class RamseyScenarioTest {
         assertEquals(0.005, devs[RamseyScenario.IDX_SIGMA], 1e-10);
         assertEquals(0.006, devs[RamseyScenario.IDX_G_Y], 1e-10);
         assertEquals(0.007, devs[RamseyScenario.IDX_NX_Y], 1e-10);
-        assertEquals(0.008, devs[RamseyScenario.IDX_PSI], 1e-10);
-        assertEquals(0.009, devs[RamseyScenario.IDX_PHI], 1e-10);
+    }
+
+    /**
+     * The endogenous-labour variant and its {@code psi}/{@code phi} scenario columns were
+     * removed (JuergenWiemers/SimPathsEU#28). A scenario file that still carries one must
+     * fail with the list of valid columns rather than run as a silent baseline.
+     */
+    @Test
+    public void testPsiColumnIsRejected() throws IOException {
+        Path csv = tempDir.resolve("psi.csv");
+        Files.writeString(csv, "year, g_A, psi\n2025, 0.001, -0.00005\n");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> scenario.loadFromFile(csv));
+        assertTrue(e.getMessage().contains("g_A, delta, alpha_K, beta, sigma, g_Y, nx_Y"), e.getMessage());
     }
 
     @Test

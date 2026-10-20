@@ -236,8 +236,7 @@ public class RamseyRecursiveFeedbackTest {
      * Scenario choice: {@code _macroScenario_ramsey_high_gA_2040.csv} declares a single,
      * permanent +0.25pp g_A step landing in 2040 (0 before, +0.0025 forever after) — checked
      * before picking it, since a flat/constant deviation (e.g. the plain "_ramsey_high_gA.csv"
-     * variant, +0.0025 from 2023 onward with no time variation) or a near-zero psi trend
-     * (e.g. "_ramsey_base_aligned.csv", O(1e-5) per year) would be invariant to a 2-year
+     * variant, +0.0025 from 2023 onward with no time variation) would be invariant to a 2-year
      * calendar mis-anchor and make the assertion vacuous.
      *
      * <p>The re-solve's quarter 0 is real calendar year 2025. A correct re-anchor

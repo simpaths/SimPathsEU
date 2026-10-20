@@ -244,8 +244,8 @@ local total_vars   "w_total y_total c_total inv_total k_total"
 local total_labels `" "Total wage" "Total output" "Total consumption" "Total investment" "Total capital" "'
 
 // ----- 4d. Population / labour level variables (new: cumulative indices) -----
-local pop_vars   "l_level h_level n_ramsey l_ramsey participation_rate workers_over_atriskpool total_population wap_level atrisk_level wage_realized"
-local pop_labels `" "Labour force L (SimPaths)" "Hours per worker h (SimPaths)" "Employees N (Ramsey)" "Participation rate l (Ramsey, %)" "Participation rate (SimPaths, % of WAP)" "Workers / at-risk pool (SimPaths, %)" "Total population (SimPaths)" "WAP 15-64 (SimPaths)" "At-risk pool (SimPaths)" "Realised wage (at-risk pool, % from first year)" "'
+local pop_vars   "l_level h_level n_ramsey participation_rate workers_over_atriskpool total_population wap_level atrisk_level wage_realized"
+local pop_labels `" "Labour force L (SimPaths)" "Hours per worker h (SimPaths)" "Employees N (Ramsey)" "Participation rate (SimPaths, % of WAP)" "Workers / at-risk pool (SimPaths, %)" "Total population (SimPaths)" "WAP 15-64 (SimPaths)" "At-risk pool (SimPaths)" "Realised wage (at-risk pool, % from first year)" "'
 
 // Labour category ranges from SimPaths Labour.java for PL/HU/EL:
 // Cat. 0 = 0 hours, Cat. 1 = 1-39 hours, Cat. 2 = 40 hours, Cat. 3 = 41-60 hours.
@@ -715,22 +715,21 @@ if _rc == 0 {
     local pop_graphs "`pop_graphs' pop_h_level"
 }
 
-// 7.3 Participation rates (SimPaths vs Ramsey) — indexed to first year
-// The two series are different objects with different anchors: l_ramsey is the
-// FOC-solved Ramsey participation N/WAP (SNA-anchored, model-solved, drifts
-// under sigma>1), while participation_rate is the SimPaths micro employment
-// rate (LFS-anchored, measured). Comparing them in levels exaggerates a purely
-// definitional ~20pp offset and hides the dynamics. Index each series to its
-// own first valid (>0) annual value and plot % change from first year, so the
-// comparison isolates the dynamics (incl. the sigma>1 Ramsey drift). Leading
-// pre-labour-market zeros are left missing (line starts at first valid year, no
-// spurious -100 jump); a series that is zero throughout (e.g. l_ramsey in
-// exogenous mode) stays flat at 0, as before.
+// 7.3 Participation rate (SimPaths) — indexed to first year
+// participation_rate is the SimPaths micro employment rate (workers over the
+// 15-64 population, LFS-anchored, measured). Index the series to its own first
+// valid (>0) annual value and plot % change from first year, so the comparison
+// isolates the dynamics. Leading pre-labour-market zeros are left missing (line
+// starts at first valid year, no spurious -100 jump); a series that is zero
+// throughout stays flat at 0. The Ramsey participation series that used to sit
+// next to it went with the endogenous-labour variant
+// (JuergenWiemers/SimPathsEU#28); old MacroPaths.csv files that still carry
+// that column are read without it.
 cap confirm variable participation_rate participation_rate_base
 if _rc == 0 {
     cap drop _ord
     gen long _ord = _n
-    foreach vv in participation_rate participation_rate_base l_ramsey l_ramsey_base {
+    foreach vv in participation_rate participation_rate_base {
         cap confirm variable `vv'
         if _rc == 0 {
             cap drop i_`vv'
@@ -748,31 +747,15 @@ if _rc == 0 {
     }
     cap drop _ord
 
-    cap confirm variable i_l_ramsey i_l_ramsey_base
-    if _rc == 0 {
-        local title = cond(1, `"title("Participation rates (SimPaths vs Ramsey)", size(small))"', "")
-        twoway ///
-            (line i_participation_rate_base ya if annual_plot, lpattern(dash)  lcolor(gs8)       lwidth(medium)) ///
-            (line i_participation_rate ya if annual_plot,      lpattern(solid) lcolor(navy)      lwidth(medium)) ///
-            (line i_l_ramsey_base ya if annual_plot,           lpattern(dash)  lcolor(cranberry) lwidth(medium)) ///
-            (line i_l_ramsey ya if annual_plot,                lpattern(solid) lcolor(cranberry) lwidth(medium)), ///
-            `title' ///
-            ytitle("% from first year", size(vsmall)) ///
-            `pop_gopts' `annual_xaxisopts' ///
-            legend(order(1 "SimPaths (baseline)" 2 "SimPaths (scenario)" 3 "Ramsey (baseline)" 4 "Ramsey (scenario)") `pop_legstyle_8') ///
-            name(pop_participation, replace)
-    }
-    else {
-        local title = cond(1, `"title("Participation rates (SimPaths)", size(small))"', "")
-        twoway ///
-            (line i_participation_rate_base ya if annual_plot, lpattern(dash)  lcolor(gs8)  lwidth(medium)) ///
-            (line i_participation_rate ya if annual_plot,      lpattern(solid) lcolor(navy) lwidth(medium)), ///
-            `title' ///
-            ytitle("% from first year", size(vsmall)) ///
-            `pop_gopts' `annual_xaxisopts' ///
-            legend(order(1 "Baseline" 2 "Scenario") `pop_legstyle') ///
-            name(pop_participation, replace)
-    }
+    local title = cond(1, `"title("Participation rates (SimPaths)", size(small))"', "")
+    twoway ///
+        (line i_participation_rate_base ya if annual_plot, lpattern(dash)  lcolor(gs8)  lwidth(medium)) ///
+        (line i_participation_rate ya if annual_plot,      lpattern(solid) lcolor(navy) lwidth(medium)), ///
+        `title' ///
+        ytitle("% from first year", size(vsmall)) ///
+        `pop_gopts' `annual_xaxisopts' ///
+        legend(order(1 "Baseline" 2 "Scenario") `pop_legstyle') ///
+        name(pop_participation, replace)
 
     local pop_graphs "`pop_graphs' pop_participation"
 }
