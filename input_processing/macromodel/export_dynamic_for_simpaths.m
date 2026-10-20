@@ -173,7 +173,7 @@ mark_bundle_unverified(output_dir, export_country, ...
     {'export started but did not reach verification'});
 
 fprintf('>>> Country: %s\n', export_country);
-fprintf('>>> Output directory: %s/\n\n', output_dir);
+fprintf('>>> Output directory: %s/\n\n', strrep(output_dir, '\', '/'));
 
 %% =========================================================================
 %% 1. EXTRACT DECISION RULE MATRICES
@@ -908,7 +908,7 @@ fprintf('╔%s╗\n', repmat('═', 1, box_width));
 print_box_line('EXPORT COMPLETE', box_width, 'center');
 fprintf('╚%s╝\n', repmat('═', 1, box_width));
 fprintf('\n');
-fprintf('Output directory: %s/\n', output_dir);
+fprintf('Output directory: %s/\n', strrep(output_dir, '\', '/'));
 fprintf('\n');
 fprintf('State-space representation:\n');
 fprintf('  s_t = A * s_{t-1} + B_s * ε_t    (state transition)\n');
@@ -943,7 +943,7 @@ fprintf('  - Wage (w) is a STATE → extract from s_t directly\n');
 fprintf('  - Inflation (π) is a STATE since V15 → extract from s_t\n');
 fprintf('\n');
 fprintf('Next steps:\n');
-fprintf('  1. Bundle written to %s/, which SimPaths reads directly\n', output_dir);
+fprintf('  1. Bundle written to %s/, which SimPaths reads directly\n', strrep(output_dir, '\', '/'));
 fprintf('  2. Implement DSGEPolicyFunction.java (see SIMPATHS_INTERFACE.md)\n');
 fprintf('  3. Load A, Bs, C, D matrices at SimPaths startup\n');
 fprintf('  4. Each period: s_new = A*s + Bs*eps; y = C*s + D*eps\n');

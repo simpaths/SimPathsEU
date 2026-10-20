@@ -316,7 +316,8 @@ function run_full_workflow(country, options)
         fprintf('  ⚠ Could not compute elapsed time (timing variables were cleared).\n');
     end
     
-    bundle_dir = artifact_path('bundle', '', 'country', country);
+    % For printing only: one separator, whatever the platform built the path with.
+    bundle_dir = strrep(artifact_path('bundle', '', 'country', country), '\', '/');
     fprintf('╔%s╗\n', repmat('═', 1, box_width));
     print_box_line('WORKFLOW COMPLETE', box_width, 'center');
     fprintf('╠%s╣\n', repmat('═', 1, box_width));

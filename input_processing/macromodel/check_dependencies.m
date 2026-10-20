@@ -20,11 +20,14 @@ function report = check_dependencies(options)
     report = struct('ok', true, 'problems', {{}}, 'notes', {{}}, ...
                     'matlab', '', 'dynare_path', '', 'dynare_version', '');
 
-    v = ver('MATLAB');
-    report.matlab = v.Release;
+    % version('-release') exists on every release; ver('MATLAB').Release carries
+    % parentheses, and matlabRelease (what checkcode suggests) needs R2020b.
+    report.matlab = ['R' version('-release')];
+    % The arguments block above needs R2019b: an older MATLAB cannot parse this file
+    % and fails before this line. R2019b parses it and reaches this check.
     if verLessThan('matlab', '9.8')
         report = fail(report, sprintf(['MATLAB %s is older than R2020a; readtable ''VariableNamingRule'' ' ...
-                                       'and exportgraphics need 9.8+'], v.Release));
+                                       'and exportgraphics need 9.8+'], report.matlab));
     end
 
     if isempty(ver('stats')) || ~license('test', 'Statistics_Toolbox')

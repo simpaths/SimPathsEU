@@ -9,7 +9,7 @@ function test_bundle_provenance
 
     setup_path();
     td = tempname; mkdir(td);
-    cleanup = onCleanup(@() rmdir(td, 's')); %#ok<NASGU>
+    cleanup = onCleanup(@() rmdir(td, 's'));
 
     lf   = fullfile(td, 'lf.csv');   write_bytes(lf,   uint8(sprintf('a,b\n1,2\n')));
     crlf = fullfile(td, 'crlf.csv'); write_bytes(crlf, uint8(sprintf('a,b\r\n1,2\r\n')));
@@ -46,8 +46,7 @@ function test_bundle_provenance
     assert(numel(parts) == 3 && strcmp(parts{1}, 'b') && strcmp(parts{2}, sha256_file(crlf, 'text', false)), ...
            'second line hashes crlf.csv raw');
 
-    % Re-running on unchanged inputs changes only the timestamp line.
-    pause(1.1);
+    % Re-running on unchanged inputs changes at most the timestamp line.
     write_bundle_provenance(bundle, 'Testland', 'test_bundle_provenance', {lf, 't'; crlf, 'b'});
     again = strsplit(strtrim(fileread(prov)), newline);
     keep = ~startsWith(lines, 'exported_at') & ~startsWith(lines, 'missing ');

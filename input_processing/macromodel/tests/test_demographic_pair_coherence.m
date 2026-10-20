@@ -4,7 +4,7 @@ function test_demographic_pair_coherence
 
     setup_path();
     td = tempname; mkdir(td);
-    cleanup = onCleanup(@() rmdir(td, 's')); %#ok<NASGU>
+    cleanup = onCleanup(@() rmdir(td, 's'));
 
     pop_file = fullfile(td, 'population_projection_Testland.csv');
     demo_file = fullfile(td, 'demographic_L_testland.csv');
