@@ -73,9 +73,8 @@ public class MacroPathRecorder {
     /**
      * Ordered list of extra variables exported as plain columns (no trend/total split).
      * Values are read from the trends map by key name and written as-is.
-    * Used for level indices (l_level, h_level), Ramsey labor diagnostics
-    * (n_ramsey and l_ramsey),
-     * and SimPaths participation diagnostics:
+     * Used for level indices (l_level, h_level), the Ramsey labor diagnostic
+     * (n_ramsey), and SimPaths participation diagnostics:
      * participation_rate = workers / working-age population (WAP),
      * workers_over_atRiskPool = workers / at-risk pool,
      * total_population = % change in total SimPaths population from start year,
@@ -98,7 +97,7 @@ public class MacroPathRecorder {
      * every run where the feedback is disabled or has not yet latched its lambda.
      */
     private static final String[] EXTRA_COLUMN_VARS = {
-        "l_level", "h_level", "n_ramsey", "l_ramsey", "participation_rate", "workers_over_atRiskPool",
+        "l_level", "h_level", "n_ramsey", "participation_rate", "workers_over_atRiskPool",
         "total_population", "wap_level", "atrisk_level",
         "cat_0_share", "cat_1_share", "cat_2_share", "cat_3_share",
         "cat_0_meanHours", "cat_1_meanHours", "cat_2_meanHours", "cat_3_meanHours",

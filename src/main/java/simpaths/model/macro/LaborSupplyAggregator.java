@@ -98,8 +98,8 @@ public class LaborSupplyAggregator {
      * isolation. It deliberately encodes the Ramsey/DSGE working-age concept:
      *
      *  - It MUST equal the working-age band used by build_population_projection.m
-     *    in the WELLSIM_SVEC repo (currently 15-64), because that script builds
-     *    the WAP/N path the Ramsey trend layer consumes. eps_L and the exported
+     *    in input_processing/macromodel/ (currently 15-64), because that script builds
+     *    the N path the Ramsey trend layer consumes. eps_L and the exported
      *    demographic decomposition must be measured on the SAME population the
      *    DSGE's labour input N represents; if these diverge, the micro-macro
      *    feedback and the demographic series are silently measured against the

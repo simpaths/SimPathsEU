@@ -646,9 +646,7 @@ public class MacroModelManager {
      * Initialize the dynamic DSGE model by loading state-space files from CSV exports.
      */
     private void initialize(String countryCode, Set<Person> persons) {
-        // Catch an invalid flag combination before loading any macro artefacts; ramseyTrend
-        // is still null here, so the endogenous-labour check below is a no-op until re-run
-        // after initializeRamseyTrend.
+        // Catch an invalid flag combination before loading any macro artefacts.
         validateRamseyFeedbackConfig();
 
         String macroModelPath = "input" + File.separator + countryCode +
@@ -686,8 +684,7 @@ public class MacroModelManager {
 
                 if (useRamseyTrend) {
                     initializeRamseyTrend(macroModelPath);
-                    // ramseyTrend is now loaded (or null via self-disable): re-check so an
-                    // endogenous-labour bundle cannot slip past the feedback flag, and so a
+                    // ramseyTrend is now loaded (or null via self-disable): re-check so a
                     // silent artefact fallback becomes fatal instead of quietly running
                     // without the feedback channel.
                     validateRamseyFeedbackConfig();
@@ -881,7 +878,7 @@ public class MacroModelManager {
             ramseyScenarioObj = null;
         }
         
-        // Load reference CSV and extract N/WAP, h, gY, nxY for growth-rate extrapolation
+        // Load reference CSV and extract N, h, gY, nxY for growth-rate extrapolation
         var reference = RamseyTrendModel.loadReferenceCSV(refPath);
         int refSize = reference.size();
 
@@ -910,35 +907,13 @@ public class MacroModelManager {
             refNXY[i] = reference.get(i).nxY();
         }
 
-        // In endogenous labor mode, the demographic input to solveForPath is WAP, not N.
-        // The solver determines participation rate l endogenously, then N = l * WAP.
-        boolean endogenousLabor = ramseyTrend.isEndogenousLabor();
-        double[] refDemographic;  // N in exogenous mode, WAP in endogenous mode
-        if (endogenousLabor) {
-            double[] refWAP = new double[refSize];
-            for (int i = 0; i < refSize; i++) {
-                refWAP[i] = reference.get(i).WAP();
-            }
-            if (refWAP[0] <= 0) {
-                log.warn("Endogenous labor mode active but reference CSV has no WAP column. "
-                        + "Falling back to exogenous mode.");
-                endogenousLabor = false;
-                ramseyTrend.setEndogenousLabor(false);
-                refDemographic = refN;
-            } else {
-                refDemographic = refWAP;
-            }
-        } else {
-            refDemographic = refN;
-        }
-        
         // Extend demographic/h paths forward from end of estimation sample. The horizon
         // comes from the bundle (ramsey_trend.m's projection_quarters) rather than a
         // constant duplicated here: MATLAB solves the handoff contract over exactly this
         // many quarters, and a silent mismatch changes the terminal closure on one side
         // only.
         int totalExtended = refSize + ramseyProjectionQuarters;
-        double[] extDemographic = RamseyTrendModel.extendExogenous(refDemographic, totalExtended,
+        double[] extDemographic = RamseyTrendModel.extendExogenous(refN, totalExtended,
                 DEMOGRAPHIC_EXTENSION_WINDOW);
         // Hours are NOT extended here. The bundle carries the planner's hours path as an
         // artefact (see the read below), because re-deriving it on this side made the
@@ -951,8 +926,6 @@ public class MacroModelManager {
         // This ensures the Ramsey trend uses demographic projections consistent
         // with SimPaths (e.g., Polish WAP decline) rather than extrapolating the
         // estimation country's historical growth rate.
-        // In endogenous mode: scale population_projection N values to WAP units
-        // (both follow the same demographic growth rates, just different base levels).
         int startIdx = refSize - 1;
         // The projection MUST carry this bundle's country tag. There is deliberately no
         // fallback to a country-agnostic population_projection.csv: that name dates from
@@ -988,33 +961,7 @@ public class MacroModelManager {
                     countryTag, popProjPath.getFileName()));
         }
 
-        double[] popDemographic;
-        if (endogenousLabor) {
-            if (popProjection.hasWap()) {
-                popDemographic = popProjection.wap();
-            } else {
-                // Backward compatibility: derive WAP from N if WAP column is missing.
-                // build_population_projection.m writes "time,N,WAP" in endogenous mode and
-                // "time,N" in exogenous mode, so a missing WAP column here means an
-                // exogenous-mode projection is driving an endogenous-mode run. The derived
-                // path holds the terminal WAP/N ratio fixed for all future quarters, which
-                // is only right if participation never moves - exactly what endogenous
-                // labour supply denies. Warn rather than approximate in silence.
-                double wapToNRatio = refDemographic[refSize - 1] / refN[refSize - 1];
-                log.warn(String.format(
-                        "Endogenous labour supply, but %s has no WAP column "
-                        + "(exogenous-mode export). Deriving WAP from N at a fixed ratio "
-                        + "%.4f, which assumes constant participation. Re-export with "
-                        + "ramsey_labor_supply='endogenous' for a consistent WAP path.",
-                        popProjPath.getFileName(), wapToNRatio));
-                popDemographic = new double[popProjection.n().length];
-                for (int i = 0; i < popProjection.n().length; i++) {
-                    popDemographic[i] = popProjection.n()[i] * wapToNRatio;
-                }
-            }
-        } else {
-            popDemographic = popProjection.n();
-        }
+        double[] popDemographic = popProjection.n();
 
         // Align the two series by DATE, not by row position. extDemographic[startIdx]
         // is the handoff quarter (the last reference row), so the projection must be
@@ -1042,14 +989,11 @@ public class MacroModelManager {
         if (logMacroState) {
             log.info(String.format(
                     "Population projection loaded: %d quarters from %s "
-                    + "(%s[0]=%.1f → %s[%d]=%.1f, override applied from index %d, hasWAP=%s)",
+                    + "(N[0]=%.1f → N[%d]=%.1f, override applied from index %d)",
                     popDemographic.length, popProjPath.getFileName(),
-                    endogenousLabor ? "WAP" : "N",
                     popDemographic[0],
-                    endogenousLabor ? "WAP" : "N",
                     popDemographic.length - 1, popDemographic[popDemographic.length - 1],
-                    startIdx,
-                    popProjection.hasWap()));
+                    startIdx));
         }
 
         // Forward projection starts at terminal date (last reference observation)
@@ -1061,7 +1005,6 @@ public class MacroModelManager {
         
         double K_terminal = ramseyTrend.getK();
         double A_terminal = ramseyTrend.getA();
-        // solveForPath: N array when exogenous, WAP array when endogenous
         ramseyTrend.solveForPath(K_terminal, A_terminal, projDemographic, projH, projGY, projNXY, projLen);
 
         // Retain the original projection slices: a later recursive-feedback re-solve builds
@@ -1094,12 +1037,10 @@ public class MacroModelManager {
     }
 
     /**
-     * Rejects flag combinations that would double-count the labour-supply response:
-     * DSGE's eps_L channel and the Ramsey N revision, or the endogenous-labour FOC bundle
-     * (which already approximates the labour response ex ante) alongside the feedback's own
-     * realized-employment revision. Called both before {@link #initializeRamseyTrend(String)}
-     * (catches an invalid flag combination before loading any files) and after it (by then
-     * {@code ramseyTrend} is loaded, so the endogenous-labour check can actually fire).
+     * Rejects flag combinations that would double-count the labour-supply response
+     * (DSGE's eps_L channel and the Ramsey N revision) and out-of-range persistence values.
+     * Called both before {@link #initializeRamseyTrend(String)} (catches an invalid flag
+     * combination before loading any files) and after it.
      */
     void validateRamseyFeedbackConfig() {
         if (!ramseyFeedbackMargins.isOn()) return;
@@ -1123,9 +1064,6 @@ public class MacroModelManager {
         if (!(ramseyFeedbackHoursPersistence >= 0.0 && ramseyFeedbackHoursPersistence <= 1.0))
             throw new IllegalStateException(
                 "mm_ramseyFeedbackHoursPersistence must be in [0,1], got " + ramseyFeedbackHoursPersistence);
-        if (ramseyTrend != null && ramseyTrend.isEndogenousLabor()) throw new IllegalStateException(
-                margins + " requires the exogenous-labour Ramsey bundle: the endogenous"
-                + " FOC mode approximates the labour response ex ante and would double-count it");
     }
 
     /**
@@ -1515,8 +1453,8 @@ public class MacroModelManager {
      * from the quarter-0 position. So the first call here already produces non-zero
      * trends (measuring change from quarter 0 to the end of the first stepped year).</p>
      * 
-    * <p>Populates {@link #currentRamseyTrends} with keys: w, y, c, inv, k,
-    * n_ramsey, l_ramsey.</p>
+    * <p>Populates {@link #currentRamseyTrends} with keys: w, y, c, inv, k, g, nx,
+    * n_ramsey.</p>
      */
     void advanceRamseyTrend() {
         var ts = ramseyTrend.stepYear();
@@ -1539,9 +1477,7 @@ public class MacroModelManager {
         // Ramsey model's labor input (employees N) — for comparison with SimPaths population
         currentRamseyTrends.put("n_ramsey", ramseyBaseline.labor() > 0.0
                 ? (ts.labor() / ramseyBaseline.labor() - 1.0) * 100.0 : 0.0);
-        // Participation rate from Ramsey model (endogenous labor only; 0 otherwise)
-        currentRamseyTrends.put("l_ramsey", ts.participationRate() * 100.0);
-        
+
         if (logMacroState) {
             System.out.println(String.format(
                 "  Ramsey trend: w=%.6f (base=%.6f), Y=%.1f, r*_q=%.4f%% → wage_trend=%+.4f%%",
@@ -1579,15 +1515,13 @@ public class MacroModelManager {
     }
     
     /**
-     * Parsed population projection data with mandatory N and optional WAP columns.
-     */
-    /**
+     * Parsed population projection data: quarter labels and the N path.
+     *
      * @param times quarter labels ("2023q1", ...), one per row. Carried so the splice
      *              can align on DATE; merging this file by row position is what let a
      *              start-year change corrupt a run silently.
      */
-    private record PopulationProjectionData(String[] times, double[] n, double[] wap,
-                                            boolean hasWap) {}
+    private record PopulationProjectionData(String[] times, double[] n) {}
 
     private record HoursProjectionData(String[] times, double[] h) {}
 
@@ -1755,35 +1689,28 @@ public class MacroModelManager {
     /**
      * Load population projection CSV produced by MATLAB's {@code build_population_projection.m}.
      *
-     * <p>Supported formats:</p>
-     * <ul>
-     *   <li>{@code time,N} (legacy / exogenous mode)</li>
-     *   <li>{@code time,N,WAP} (endogenous labor mode)</li>
-     * </ul>
+     * <p>Format: {@code time,N}; further columns are ignored.</p>
      *
      * @param csvPath Path to population_projection_[COUNTRY].csv
-     * @return Parsed N path and optional WAP path
+     * @return Parsed time labels and N path
      * @throws IOException If the file cannot be read or parsed
      */
     private PopulationProjectionData loadPopulationProjection(Path csvPath) throws IOException {
         List<String> lines = Files.readAllLines(csvPath);
         var times = new ArrayList<String>();
         var nValues = new ArrayList<Double>();
-        var wapValues = new ArrayList<Double>();
 
         if (lines.isEmpty()) {
-            return new PopulationProjectionData(new String[0], new double[0], new double[0], false);
+            return new PopulationProjectionData(new String[0], new double[0]);
         }
 
         String[] header = MacroCsv.splitRow(lines.get(0));
         int timeCol = -1;
         int nCol = -1;
-        int wapCol = -1;
         for (int i = 0; i < header.length; i++) {
             String name = header[i].trim();
             if (name.equalsIgnoreCase("time")) timeCol = i;
             if (name.equalsIgnoreCase("N")) nCol = i;
-            if (name.equalsIgnoreCase("WAP")) wapCol = i;
         }
 
         if (nCol < 0) {
@@ -1797,7 +1724,6 @@ public class MacroModelManager {
                     + "re-export the macro files.");
         }
 
-        boolean hasWap = wapCol >= 0;
         for (int i = 1; i < lines.size(); i++) {
             String line = lines.get(i).trim();
             if (line.isEmpty()) continue;
@@ -1806,22 +1732,10 @@ public class MacroModelManager {
 
             times.add(parts[timeCol].trim().toLowerCase());
             nValues.add(Double.parseDouble(parts[nCol].trim()));
-            if (hasWap) {
-                if (parts.length <= wapCol || parts[wapCol].trim().isEmpty()) {
-                    hasWap = false;
-                    wapValues.clear();
-                } else {
-                    wapValues.add(Double.parseDouble(parts[wapCol].trim()));
-                }
-            }
         }
 
         double[] n = nValues.stream().mapToDouble(Double::doubleValue).toArray();
-        double[] wap = hasWap
-                ? wapValues.stream().mapToDouble(Double::doubleValue).toArray()
-                : new double[0];
-        return new PopulationProjectionData(times.toArray(new String[0]), n, wap,
-                hasWap && wap.length == n.length);
+        return new PopulationProjectionData(times.toArray(new String[0]), n);
     }
 
     /**
@@ -2780,7 +2694,7 @@ public class MacroModelManager {
     /**
      * Get the current Ramsey trend values (for testing/diagnostics).
      *
-    * <p>Keys include: w, y, c, inv, k, g, nx, n_ramsey, l_ramsey.
+    * <p>Keys include: w, y, c, inv, k, g, nx, n_ramsey.
      * Values are percentage changes from the first simulation year baseline.</p>
      *
      * @return Unmodifiable map of trend names to percentage changes, or empty if unavailable

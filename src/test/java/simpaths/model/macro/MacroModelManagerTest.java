@@ -350,8 +350,9 @@ class MacroModelManagerTest {
                 "Government trend should use the same baseline-relative rule as the manager");
         assertEquals(expectedNetExportsTrend, currentTrends.get("nx"), 1e-12,
                 "Net exports trend should use the same baseline-relative rule as the manager");
-        assertEquals(yearOne.participationRate() * 100.0, currentTrends.get("l_ramsey"), 1e-12,
-                "Participation should be stored in percentage points for downstream logging/recording");
+        assertEquals(java.util.Set.of("w", "y", "c", "inv", "k", "g", "nx", "n_ramsey"), currentTrends.keySet(),
+                "The trend map carries exactly these keys; the Ramsey participation entry went with "
+                + "the endogenous-labour variant (JuergenWiemers/SimPathsEU#28)");
         assertFalse(Math.abs(wageTrend) < 1e-12,
                 "The first stepped year should already produce a non-zero wage trend because the baseline is quarter 0");
     }
@@ -622,21 +623,6 @@ class MacroModelManagerTest {
         m.setRamseyFeedbackMargins(MacroFeedbackMargins.EMPLOYMENT_AND_HOURS);
         m.setRamseyFeedbackPersistence(1.5);
         assertThrows(IllegalStateException.class, m::validateRamseyFeedbackConfig);
-    }
-
-    @Test
-    public void testRecursiveFeedbackRejectsEndogenousLabor() throws Exception {
-        MacroModelManager m = new MacroModelManager();
-        m.setEnabled(true);
-        m.setUseDsge(false);
-        m.setUseRamseyTrend(true);
-        m.setRamseyFeedbackMargins(MacroFeedbackMargins.EMPLOYMENT_AND_HOURS);
-        RamseyTrendModel endo = org.mockito.Mockito.mock(RamseyTrendModel.class);
-        org.mockito.Mockito.when(endo.isEndogenousLabor()).thenReturn(true);
-        setField(m, "ramseyTrend", endo);
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
-                m::validateRamseyFeedbackConfig);
-        assertTrue(ex.getMessage().contains("exogenous"));
     }
 
     @Test
