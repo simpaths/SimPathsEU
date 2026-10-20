@@ -143,7 +143,8 @@ public class MacroModelManager {
      * opposite directions. The single-margin modes exist to decompose the channel.
      */
     private MacroFeedbackMargins ramseyFeedbackMargins = MacroFeedbackMargins.EMPLOYMENT_AND_HOURS;
-    /** Belief persistence of the realized employment gap: 1 = permanent, 0 = current year only. */
+    /** Belief persistence of the realized headcount gap (SimPaths' workers with positive hours
+     *  against the planner's employees path): 1 = permanent, 0 = current year only. */
     private double ramseyFeedbackPersistence = 1.0;
     /** Belief persistence of the realized hours gap. Separate from the headcount belief because
      *  hours deviations in SimPaths come from labour-category switching and are more plausibly
@@ -490,7 +491,7 @@ public class MacroModelManager {
         laborSupplyAggregator.computeAndSetBaseline(persons);
         if (logMacroState) {
             log.info(String.format(
-                "DSGE baseline latched post-labor-market (year %d): L=%.0f employed, h=%.1f hours/week",
+                "DSGE baseline latched post-labor-market (year %d): L=%.0f workers with positive hours, h=%.1f hours/week",
                 year, laborSupplyAggregator.getBaselineL(),
                 laborSupplyAggregator.getBaselineH()));
         }
@@ -741,10 +742,9 @@ public class MacroModelManager {
             // Load Ramsey growth model for structural wage trend (if enabled)
             if (useRamseyTrend) {
                 initializeRamseyTrend(macroModelPath);
-                // Currently unreachable with the feedback on: checkpoint 1 at the
-                // top of initialize() already rejects a DSGE mode with feedback margins, and
-                // useDsge cannot change mid-call. Kept as defense-in-depth so this branch stays
-                // correct if that ordering is ever changed.
+                // Re-check after loading: initializeRamseyTrend can self-disable, which makes
+                // the feedback inert, and the persistence bounds are re-validated. The DSGE
+                // combination itself only warns (it did once throw), so this repeats that warning.
                 validateRamseyFeedbackConfig();
                 requireRamseyTrendSolved();
             } else {
@@ -1037,10 +1037,11 @@ public class MacroModelManager {
     }
 
     /**
-     * Rejects flag combinations that would double-count the labour-supply response
-     * (DSGE's eps_L channel and the Ramsey N revision) and out-of-range persistence values.
-     * Called both before {@link #initializeRamseyTrend(String)} (catches an invalid flag
-     * combination before loading any files) and after it.
+     * Warns about the feedback combined with a DSGE mode (DSGE's eps_L channel and the Ramsey N
+     * revision overlap only while the cycle decays back to the trend), warns that the feedback is
+     * inert without the Ramsey layer, and rejects out-of-range persistence values. Called both
+     * before {@link #initializeRamseyTrend(String)} (catches bad persistence values before loading
+     * any files) and after it.
      */
     void validateRamseyFeedbackConfig() {
         if (!ramseyFeedbackMargins.isOn()) return;
@@ -1211,8 +1212,8 @@ public class MacroModelManager {
     static final String TREND_KEY_WAGE_REVISION = "w_trend_revision";
 
     /**
-     * Extended-path feedback step for one completed simulation year: map realized employment
-     * into Ramsey units, rebuild the remaining-horizon labor path under the persistence belief,
+     * Extended-path feedback step for one completed simulation year: map the realized headcount
+     * (SimPaths' workers with positive hours) into Ramsey units, rebuild the remaining-horizon labor path under the persistence belief,
      * and re-solve the trend from the predetermined capital state. The wage SimPaths used for
      * {@code year} is NOT revised (one-period-stale convention); the next {@link #advanceRamseyTrend()}
      * call steps the updated path for {@code year + 1}.
@@ -1233,10 +1234,10 @@ public class MacroModelManager {
      * {@code n_realized_gap} and {@code h_realized_gap} populated as diagnostics whichever
      * margin is being fed back.</p>
      *
-     * <p><b>The two gaps use different references, deliberately.</b> The employment gap is
+     * <p><b>The two gaps use different references, deliberately.</b> The headcount gap is
      * measured against the planner's projected N, which is legitimate because that projection
      * is overwritten at startup with the same population projection SimPaths aligns to, so
-     * realized and projected employment are comparable and delta_n isolates genuine
+     * the realized headcount and the projected employment are comparable and delta_n isolates genuine
      * labour-market surprises. No such reconciliation exists for hours: the planner's hours
      * path is a log-linear trend fitted to observed hours ({@code hours_trend_method} in the
      * growth params, about -0.2%/yr for PL) and SimPaths models no hours trend at all, so

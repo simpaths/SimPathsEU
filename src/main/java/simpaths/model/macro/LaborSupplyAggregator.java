@@ -980,7 +980,7 @@ public class LaborSupplyAggregator {
         @Override
         public String toString() {
             return String.format(
-                "LaborSupplyAggregates[L=%.0f employed (%.1f%% of %.0f WAP, %.0f at-risk, %.0f total pop), h=%.1f hrs/wk, total=%.0f hrs]",
+                "LaborSupplyAggregates[L=%.0f workers with positive hours (%.1f%% of %.0f WAP, %.0f at-risk, %.0f total pop), h=%.1f hrs/wk, total=%.0f hrs]",
                 laborForce, participationRate * 100, workingAgePopulation,
                 atRiskPool, totalPopulation, avgHoursPerWorker, totalHours);
         }
