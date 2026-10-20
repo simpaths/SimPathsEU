@@ -9,8 +9,11 @@ import simpaths.model.SimPathsModel;
 import simpaths.model.enums.Dcpst;
 import simpaths.model.enums.Education;
 import simpaths.model.enums.EducationLevel;
+import simpaths.model.enums.Gender;
 import simpaths.model.enums.Indicator;
+import simpaths.model.enums.Labour;
 import simpaths.model.enums.Les_c4;
+import simpaths.model.enums.SampleEntry;
 import simpaths.model.Innovations;
 
 import microsim.statistics.regression.BinomialRegression;
@@ -432,6 +435,62 @@ public class PersonTest {
             assertEquals(Education.High, testPerson.getDeh_c4(), "Education level must remain unchanged.");
             assertFalse(testPerson.isLeftEducation(), "leftEducation flag should remain false (default state).");
             Mockito.verify(mockInnovations, Mockito.never()).getDoubleDraw(30);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // NESTED TESTS FOR the pre-overlay wage seeded by the copy constructor
+    // -------------------------------------------------------------------------
+
+    /**
+     * The copy constructor seeds labWageHrlyRegression, which updateLaggedVariables rolls into
+     * labWageHrlyL1. The start-year Person.Update rolls it before any wage update has run, so for
+     * a start-population person it must be the current wage, as the lag roll took labWageHrly
+     * before the macro layer existed. Seeding it with last year's wage made the start-year lag the
+     * old lag, and a zero old lag fed log(0) into the W1mb/W1fb equations (wage 0).
+     */
+    @Nested
+    @DisplayName("WageLagSeedTests: copy constructor seeds the wage the first lag roll uses")
+    class WageLagSeedTests {
+
+        private Person startPopulationPerson(double wage, Double laggedWage) throws Exception {
+            Person original = new Person(2L, 7L);
+            setPrivateField(original, "demAge", 40);
+            setPrivateField(original, "demMaleFlag", Gender.Male);
+            setPrivateField(original, "eduSpellFlag", Indicator.False);
+            setPrivateField(original, "labC4", Les_c4.EmployedOrSelfEmployed);
+            setPrivateField(original, "labC4L1", Les_c4.NotEmployed);
+            setPrivateField(original, "labHrsWorkEnumWeek", Labour.CATEGORY_PL_2);
+            setPrivateField(original, "labWageHrly", wage);
+            setPrivateField(original, "labWageHrlyL1", laggedWage);
+            return original;
+        }
+
+        private Double seededPreOverlayWage(Person original) throws Exception {
+            Person copy = new Person(original, 9L, SampleEntry.ProcessedInputData);
+            Field field = Person.class.getDeclaredField("labWageHrlyRegression");
+            field.setAccessible(true);
+            return (Double) field.get(copy);
+        }
+
+        @Test
+        @DisplayName("Zero lag (not employed last year): the first lag roll gets the current wage, not 0")
+        public void zeroLagSeedsTheCurrentWage() throws Exception {
+            assertEquals(15.0, seededPreOverlayWage(startPopulationPerson(15.0, 0.0)), 1e-12);
+        }
+
+        @Test
+        @DisplayName("Older lag: the first lag roll gets the current wage, as before the macro layer")
+        public void olderLagSeedsTheCurrentWage() throws Exception {
+            assertEquals(15.0, seededPreOverlayWage(startPopulationPerson(15.0, 12.0)), 1e-12);
+        }
+
+        @Test
+        @DisplayName("Cloned simulated person: keeps its own pre-overlay wage, not the multiplied one")
+        public void clonedPersonKeepsItsPreOverlayWage() throws Exception {
+            Person original = startPopulationPerson(14.3, 12.0);
+            setPrivateField(original, "labWageHrlyRegression", 13.0);
+            assertEquals(13.0, seededPreOverlayWage(original), 1e-12);
         }
     }
 }

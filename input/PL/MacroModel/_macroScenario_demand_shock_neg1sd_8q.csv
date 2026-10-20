@@ -1,0 +1,14 @@
+# Negative demand/confidence shock: -1 standard deviation, linear decay over 8 quarters
+# Shock is on eps_d (preference/demand shock) in sigma-units
+# Multiplied by sigma_d internally by DSGEModel.java
+# Represents: consumer confidence collapse, fiscal consolidation, export demand slump
+# The DSGE's first active year is startYear+1 (e.g., if SimPaths starts 2025, first shock hits 2026Q1)
+year,quarter,eps_d
+2026,1,-1.000
+2026,2,-0.875
+2026,3,-0.750
+2026,4,-0.625
+2027,1,-0.500
+2027,2,-0.375
+2027,3,-0.250
+2027,4,-0.125

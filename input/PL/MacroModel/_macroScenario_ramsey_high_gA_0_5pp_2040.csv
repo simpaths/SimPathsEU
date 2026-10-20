@@ -1,0 +1,14 @@
+# Ramsey Growth Model Scenario: Higher TFP Growth (+0.5 pp) in 2040 (perfect foresight)
+#
+# All values are ABSOLUTE DEVIATIONS from baseline (additive, in annual parameter units).
+# Missing columns default to 0 (no deviation). Years beyond the last row persist.
+#
+# Parameters:
+#   g_A     = TFP growth rate deviation (annual, e.g. 0.0025 = +0.25pp)
+#   delta   = depreciation rate deviation (annual)
+#   alpha_K = capital share deviation
+#   beta    = discount factor deviation (annual)
+#   sigma   = CRRA coefficient deviation
+#
+year, g_A
+2040, 0.005

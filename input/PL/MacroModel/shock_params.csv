@@ -1,0 +1,9 @@
+shock_name,stderr,rho,rho_param_name
+eps_a,1.0536,0.95,rho_a
+eps_r,0.7505,0.8,rho_r
+eps_d,0.4391,0.8,rho_d
+eps_p,2.4068,0,none
+eps_L,0.7495,0,rho_L
+eps_sep,0.1,0.8,rho_sep
+eps_h,0.3574,0,rho_h
+eps_inv,3.4871,0.85,rho_inv

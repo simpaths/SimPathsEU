@@ -793,6 +793,12 @@ public class Parameters {
     public static Integer timeTrendStopsInE1a;
     public static Integer timeTrendStopsInE1b;
     public static Integer timeTrendStopsInE2a;
+    // When the Ramsey macro layer supplies the secular wage trend, the exogenous WageGrowth
+    // index must not also trend out of sample, or the secular real wage is double-counted
+    // (Ramsey trend stacked on top of the extrapolated wage_growth index). Freeze the index
+    // at its last in-sample year for the projection; in-sample years are untouched.
+    public static boolean freezeWageGrowthForRamseyTrend = false;
+    public static int wageGrowthLastInSampleYear = Integer.MAX_VALUE;
     public static boolean flagFormalChildcare;
     public static boolean flagSocialCare;
     public static boolean flagSuppressChildcareCosts;
@@ -2104,8 +2110,17 @@ public class Parameters {
 
         MultiKeyCoefficientMap map = getTimeSeriesValueMap(timeSeriesVariable);
         double valueBase = getTimeSeriesValue(baseYear, timeSeriesVariable);
+        // Captured here because the map still holds only explicit (in-sample) keys; once
+        // extendValueTimeSeries extrapolates forward this maximum would be polluted.
+        boolean captureWageGrowthLastYear = (timeSeriesVariable == TimeSeriesVariable.WageGrowth);
+        int wageGrowthMaxYear = Integer.MIN_VALUE;
         for (Object key: map.keySet()) {
 
+            if (captureWageGrowthLastYear) {
+                int yearHere = key.hashCode();
+                if (yearHere >= 1900 && yearHere <= 2500 && yearHere > wageGrowthMaxYear)
+                    wageGrowthMaxYear = yearHere;
+            }
             double valueHere = ((Number) map.getValue(key)).doubleValue();
             if (ratioAdjust) {
                 map.replace(key, valueHere/valueBase);
@@ -2113,6 +2128,8 @@ public class Parameters {
                 map.replace(key, valueHere - valueBase);
             }
         }
+        if (captureWageGrowthLastYear && wageGrowthMaxYear != Integer.MIN_VALUE)
+            wageGrowthLastInSampleYear = wageGrowthMaxYear;
     }
 
     private static MultiKeyCoefficientMap getTimeSeriesValueMap(TimeSeriesVariable timeSeriesVariable) {

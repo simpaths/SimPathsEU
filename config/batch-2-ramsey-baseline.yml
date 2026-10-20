@@ -1,0 +1,33 @@
+# Batch scenario 2/5 — Ramsey baseline (Ramsey trend only, no counterfactual)
+maxNumberOfRuns: 1
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation: true
+    alignRetirement: true
+    alignDisability: true
+    alignEducation: true
+    alignInSchool: true
+    alignCohabitation: true
+    alignEmployment: true
+    alignFertility: true
+
+    # Macro Model
+    mm_macroModel: ramsey
+    # off | ramsey | dsge | ramsey_dsge   (dsge alone is diagnostic: the cycle was
+    # estimated on Ramsey-detrended data, so without the trend layer it deviates
+    # around SimPaths' own wage trend instead)
+    mm_macroLogging: verbose          # off | state | verbose (verbose implies state)
+    mm_dsgeMaxStateDeviation: 30
+
+    mm_ramseyFeedbackMargins: none
+    # none | employment | hours | employment_and_hours
+    mm_ramseyFeedbackPersistence: 1.0
+    mm_ramseyFeedbackHoursPersistence: 1.0
+
+collector_args:
+    exportToCSV: true
