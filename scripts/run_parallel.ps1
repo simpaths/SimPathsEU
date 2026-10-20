@@ -228,6 +228,15 @@ $started = Get-Date
 if (-not $CollectOnly) {
     Write-Section "Launching $($jobs.Count) JVMs in parallel (heap $JavaHeap each)"
 
+    # A reused clone still holds the run folders of its earlier runs: robocopy without /MIR
+    # never removes the clone's own output/, and -SkipCopy reuses it as is. Collection would
+    # then merge one of the old runs (it did on 2026-10-20: the oldest folder was taken and a
+    # fix was reported as having no effect). Every arm starts from an empty output/.
+    foreach ($j in $jobs) {
+        $staleOut = Join-Path $j.Worker "output"
+        Get-ChildItem -Path $staleOut -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+    }
+
     foreach ($j in $jobs) {
         Write-Host "  start: $($j.Tag)"
         # -config takes a BARE filename resolved against the working directory. A
@@ -268,7 +277,8 @@ foreach ($j in $jobs) {
 
     $produced = @()
     $workerOut = Join-Path $j.Worker "output"
-    if (Test-Path $workerOut) { $produced = @(Get-ChildItem -Path $workerOut -Directory -ErrorAction SilentlyContinue) }
+    # Newest first, so Produced[0] is this run even if older run folders survived (-CollectOnly).
+    if (Test-Path $workerOut) { $produced = @(Get-ChildItem -Path $workerOut -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending) }
     if (-not $bad -and $produced.Count -eq 0) { $bad = $true; $why = "no output directory - the run did not happen" }
 
     # The decisive check: MacroPaths.csv must hold every seed for the full horizon.
