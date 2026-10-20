@@ -42,7 +42,6 @@ function run_full_workflow(country, options)
         options.skip_projection_plot (1,1) logical = false
         options.use_parallel (1,1) logical = false
         options.simpaths_pop_file (1,:) char = ''
-        options.ramsey_labor_supply (1,:) char = 'exogenous'
         options.projection_start (1,:) char = ''
     end
     % Resolve the model's code folders (internal/, diagnostics/, ...).
@@ -52,18 +51,11 @@ function run_full_workflow(country, options)
     country_config = get_country_config(country);
     country = country_config.name;
     options.projection_start = resolve_projection_start(options.projection_start);
-    
-    % Validate ramsey_labor_supply
-    if ~ismember(options.ramsey_labor_supply, {'exogenous', 'endogenous'})
-        error('ramsey_labor_supply must be ''exogenous'' or ''endogenous'', got ''%s''', ...
-              options.ramsey_labor_supply);
-    end
-    
+
     fprintf('\n');
     box_width = 62;
     fprintf('╔%s╗\n', repmat('═', 1, box_width));
     print_box_line(sprintf('WELLSIM DSGE WORKFLOW FOR %s', upper(country)), box_width, 'center');
-    print_box_line(sprintf('Ramsey labor supply: %s', options.ramsey_labor_supply), box_width, 'center');
     fprintf('╚%s╝\n', repmat('═', 1, box_width));
     fprintf('\n');
     
@@ -84,8 +76,7 @@ function run_full_workflow(country, options)
                    'Run make_datasets.do first (exports level data for Ramsey model).'], level_file);
         end
         
-        calibrate_growth_model(country, ...
-            'ramsey_labor_supply', options.ramsey_labor_supply);
+        calibrate_growth_model(country);
         fprintf('✓ Growth model calibrated\n\n');
     else
         fprintf('  STEP 0a: Growth calibration SKIPPED\n\n');
@@ -100,9 +91,8 @@ function run_full_workflow(country, options)
         fprintf('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
         
         [~, ~, diag] = ramsey_trend(country, [], ...
-            'ramsey_labor_supply', options.ramsey_labor_supply, ...
             'projection_start', options.projection_start);
-        
+
         if ~diag.converged
             warning('Ramsey stacked-time Newton solve did not converge! Check diagnostics.');
         end
@@ -147,7 +137,6 @@ function run_full_workflow(country, options)
             anchor_before = reference_terminal_anchor(country);
 
             build_population_projection(country, pop_file, ...
-                'ramsey_labor_supply', options.ramsey_labor_supply, ...
                 'projection_start', options.projection_start);
             fprintf('✓ Population projection built\n\n');
 
@@ -163,7 +152,6 @@ function run_full_workflow(country, options)
                 fprintf('  estimation data reflect the current projection.\n\n');
 
                 [~, ~, diag2] = ramsey_trend(country, [], ...
-                    'ramsey_labor_supply', options.ramsey_labor_supply, ...
                     'projection_start', options.projection_start);
 
                 if ~diag2.converged

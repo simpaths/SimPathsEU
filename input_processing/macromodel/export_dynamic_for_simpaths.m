@@ -655,7 +655,7 @@ fprintf(fid, '|------|-------------|\n');
 fprintf(fid, '| `growth_model_reference_%s.csv` | In-sample Ramsey solution; its last row is the handoff quarter that every other file aligns to |\n', lower(export_country));
 fprintf(fid, '| `growth_params_%s.json` | Calibrated structural parameters and solver settings |\n', export_country);
 fprintf(fid, '| `growth_terminal_state.json` | Terminal K and A, the handoff quarter, and `projection_quarters` (the forward horizon; a mismatch silently changes the terminal closure) |\n');
-fprintf(fid, '| `population_projection_%s.csv` | SimPaths-consistent demographic path, `time,N` (`time,N,WAP` in endogenous mode) |\n', export_country);
+fprintf(fid, '| `population_projection_%s.csv` | SimPaths-consistent demographic path, `time,N` |\n', export_country);
 fprintf(fid, '| `hours_projection_%s.csv` | Planner hours per worker, `time,h`, `projection_quarters + 1` rows from the handoff |\n\n', export_country);
 fprintf(fid, '**Alignment.** Each projection is located by DATE, not by row position: find the\n');
 fprintf(fid, 'row whose label equals the handoff quarter and read forward from there. A\n');
@@ -862,10 +862,8 @@ else
     fprintf('    ⚠ %s not found (run ramsey_trend first)\n', growth_mat);
 end
 
-% Copy population projection file (if built by build_population_projection.m)
-% In endogenous labor mode, this file contains time,N,WAP columns;
-% in exogenous mode, time,N only. Java's loadPopulationProjectionN()
-% reads column index 1 (N) for backward compatibility in both modes.
+% Copy population projection file (if built by build_population_projection.m):
+% time,N, located by date on the Java side.
 pop_proj_file = artifact_path('output', sprintf('population_projection_%s.csv', export_country));
 if exist(pop_proj_file, 'file')
     copyfile(pop_proj_file, fullfile(output_dir, basename_of(pop_proj_file)));

@@ -11,25 +11,19 @@
     "sigma": 1.5,
     "tfp_growth_annual": 0.015,
     "K_override": 738546,
-    "phi": 1.35,
-    "labor_supply": "exogenous",
     "x_comments": {
       "alpha_K": "Capital share set to 0.33 (same as Germany) for cross-country comparability. PWT 11.0 labsh for Poland averages 0.59 (2000-2019), implying alpha=0.41, but this is likely inflated by transition-era measurement issues (volatile range 0.54-0.66). Using 0.33 also avoids excessive BGP K/Y that produces implausibly large Ramsey detrending residuals.",
       "delta_annual": "6% annual depreciation for total-economy capital. Higher than Germany (5%) to reflect faster capital obsolescence in post-transition Poland. Tested 6.5% and 7% but these depressed the trend too much (y corr dropped from 0.79 to 0.60). Combined with the K_override below, 6% gives the best balance across Y, C, and investment detrending.",
-      "beta_annual": "Discount factor: 0.96 annual. It pins the terminal modified-golden-rule BGP real rate together with sigma and the terminal TFP growth; the resulting r* is written to documentation_data/ramsey/ramsey_summary_Poland.json (structural.r_star_annual) rather than quoted here, because it is derived and would go stale.",
+      "beta_annual": "Discount factor: 0.96 annual. It pins the terminal modified-golden-rule BGP real rate together with sigma and the terminal TFP growth; the resulting r* is written to output/documentation_data/ramsey/ramsey_summary_Poland.json (structural.r_star_annual) by calibrate_growth_model rather than quoted here, because it is derived and would go stale.",
       "sigma": "Inverse IES (CRRA coefficient). sigma=1.5 is mid-range consensus (1=log, 2=high risk aversion).",
       "tfp_growth_annual": "1.5% annual TFP growth during the historical in-sample period. Poland is a catch-up economy with higher TFP growth than Germany (0.5%). The forward extension and terminal BGP instead converge to terminal_growth.g_A_terminal_annual (see that block) to avoid imposing permanent catch-up growth.",
-      "K_override": "Override initial capital stock K_0 (million EUR, chain-linked 2015) at the base year. PIM gives K/Y=2.0 (K=509k) and PWT 11.0 cross-validates at K/Y=2.21; both understate the stock because housing and informal capital are unmeasured, so K_0 is set above them. The implied K/Y and the BGP K/Y it is judged against are derived quantities — read them from documentation_data/ramsey/ramsey_summary_Poland.json (base_year_values.K0 / base_year_values.Y0_annual) instead of from a number written here. Set to 0 to disable the override and use PIM.",
-      "phi": "Inverse Frisch elasticity on extensive margin. Current Poland calibration is phi=1.35. This remains provisional and should be re-estimated from dedicated Polish SimPaths experiments when available.",
-      "labor_supply": "Default Ramsey labor-supply mode. calibrate_growth_model.m copies this template into simpaths_export and writes the calibrated runtime fields there."
+      "K_override": "Override initial capital stock K_0 (million EUR, chain-linked 2015) at the base year. PIM gives K/Y=2.0 (K=509k) and PWT 11.0 cross-validates at K/Y=2.21; both understate the stock because housing and informal capital are unmeasured, so K_0 is set above them. The implied K/Y and the BGP K/Y it is judged against are derived quantities — read them from output/documentation_data/ramsey/ramsey_summary_Poland.json (base_year_values.K0 / base_year_values.Y0_annual), which calibrate_growth_model writes instead of from a number written here. Set to 0 to disable the override and use PIM."
     }
   },
   "base_year": 2005,
   "base_quarter": "2005Q1",
   "base_year_values": {
-    "WAP": 26824,
-    "WAP_comment": "Working-age population (15-64), thousands. Source: World Bank SP.POP.1564.TO (UN WPP), Poland 2005. Must match build_population_projection.m age range.",
-    "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into simpaths_export/Poland/growth_params_Poland.json.",
+    "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into input/PL/MacroModel/growth_params_Poland.json.",
     "K": 738546,
     "Y": 295418.3,
     "N": 10468,

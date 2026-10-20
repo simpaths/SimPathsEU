@@ -10,23 +10,17 @@
     "beta_annual": 0.96,
     "sigma": 1.5,
     "tfp_growth_annual": 0.005,
-    "phi": 1.3,
-    "labor_supply": "exogenous",
     "x_comments": {
       "alpha_K": "Capital share from PWT (labor share ~0.67). Standard for Germany.",
       "delta_annual": "5% annual depreciation for total-economy capital (structures + equipment). PWT 10.0 composite rate for Germany ~4.5-5.5%. NOTE: This differs from the DSGE .mod file delta_k=0.025 quarterly (~9.6% annual), which represents fast-depreciating equipment for cyclical dynamics. The growth model matches total GFCF (Eurostat P51G) including slow-depreciating structures, so it needs the lower rate.",
       "beta_annual": "Discount factor: 0.96 annual. With positive trend growth, the modified-golden-rule BGP real rate exceeds 4%; under the current Germany calibration it is about 5.3% annual.",
       "sigma": "Inverse IES (CRRA coefficient). sigma=1.5 is mid-range consensus (1=log, 2=high risk aversion).",
-      "tfp_growth_annual": "0.5% annual TFP growth. Conservative for Germany post-2000 (Fernald puts US at ~0.5%).",
-      "phi": "Inverse Frisch elasticity on extensive margin. Controls slope of participation response to wages. Higher phi = less elastic. phi=1.3 calibrated from SimPaths response surface (4 permanent wage-shift experiments: 0/5/10/15%, grand mean eps_L=0.773, phi=1/eps_L=1.29, rounded to 1.3). See analyze_phi.py and scoping doc Section 3.2.",
-      "labor_supply": "Default Ramsey labor-supply mode. calibrate_growth_model.m copies this template into the bundle folder input/DE/MacroModel/ and writes the calibrated runtime fields there."
+      "tfp_growth_annual": "0.5% annual TFP growth. Conservative for Germany post-2000 (Fernald puts US at ~0.5%)."
     }
   },
   "base_year": 2000,
   "base_quarter": "2000Q1",
   "base_year_values": {
-    "WAP": 55788,
-    "WAP_comment": "Working-age population (15-64), thousands. Source: Eurostat demo_pjan, Germany 2000. Must match build_population_projection.m age range.",
     "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into input/DE/MacroModel/growth_params_Germany.json."
   },
   "inflation_target": {

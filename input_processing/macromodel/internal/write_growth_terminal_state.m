@@ -23,7 +23,7 @@ function info = write_growth_terminal_state(growth_mat, output_dir)
         output_dir (1,:) char
     end
 
-    info = struct('written', false, 'file', '', 'endogenous_labor', false);
+    info = struct('written', false, 'file', '');
 
     if ~exist(growth_mat, 'file')
         return;
@@ -31,17 +31,6 @@ function info = write_growth_terminal_state(growth_mat, output_dir)
 
     growth_data = load(growth_mat, 'K_terminal', 'A_terminal', 'params', ...
                        'simpaths_handoff_time', 'projection_quarters');
-
-    mat_vars = who('-file', growth_mat);
-    has_endo_labor = ismember('endogenous_labor', mat_vars) && ismember('l_trend', mat_vars);
-    if has_endo_labor
-        endo_data = load(growth_mat, 'endogenous_labor', 'l_trend', 'WAP_trend', ...
-                         'psi_terminal', 'l_handoff', 'WAP_handoff', 'psi_handoff');
-        is_endo = endo_data.endogenous_labor;
-    else
-        endo_data = struct();
-        is_endo = false;
-    end
 
     if isfield(growth_data, 'simpaths_handoff_time')
         handoff_label = growth_data.simpaths_handoff_time;
@@ -54,7 +43,7 @@ function info = write_growth_terminal_state(growth_mat, output_dir)
     % %.16e, not %.10f: A is O(0.03), so ten decimals kept only ~9 significant
     % digits — worst-case ~1.4e-9 RELATIVE, above the 1e-9 Java parity tolerance.
     % The 4.4e-11 the anchor test measured was luck of the digits. Full precision
-    % takes this file out of the parity budget, as psi_terminal already is.
+    % takes this file out of the parity budget.
     lines{end+1} = sprintf('  "K_terminal": %.16e,', growth_data.K_terminal);
     lines{end+1} = sprintf('  "A_terminal": %.16e,', growth_data.A_terminal);
     lines{end+1} = sprintf('  "handoff_time": "%s",', handoff_label);
@@ -73,51 +62,17 @@ function info = write_growth_terminal_state(growth_mat, output_dir)
                  'Re-run ramsey_trend to regenerate the workspace.'], growth_mat);
     end
 
-    l_terminal_out = NaN;
-    psi_terminal_out = NaN;
-    if is_endo
-        if isfield(endo_data, 'l_handoff')
-            l_terminal_out = endo_data.l_handoff;
-        else
-            l_terminal_out = endo_data.l_trend(end);
-        end
-        if isfield(endo_data, 'WAP_handoff')
-            wap_terminal_out = endo_data.WAP_handoff;
-        else
-            wap_terminal_out = endo_data.WAP_trend(end);
-        end
-        lines{end+1} = '  "endogenous_labor": true,';
-        lines{end+1} = sprintf('  "l_terminal": %.10f,', l_terminal_out);
-        lines{end+1} = sprintf('  "WAP_terminal": %.6f,', wap_terminal_out);
-        if isfield(endo_data, 'psi_handoff')
-            psi_terminal_out = endo_data.psi_handoff;
-        elseif isfield(endo_data, 'psi_terminal')
-            psi_terminal_out = endo_data.psi_terminal;
-        end
-        if isfinite(psi_terminal_out)
-            lines{end+1} = sprintf('  "psi_terminal": %.16e,', psi_terminal_out);
-        end
-    end
-
-    lines{end+1} = ['  "comment": "Capital stock, TFP level, and (if endogenous) ' ...
-                    'labor wedge at the SimPaths handoff quarter. Use as initial ' ...
-                    'values for SimPaths forward projection."'];
+    lines{end+1} = ['  "comment": "Capital stock and TFP level at the SimPaths handoff ' ...
+                    'quarter. Use as initial values for SimPaths forward projection."'];
     lines{end+1} = '}';
 
     terminal_file = fullfile(output_dir, 'growth_terminal_state.json');
     write_text_atomic(terminal_file, strjoin(lines, newline), 'verify_json', true);
 
-    if is_endo
-        fprintf('    ✓ growth_terminal_state.json (%s; K=%.1f, A=%.6f, l=%.4f, psi=%.6e)\n', ...
-                handoff_label, growth_data.K_terminal, growth_data.A_terminal, ...
-                l_terminal_out, psi_terminal_out);
-    else
-        fprintf('    ✓ growth_terminal_state.json (%s; K=%.1f, A=%.6f)\n', ...
-                handoff_label, growth_data.K_terminal, growth_data.A_terminal);
-    end
+    fprintf('    ✓ growth_terminal_state.json (%s; K=%.1f, A=%.6f)\n', ...
+            handoff_label, growth_data.K_terminal, growth_data.A_terminal);
 
     info.written = true;
     info.file = terminal_file;
-    info.endogenous_labor = is_endo;
     info.handoff_time = handoff_label;
 end

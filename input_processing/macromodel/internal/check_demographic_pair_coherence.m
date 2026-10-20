@@ -2,7 +2,7 @@ function problems = check_demographic_pair_coherence(pop_proj_file, demo_L_file,
 % CHECK_DEMOGRAPHIC_PAIR_COHERENCE  One demographic story on both sides.
 %
 % build_population_projection.m writes the SimPaths-facing projection
-% (population_projection_*.csv, absolute N/WAP levels) AND the post-handoff tail
+% (population_projection_*.csv, absolute N levels) AND the post-handoff tail
 % of demographic_L_*.csv (labor-force units) from one computation. Java consumes
 % the former; ramsey_trend.m consumes the latter, chained on relative growth at
 % the handoff. Nothing else ties the pair together: regenerate one without the

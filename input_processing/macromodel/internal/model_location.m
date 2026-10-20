@@ -12,8 +12,8 @@ function loc = model_location()
 % holds the same root as MODEL_ROOT; the regenerated bundle pins the two together.
 % The helper covers a move at the same depth (two levels below the repository root),
 % which also edits the literal pathspecs in smoke_test.ps1; another depth also edits the
-% repository-root sites in refresh_java_parity_fixtures.m, diagnostics/generate_foc_parity_cases.m,
-% smoke_test.ps1 and stata/make_datasets.do.
+% repository-root sites in refresh_java_parity_fixtures.m, smoke_test.ps1 and
+% stata/make_datasets.do.
     loc = struct('repo_rel',   'input_processing/macromodel', ...
                  'input_tree', fullfile('..', '..', 'input'));
 end

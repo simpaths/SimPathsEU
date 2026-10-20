@@ -10,23 +10,17 @@
     "beta_annual": 0.96,
     "sigma": 1.5,
     "tfp_growth_annual": 0.004,
-    "phi": 1.3,
-    "labor_supply": "exogenous",
     "x_comments": {
       "alpha_K": "Capital share set to 0.33 for cross-country comparability with Germany and Poland, both of which use 0.33 in the Ramsey layer. PWT labsh for Spain implies alpha nearer 0.38-0.40, but holding alpha_K fixed across countries keeps the Ramsey trends comparable and avoids a BGP K/Y that diverges from the other two models for a purely measurement-driven reason.",
       "delta_annual": "5% annual depreciation for total-economy capital, matching Germany rather than Poland's 6%. Spain's capital stock is unusually structures-heavy after the 1998-2007 construction boom, and structures depreciate slowly; the growth model matches total GFCF (Eurostat P51G) including those structures, so the lower rate is the right one.",
       "beta_annual": "Discount factor: 0.96 annual, same as Germany and Poland. It pins the terminal modified-golden-rule BGP real rate jointly with sigma and tfp_growth_annual; the resulting r* is written to output/documentation_data/ramsey/ramsey_summary_Spain.json (structural.r_star_annual) by calibrate_growth_model rather than quoted here, because it is derived and would go stale.",
       "sigma": "Inverse IES (CRRA coefficient). sigma=1.5 is mid-range consensus (1=log, 2=high risk aversion), same as Germany and Poland.",
-      "tfp_growth_annual": "0.4% annual labour-augmenting TFP growth, DERIVED FROM THIS SAMPLE rather than assumed. Over 2000q1-2025q1 the Spanish levels data give GDP per hour growth of 0.60% p.a.; on a BGP where K grows with Y, g_A = g_(Y/L) * (1 - alpha_K) = 0.60% * 0.67 = 0.40%. This is close to Germany's 0.5% and consistent with the well-documented stagnation of Spanish TFP over this period. It is deliberately NOT set to zero: measured Spanish TFP growth is near zero over 2000-2013 and recovers after, and a zero or negative trend would give a degenerate BGP. Revisit if the sample is extended.",
-      "phi": "Inverse Frisch elasticity on extensive margin. PROVISIONAL: set to 1.3 (the German value, calibrated there from a SimPaths wage-shift response surface). No Spanish SimPaths experiments exist yet, so this carries no Spain-specific information and should be re-estimated from dedicated Spanish SimPaths runs when available. Same status as Poland's 1.35.",
-      "labor_supply": "Default Ramsey labor-supply mode. calibrate_growth_model.m copies this template into the bundle folder input/ES/MacroModel/ and writes the calibrated runtime fields there."
+      "tfp_growth_annual": "0.4% annual labour-augmenting TFP growth, DERIVED FROM THIS SAMPLE rather than assumed. Over 2000q1-2025q1 the Spanish levels data give GDP per hour growth of 0.60% p.a.; on a BGP where K grows with Y, g_A = g_(Y/L) * (1 - alpha_K) = 0.60% * 0.67 = 0.40%. This is close to Germany's 0.5% and consistent with the well-documented stagnation of Spanish TFP over this period. It is deliberately NOT set to zero: measured Spanish TFP growth is near zero over 2000-2013 and recovers after, and a zero or negative trend would give a degenerate BGP. Revisit if the sample is extended."
     }
   },
   "base_year": 2000,
   "base_quarter": "2000Q1",
   "base_year_values": {
-    "WAP": 27787,
-    "WAP_comment": "Working-age population (15-64), thousands. Source: Eurostat demo_pjanbroad (A.NR.Y15-64.T.ES), Spain 2000 = 27,787,317 persons. Must match build_population_projection.m age range.",
     "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into input/ES/MacroModel/growth_params_Spain.json."
   },
   "inflation_target": {

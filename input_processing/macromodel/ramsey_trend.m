@@ -33,7 +33,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
 %
 % Usage:
 %   [detrended, trend] = ramsey_trend('Poland')
-%   [detrended, trend, diag] = ramsey_trend('UK', [], 'ramsey_labor_supply', 'endogenous')
 %   [detrended, trend, diag] = ramsey_trend('Poland', [], 'projection_start', '2023q1')
 %
 % Inputs:
@@ -51,7 +50,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     arguments
         country (1,:) char = 'Poland'
         data_file (1,:) char = ''
-        options.ramsey_labor_supply (1,:) char = 'exogenous'
         options.projection_start (1,:) char = ''
     end
     % Resolve the model's code folders (internal/, diagnostics/, ...).
@@ -146,37 +144,11 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     max_iter = round(get_solver_numeric(params.solver, 'max_newton_iterations', 'max_iterations', 200));
     tol      = get_solver_numeric(params.solver, 'newton_tolerance', 'tolerance', 1e-10);
     T_extend_extra = round(get_solver_numeric(params.solver, 'terminal_tail_quarters', 'terminal_extension_quarters', 300));
-    
-    % Endogenous labor supply mode
-    labor_supply_mode = options.ramsey_labor_supply;
-    endogenous_labor = strcmp(labor_supply_mode, 'endogenous');
-    
-    if endogenous_labor
-        phi = p.phi;
-        % Deterministic seed: the terminal-psi fixed point is seeded from the
-        % immutable base-year FOC value written by calibrate_growth_model
-        % (parameters.psi_seed), NOT from parameters.psi. ramsey_trend writes
-        % the converged terminal psi back into parameters.psi, so seeding from
-        % psi would make the iteration count (and any non-convergence warning)
-        % depend on how many times ramsey_trend was previously run. psi_seed is
-        % never overwritten by ramsey_trend, so a single calibrate -> trend
-        % run is fully reproducible. Falls back to psi for legacy runtime JSONs
-        % produced before psi_seed existed.
-        if isfield(p, 'psi_seed') && p.psi_seed > 0
-            psi = p.psi_seed;
-        else
-            psi = p.psi;
-        end
-        psi_original = p.psi;  % current runtime psi, for the JSON-writeback delta
-        if psi <= 0
-            error('psi must be > 0 for endogenous labor. Run calibrate_growth_model(''%s'') first.', country);
-        end
-        fprintf('  Labor supply: ENDOGENOUS (phi=%.2f, psi seed=%.6e)\n\n', phi, psi);
-    else
-        phi = NaN; psi = NaN;  % unused placeholders
-        fprintf('  Labor supply: exogenous (N taken as given)\n\n');
-    end
-    
+
+    % Labour input is exogenous: N is taken as given (the endogenous-labour
+    % variant was removed on 2026-10-20, JuergenWiemers/SimPathsEU#28).
+    fprintf('  Labor supply: exogenous (N taken as given)\n\n');
+
     %% =====================================================================
     %% 2. LOAD LEVEL DATA
     %% =====================================================================
@@ -295,24 +267,7 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     fprintf('  L*(1-NAWRU) (total empl, mean) = %.1f thousand\n', mean(N_total_employed, 'omitnan'));
     fprintf('  Self-empl. gap at t=1: %.1f%%\n', ...
             100*(N_total_employed(1) - N_trend(1))/N_trend(1));
-    
-    % 3c2. WAP trend (for endogenous labor mode)
-    if endogenous_labor
-        N_trend_exo = N_trend;  % save exogenous N for diagnostics/comparison
-        
-        % WAP: working-age population (15-64). Not in data CSV, so derive from
-        % demographic labor force trend scaled to match base-year WAP from JSON.
-        % L_demo tracks demographic labor force; WAP moves proportionally.
-        WAP_0 = params.base_year_values.WAP;
-        WAP_trend = L_demo * (WAP_0 / L_demo(1));
-        fprintf('  WAP_trend derived from L_demo × WAP_0/L_demo_0 (scale=%.4f)\n', ...
-                WAP_0 / L_demo(1));
-        fprintf('  WAP_trend (first) = %.0f,  WAP_trend (last) = %.0f\n', ...
-                WAP_trend(1), WAP_trend(end));
-        fprintf('  Implied l_0 = N/WAP = %.4f (%.1f%%)\n', ...
-                N_trend(1)/WAP_trend(1), 100*N_trend(1)/WAP_trend(1));
-    end
-    
+
     % 3d. Hours trend: log-linear
     ln_h = log(data.h_level);
     valid_h = ~isnan(ln_h);
@@ -397,144 +352,33 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     % delayed permanent shocks that broke the legacy one-dimensional solve.
     % Mirrors RamseyTrendModel.java (SimPaths runtime).
     % =====================================================================
-    if endogenous_labor
-        % Build extended exogenous paths (WAP replaces N as the exogenous scale)
-        [WAP_ext, h_ext, A_ext, g_A_annual_path] = extend_exogenous(WAP_trend, h_trend, A0, g_A, T, T_total, terminal_growth);
+    % Build extended exogenous paths
+    [N_ext, h_ext, A_ext, g_A_annual_path] = extend_exogenous(N_trend, h_trend, A0, g_A, T, T_total, terminal_growth);
 
-        % HYBRID ENDOGENOUS LABOR:
-        % In-sample: l_t taken from data (psi_t recovered residually afterwards).
-        % Out-of-sample: l_t from the intratemporal FOC with a single fixed
-        % "terminal psi" that closes the forward block.
-        %
-        % TERMINAL-PSI CONVENTION (deliberate, not a structural object):
-        % Because sigma = 1.5 violates the King-Plosser-Rebelo condition
-        % (the sigma trilemma, WS_CHATS_207), the FOC-implied psi_t is NOT
-        % constant along the transition -- it drifts. There is therefore no
-        % clean balanced-growth psi to anchor the forward FOC to. We adopt the
-        % convention that the forward block is closed with the mean of the
-        % implied psi_t over the LAST `window_size` in-sample quarters
-        % (psi_terminal below). This is an end-of-sample anchor by choice; the
-        % fixed point we solve for is self-consistency of THIS convention
-        % (solve at psi -> implied end-of-sample psi == psi), not convergence
-        % to an asymptotic structural constant. Changing the window or the
-        % anchor changes the convention, not a "true" value.
-        %
-        % SOLVER: the psi fixed point is a scalar map g(psi) = implied
-        % end-of-sample psi. Plain Picard (psi <- g(psi)) converges only
-        % linearly and oscillates here (g' ~ -0.4), needing ~17 passes for
-        % Poland. We instead use Steffensen acceleration (iterated Aitken
-        % delta^2), which is parameter-free and roughly squares the error per
-        % step, so a generous pass budget is essentially never reached. The
-        % earlier fix raised the Picard cap as a band-aid; this fixes the
-        % conditioning instead.
-        l_data     = N_trend ./ WAP_trend;
-        N_insample = N_trend;                 % data N for the in-sample block
-        window_size = min(4, T);              % terminal-psi averaging window
-        psi_fp_tol = 1e-8;                    % tighter, reachable with acceleration
-        psi_fp_max_passes = 30;               % stacked-solve budget (Steffensen ~2-3/step)
-        psi_fp_converged = false;
-
-        fprintf('  Mode: ENDOGENOUS labor (phi=%.2f, psi seed=%.6e)\n', phi, psi);
-        fprintf('  K/Y (BGP target) = %.2f (quarterly)\n', KY_bgp);
-
-        % g(psi): solve the Ramsey path at a trial psi and return the implied
-        % end-of-sample psi plus the full solution.
-        Gpsi = @(psi_in) solve_endo_psi_pass(psi_in, K0, T_total, alpha, ...
-            delta, beta, sigma, gY_ext, nxY_ext, KY_bgp, A_ext, WAP_ext, ...
-            h_ext, N_insample, l_data, phi, T, window_size, tol, max_iter);
-
-        psi_cur = psi;            % deterministic base-year FOC seed
-        passes  = 0;
-        while passes < psi_fp_max_passes
-            x0 = psi_cur;
-            [g0, sol0] = Gpsi(x0); passes = passes + 1;
-            gap0 = abs(g0 - x0) / max(abs(x0), 1e-15);
-            if gap0 <= psi_fp_tol
-                psi_terminal = g0; sol = sol0; psi_fp_converged = true; break;
-            end
-            if passes >= psi_fp_max_passes
-                psi_terminal = g0; sol = sol0; break;
-            end
-
-            [g1, sol1] = Gpsi(g0); passes = passes + 1;
-            gap1 = abs(g1 - g0) / max(abs(g0), 1e-15);
-            if gap1 <= psi_fp_tol
-                psi_terminal = g1; sol = sol1; psi_fp_converged = true; break;
-            end
-
-            % Steffensen / Aitken delta^2 extrapolation on (x0, g0, g1)
-            denom = g1 - 2*g0 + x0;
-            if isfinite(denom) && abs(denom) > 1e-300
-                x_acc = x0 - (g0 - x0)^2 / denom;
-            else
-                x_acc = g1;
-            end
-            % Reject implausible extrapolation; fall back to the Picard iterate
-            if ~isfinite(x_acc) || x_acc <= 0 || ...
-               x_acc > 10*max(x0, g1) || x_acc < 0.1*min(x0, g1)
-                x_acc = g1;
-            end
-
-            fprintf(['  Terminal psi Steffensen: psi=%.6e g=%.6e g2=%.6e ' ...
-                     '-> %.6e (Picard gap %.3e)\n'], x0, g0, g1, x_acc, gap1);
-            psi_cur = x_acc;
+    % Override the forward N extrapolation with the SimPaths-aligned
+    % projection embedded in the post-sample tail of demographic_L_*.csv.
+    % L_demo and N_trend live in different units (labor force vs employees),
+    % so we chain the override on L_demo's relative growth at the handoff.
+    if ~isempty(L_demo_post)
+        n_avail = min(length(L_demo_post), T_total - T);
+        N_ext(T+1:T+n_avail) = N_ext(T) * L_demo_post(1:n_avail) / L_demo(T);
+        if n_avail < T_total - T
+            tail_window = min(20, n_avail - 1);
+            N_ext = apply_smooth_terminal_demographic_closure(N_ext, T+n_avail, T_total, tail_window);
         end
-
-        if ~psi_fp_converged
-            % Gpsi(x) solves the path AT x and returns the psi that path IMPLIES.
-            % On non-convergence those differ, so export the psi the path was
-            % actually solved with (psi_cur) rather than the implied one - the
-            % trend, its terminal state and psi_terminal all have to describe the
-            % same solution, since Java continues the FOC forward from them.
-            [psi_implied, sol] = Gpsi(psi_cur); passes = passes + 1;
-            psi_terminal = psi_cur;
-            warning(['Terminal psi fixed point did not reach tol=%.1e within ' ...
-                     '%d stacked solves; exporting the last iterate %.6e that ' ...
-                     'the path was solved at (it implies %.6e, residual %.3e). ' ...
-                     'Conditioning may have changed -- investigate before ' ...
-                     'raising the budget.'], psi_fp_tol, ...
-                     passes, psi_terminal, psi_implied, ...
-                     abs(psi_implied - psi_cur) / max(abs(psi_cur), 1e-15));
-        else
-            fprintf('  Terminal psi fixed point converged in %d stacked solves at %.6e\n', ...
-                    passes, psi_terminal);
-        end
-
-        % Unpack the accepted solution into the names the rest of the
-        % function expects.
-        K_path    = sol.K_path;   c_path = sol.c_path;   Y_path = sol.Y_path;
-        l_path    = sol.l_path;   N_path = sol.N_path;
-        iter      = sol.iter;     converged = sol.converged;
-        psi_path  = sol.psi_path;
-    else
-        % Build extended exogenous paths
-        [N_ext, h_ext, A_ext, g_A_annual_path] = extend_exogenous(N_trend, h_trend, A0, g_A, T, T_total, terminal_growth);
-
-        % Override the forward N extrapolation with the SimPaths-aligned
-        % projection embedded in the post-sample tail of demographic_L_*.csv.
-        % L_demo and N_trend live in different units (labor force vs employees),
-        % so we chain the override on L_demo's relative growth at the handoff.
-        if ~isempty(L_demo_post)
-            n_avail = min(length(L_demo_post), T_total - T);
-            N_ext(T+1:T+n_avail) = N_ext(T) * L_demo_post(1:n_avail) / L_demo(T);
-            if n_avail < T_total - T
-                tail_window = min(20, n_avail - 1);
-                N_ext = apply_smooth_terminal_demographic_closure(N_ext, T+n_avail, T_total, tail_window);
-            end
-            fprintf('  Forward N override: %d quarters from L_demo projection (g_N_q=%.5f)\n', ...
-                    n_avail, (N_ext(T+n_avail)/N_ext(T))^(1/n_avail) - 1);
-        end
-
-        fprintf('  Mode: EXOGENOUS labor (N taken as given)\n');
-        fprintf('  K/Y (BGP target) = %.2f (quarterly)\n', KY_bgp);
-
-        econ = @(t, K, c) exo_period_econ(t, K, c, A_ext, N_ext, h_ext, alpha);
-        labScale = N_ext;     % exogenous labour scale (mirrors Java nPath in exo mode)
-        [K_path, c_path, Y_path, l_path, N_path, iter, converged] = ...
-            ramsey_stacked_newton(K0, T_total, alpha, delta, beta, sigma, ...
-                gY_ext, nxY_ext, KY_bgp, A_ext, h_ext, labScale, econ, ...
-                tol, max_iter);
+        fprintf('  Forward N override: %d quarters from L_demo projection (g_N_q=%.5f)\n', ...
+                n_avail, (N_ext(T+n_avail)/N_ext(T))^(1/n_avail) - 1);
     end
+
+    fprintf('  Mode: EXOGENOUS labor (N taken as given)\n');
+    fprintf('  K/Y (BGP target) = %.2f (quarterly)\n', KY_bgp);
+
+    econ = @(t, K, c) exo_period_econ(t, K, c, A_ext, N_ext, h_ext, alpha);
+    labScale = N_ext;     % exogenous labour scale (mirrors Java nPath)
+    [K_path, c_path, Y_path, ~, ~, iter, converged] = ...
+        ramsey_stacked_newton(K0, T_total, alpha, delta, beta, sigma, ...
+            gY_ext, nxY_ext, KY_bgp, A_ext, h_ext, labScale, econ, ...
+            tol, max_iter);
 
     c_try = c_path(1);   % retained for diagnostics/save compatibility
     if ~converged
@@ -543,50 +387,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     fprintf('  Stacked-time Newton converged in %d iterations (c_0 = %.6f)\n', iter, c_try);
     fprintf('  K_1 = %.1f (calibrated K0),  terminal K/Y = %.4f (BGP = %.4f)\n', ...
             K_path(1), K_path(end)/Y_path(end), KY_bgp);
-
-    if endogenous_labor
-        % Overwrite N_trend with solved endogenous N for downstream use
-        N_trend   = N_path(1:T);
-        l_trend   = l_path(1:T);
-        psi_trend = psi_path(1:T);
-
-        fprintf('\n  Hybrid Endogenous labor results (sample period):\n');
-        fprintf('    l (participation): %.4f → %.4f (%.1f%% → %.1f%%)\n', ...
-                l_trend(1), l_trend(end), 100*l_trend(1), 100*l_trend(end));
-        fprintf('    N (employees):     %.0f → %.0f\n', N_trend(1), N_trend(end));
-        fprintf('    psi (terminal):    %.6e\n', psi_terminal);
-        if any(l_path((T+1):end) <= 0.01) || any(l_path((T+1):end) >= 0.99)
-            warning('l_t hit bracket bound [0.01, 0.99] out of sample — phi/psi may be miscalibrated.');
-        end
-
-        % Write updated psi back to JSON if it changed
-        if abs(psi_terminal - psi_original) / max(abs(psi_original), 1e-15) > 1e-6
-            fprintf('\n  Updating terminal psi in JSON: %.6e → %.6e\n', psi_original, psi_terminal);
-            json_text = fileread(json_file);
-            n_matches = numel(regexp(json_text, '"psi"\s*:\s*[0-9eE+\-\.]+'));
-            if n_matches ~= 1
-                error('ramsey_trend:PsiSubstitution', ...
-                      ['Expected exactly one "psi" field in %s to update, found %d. ' ...
-                       'Refusing to write: a silent non-match would export a path ' ...
-                       'solved at one psi alongside a JSON declaring another.'], ...
-                      json_file, n_matches);
-            end
-            json_text = regexprep(json_text, '"psi"\s*:\s*[0-9eE+\-\.]+', ...
-                                  sprintf('"psi": %.16e', psi_terminal));
-            % The JSON is in the bundle SimPaths reads: unverified until the
-            % next export's verify_export_bundle passes.
-            mark_bundle_unverified(artifact_path('bundle', '', 'country', country, 'create', true), country, ...
-                {sprintf(['ramsey_trend wrote a new terminal psi into growth_params_%s.json; ' ...
-                          'no export has verified the bundle since'], country)});
-            write_text_atomic(json_file, json_text, 'verify_json', true, ...
-                              'append_newline', false);
-            fprintf('  ✓ JSON updated with terminal psi.\n');
-        else
-            fprintf('  psi_terminal unchanged — no JSON update needed.\n');
-        end
-    else
-        l_trend = [];  % not available in exogenous mode
-    end
 
     %% =====================================================================
     %% 5b. BUILD SIMPATHS HANDOFF CONTRACT ROW
@@ -610,37 +410,25 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     handoff_gY_hist = gY_smooth(1:handoff_idx);
     handoff_nxY_hist = nxY_smooth(1:handoff_idx);
 
-    if endogenous_labor
-        handoff_window_start = max(1, handoff_idx - window_size + 1);
-        psi_handoff = mean(psi_path(handoff_window_start:handoff_idx));
+    handoff_n_full = extend_level_path(N_trend(1:handoff_idx), handoff_ref_total, 20);
+    handoff_h_full = extend_level_path(handoff_h_hist, handoff_ref_total, 1);
 
-        handoff_wap_full = extend_level_path(WAP_trend(1:handoff_idx), handoff_ref_total, 20);
-        handoff_h_full = extend_level_path(handoff_h_hist, handoff_ref_total, 1);
-        handoff_labor_proj = handoff_wap_full(handoff_idx:end);
-        handoff_h_proj = handoff_h_full(handoff_idx:end);
-    else
-        psi_handoff = NaN;
-
-        handoff_n_full = extend_level_path(N_trend(1:handoff_idx), handoff_ref_total, 20);
-        handoff_h_full = extend_level_path(handoff_h_hist, handoff_ref_total, 1);
-
-        % Same override as in the main solve: replace the post-handoff N
-        % extrapolation with the SimPaths-aligned L_demo projection, chained
-        % on relative growth from the handoff anchor.
-        if length(L_demo_full) > handoff_idx
-            n_avail = min(length(L_demo_full) - handoff_idx, handoff_ref_total - handoff_idx);
-            handoff_n_full(handoff_idx+1:handoff_idx+n_avail) = ...
-                handoff_n_full(handoff_idx) * L_demo_full(handoff_idx+1:handoff_idx+n_avail) / L_demo_full(handoff_idx);
-            if n_avail < handoff_ref_total - handoff_idx
-                tail_window = min(20, n_avail - 1);
-                handoff_n_full = apply_smooth_terminal_demographic_closure( ...
-                    handoff_n_full, handoff_idx+n_avail, handoff_ref_total, tail_window);
-            end
+    % Same override as in the main solve: replace the post-handoff N
+    % extrapolation with the SimPaths-aligned L_demo projection, chained
+    % on relative growth from the handoff anchor.
+    if length(L_demo_full) > handoff_idx
+        n_avail = min(length(L_demo_full) - handoff_idx, handoff_ref_total - handoff_idx);
+        handoff_n_full(handoff_idx+1:handoff_idx+n_avail) = ...
+            handoff_n_full(handoff_idx) * L_demo_full(handoff_idx+1:handoff_idx+n_avail) / L_demo_full(handoff_idx);
+        if n_avail < handoff_ref_total - handoff_idx
+            tail_window = min(20, n_avail - 1);
+            handoff_n_full = apply_smooth_terminal_demographic_closure( ...
+                handoff_n_full, handoff_idx+n_avail, handoff_ref_total, tail_window);
         end
-
-        handoff_labor_proj = handoff_n_full(handoff_idx:end);
-        handoff_h_proj = handoff_h_full(handoff_idx:end);
     end
+
+    handoff_labor_proj = handoff_n_full(handoff_idx:end);
+    handoff_h_proj = handoff_h_full(handoff_idx:end);
 
     handoff_gY_full = extend_share(handoff_gY_hist, handoff_ref_total);
     handoff_nxY_full = extend_share(handoff_nxY_hist, handoff_ref_total);
@@ -652,51 +440,27 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     handoff_A0 = A_ext(handoff_idx);
     handoff_K0 = K_path(handoff_idx);
 
-    if endogenous_labor
-        handoff_wap_ext = extend_level_path(handoff_labor_proj, handoff_total_len, 20);
-        % Tapered, not flat-rate: see the note in extend_exogenous. The tail is a
-        % terminal-condition device, and an hours path still declining at the fitted
-        % rate contradicts the balanced-growth condition the solve imposes.
-        handoff_h_ext = zeros(handoff_total_len, 1);
-        handoff_h_ext(1:handoff_proj_len) = handoff_h_proj;
-        handoff_h_ext = apply_smooth_terminal_demographic_closure(handoff_h_ext, handoff_proj_len, handoff_total_len, 1);
-        handoff_A_ext = build_forward_tfp_path(handoff_A0, handoff_total_len, g_A, terminal_growth);
-        handoff_gY_ext = extend_share(handoff_gY_proj, handoff_total_len);
-        handoff_nxY_ext = extend_share(handoff_nxY_proj, handoff_total_len);
-        handoff_econ = @(t, K, c) endo_period_econ(t, K, c, handoff_A_ext, ...
-            handoff_wap_ext, handoff_h_ext, [], [], alpha, sigma, phi, psi_handoff, 0);
-        handoff_lab_scale = handoff_wap_ext;
-    else
-        handoff_n_ext = extend_level_path(handoff_labor_proj, handoff_total_len, 20);
-        % Tapered, not flat-rate: see the note in extend_exogenous. The tail is a
-        % terminal-condition device, and an hours path still declining at the fitted
-        % rate contradicts the balanced-growth condition the solve imposes.
-        handoff_h_ext = zeros(handoff_total_len, 1);
-        handoff_h_ext(1:handoff_proj_len) = handoff_h_proj;
-        handoff_h_ext = apply_smooth_terminal_demographic_closure(handoff_h_ext, handoff_proj_len, handoff_total_len, 1);
-        handoff_A_ext = build_forward_tfp_path(handoff_A0, handoff_total_len, g_A, terminal_growth);
-        handoff_gY_ext = extend_share(handoff_gY_proj, handoff_total_len);
-        handoff_nxY_ext = extend_share(handoff_nxY_proj, handoff_total_len);
-        handoff_econ = @(t, K, c) exo_period_econ(t, K, c, handoff_A_ext, ...
-            handoff_n_ext, handoff_h_ext, alpha);
-        handoff_lab_scale = handoff_n_ext;
-    end
+    handoff_n_ext = extend_level_path(handoff_labor_proj, handoff_total_len, 20);
+    % Tapered, not flat-rate: see the note in extend_exogenous. The tail is a
+    % terminal-condition device, and an hours path still declining at the fitted
+    % rate contradicts the balanced-growth condition the solve imposes.
+    handoff_h_ext = zeros(handoff_total_len, 1);
+    handoff_h_ext(1:handoff_proj_len) = handoff_h_proj;
+    handoff_h_ext = apply_smooth_terminal_demographic_closure(handoff_h_ext, handoff_proj_len, handoff_total_len, 1);
+    handoff_A_ext = build_forward_tfp_path(handoff_A0, handoff_total_len, g_A, terminal_growth);
+    handoff_gY_ext = extend_share(handoff_gY_proj, handoff_total_len);
+    handoff_nxY_ext = extend_share(handoff_nxY_proj, handoff_total_len);
+    handoff_econ = @(t, K, c) exo_period_econ(t, K, c, handoff_A_ext, ...
+        handoff_n_ext, handoff_h_ext, alpha);
+    handoff_lab_scale = handoff_n_ext;
 
-    [handoff_K_path, handoff_c_path, handoff_Y_path, handoff_l_path, handoff_N_path, ~, handoff_converged] = ...
+    [handoff_K_path, handoff_c_path, handoff_Y_path, ~, handoff_N_path, ~, handoff_converged] = ...
         ramsey_stacked_newton(handoff_K0, handoff_total_len, alpha, delta, beta, sigma, ...
             handoff_gY_ext, handoff_nxY_ext, KY_bgp, handoff_A_ext, handoff_h_ext, ...
             handoff_lab_scale, handoff_econ, tol, max_iter);
 
     if ~handoff_converged
         warning('SimPaths handoff forward solve did not converge cleanly for %s.', simpaths_handoff_time);
-    end
-
-    if endogenous_labor
-        handoff_WAP0 = handoff_labor_proj(1);
-        handoff_l0 = handoff_l_path(1);
-    else
-        handoff_WAP0 = NaN;
-        handoff_l0 = NaN;
     end
 
     handoff_N0 = handoff_N_path(1);
@@ -717,9 +481,7 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     c_trend_pc = c_path(1:T);    % per-capita consumption
     Y_trend_q  = Y_path(1:T);    % quarterly GDP
     
-    % N_trend is already set:
-    %   - Exogenous mode: HP-filtered n_level (from Section 3c)
-    %   - Endogenous mode: solved l × WAP (overwritten after stacked solve)
+    % N_trend is already set: the HP-filtered n_level from Section 3c.
     
     w_trend = zeros(T, 1);
     r_trend = zeros(T, 1);
@@ -923,12 +685,7 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     trend.h = h_trend;
     trend.pi_star = pi_star;
     trend.R_trend = R_trend;
-    if endogenous_labor
-        trend.l = l_trend;               % Participation rate (endogenous)
-        trend.psi = psi_trend;           % Time-varying institutional wedge
-        trend.N_exo = N_trend_exo;       % Exogenous N for comparison
-    end
-    
+
     %% =====================================================================
     %% 9. WRITE OUTPUT FILES
     %% =====================================================================
@@ -987,12 +744,7 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     ref.h = h_trend(1:handoff_idx);
     ref.g_Y = gY_smooth(1:handoff_idx);               % Government spending share (for Java solver)
     ref.nx_Y = nxY_smooth(1:handoff_idx);             % Net export share (for Java solver)
-    if endogenous_labor
-        ref.l = l_trend(1:handoff_idx);               % Participation rate (for Java cross-validation)
-        ref.psi = psi_trend(1:handoff_idx);           % Time-varying institutional wedge
-        ref.WAP = WAP_trend(1:handoff_idx);           % Working-age population (for endogenous labor mode)
-    end
-    
+
     ref_file = artifact_path('output', sprintf('growth_model_reference_%s.csv', lower(country)), 'create', true);
     ref.K(end) = handoff_K_path(1);
     ref.Y(end) = handoff_Y0;
@@ -1004,11 +756,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     ref.h(end) = handoff_h_proj(1);
     ref.g_Y(end) = handoff_gY_proj(1);
     ref.nx_Y(end) = handoff_nxY_proj(1);
-    if endogenous_labor
-        ref.l(end) = handoff_l0;
-        ref.psi(end) = psi_handoff;
-        ref.WAP(end) = handoff_WAP0;
-    end
     writetable(ref, ref_file);
     fprintf('  ✓ %s (through SimPaths handoff quarter %s)\n', ref_file, simpaths_handoff_time);
     
@@ -1032,15 +779,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
                  'g_A_annual_path', 'terminal_growth', ...
                  'handoff_K_path', 'handoff_Y_path', 'handoff_c_path', ...
                  'handoff_N_path', 'handoff_h_ext', 'handoff_gY_ext', 'handoff_nxY_ext'};
-    if endogenous_labor
-        l_handoff = handoff_l0; %#ok<NASGU>
-        WAP_handoff = handoff_WAP0; %#ok<NASGU>
-        psi_handoff = psi_handoff; %#ok<NASGU>
-        save_vars = [save_vars, {'l_path', 'l_trend', 'psi_path', 'psi_trend', 'psi_terminal', ...
-                                 'l_handoff', 'WAP_handoff', 'psi_handoff', ...
-                                 'WAP_trend', 'N_trend_exo', 'endogenous_labor', ...
-                                 'handoff_l_path'}];
-    end
     save(artifact_path('output', sprintf('ramsey_trend_%s.mat', lower(country)), 'create', true), save_vars{:});
     fprintf('  ✓ ramsey_trend_%s.mat\n', lower(country));
     
@@ -1066,12 +804,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     diagnostics.GY_mean = mean(gY_smooth, 'omitnan');
     diagnostics.NXY_mean = mean(nxY_smooth, 'omitnan');
     diagnostics.IY_actual = mean(data.inv_level ./ data.y_level, 'omitnan');
-    if endogenous_labor
-        diagnostics.l_mean = mean(l_trend, 'omitnan');
-        diagnostics.l_first = l_trend(1);
-        diagnostics.l_last = l_trend(end);
-        diagnostics.N_endo_vs_exo_gap = mean(100*(N_trend - N_trend_exo) ./ N_trend_exo, 'omitnan');
-    end
     
     fprintf('\n--- Diagnostics ---\n');
     fprintf('  c_0 optimal      = %.6f\n', c_try);
@@ -1104,21 +836,14 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
             100*diagnostics.CY_model, 100*diagnostics.IY_model, 100*diagnostics.IY_actual);
     fprintf('  G/Y (mean)  = %.2f%%  NX/Y (mean)  = %.2f%%\n', ...
             100*diagnostics.GY_mean, 100*diagnostics.NXY_mean);
-    
-    if endogenous_labor
-        fprintf('\n  Endogenous labor diagnostics:\n');
-        fprintf('    l (mean)          = %.4f (%.1f%%)\n', diagnostics.l_mean, 100*diagnostics.l_mean);
-        fprintf('    l (first → last)  = %.4f → %.4f\n', diagnostics.l_first, diagnostics.l_last);
-        fprintf('    N endo vs exo gap = %.2f%% (mean)\n', diagnostics.N_endo_vs_exo_gap);
-    end
 
     % --- Automated sanity check (replaces eyeballing the trend plots) ---
     % Quantifies what the operator otherwise reads off the Investment panel:
     % is the residual investment trend positive, are the C/I/G/NX shares
     % structurally plausible, and does the trend actually track observed
     % investment over the estimation sample. Prints an explicit PASS/FAIL
-    % verdict and raises a loud warning on any failure so a bad endogenous
-    % run (e.g. the catastrophic-investment regime) cannot pass silently.
+    % verdict and raises a loud warning on any failure so a bad run (e.g. the
+    % catastrophic-investment regime) cannot pass silently.
     diagnostics.sanity = ramsey_sanity_check(I_trend_det, Y_trend_q, ...
         C_trend_det, gY_smooth, nxY_smooth, data.inv_level, data.y_level);
     if ~diagnostics.sanity.pass
@@ -1157,7 +882,7 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     end
 
     try
-        ramsey_summary = build_ramsey_documentation_summary(params, country, options.ramsey_labor_supply, documentation_diagnostics);
+        ramsey_summary = build_ramsey_documentation_summary(params, country, documentation_diagnostics);
         summary_file = artifact_path('output', fullfile('documentation_data', 'ramsey', ...
                                      sprintf('ramsey_summary_%s.json', country)));
         validate_documentation_summary(ramsey_summary, 'ramsey');
@@ -1254,16 +979,6 @@ function [detrended, trend, diagnostics] = ramsey_trend(country, data_file, opti
     print_box_line(sprintf('  Output: data_for_dynare_%s.csv (replaces HP-filtered version)', country), box_width);
     print_box_line(sprintf('  Reference: growth_model_reference_%s.csv', lower(country)), box_width);
     print_box_line(sprintf('  r* (BGP annual): %.2f%%', 100*((1 + r_star_bgp_q)^4 - 1)), box_width);
-    if endogenous_labor
-        fprintf('╠%s╣\n', repmat('═', 1, box_width));
-        print_box_line('ENDOGENOUS LABOR SUPPLY', box_width, 'center');
-        print_box_line(sprintf('  phi        = %9.2f (inv. Frisch elasticity)', phi), box_width);
-        print_box_line(sprintf('  psi        = %.6e (disutility weight)', psi), box_width);
-        print_box_line(sprintf('  l          = %8.4f → %8.4f (participation rate)', ...
-            l_trend(1), l_trend(end)), box_width);
-        print_box_line(sprintf('  N endo-exo = %+7.2f%% (mean gap)', ...
-            diagnostics.N_endo_vs_exo_gap), box_width);
-    end
     fprintf('╚%s╝\n', repmat('═', 1, box_width));
     fprintf('\n');
     fprintf('Next step: >> dynare Macromodel_%s use_dll\n', country);
@@ -1283,23 +998,6 @@ function [N, Y, l] = exo_period_econ(t, K, c, A, N_ext, h, alpha) %#ok<INUSD>
 % EXO_PERIOD_ECON  Per-quarter labor/output with exogenous N.
     N = N_ext(t);
     l = 0;
-    Y = A(t) * K^alpha * (N * h(t))^(1-alpha);
-end
-
-
-function [N, Y, l] = endo_period_econ(t, K, c, A, WAP, h, N_insample, ...
-                                      l_data, alpha, sigma, phi, psi_term, T_sample)
-% ENDO_PERIOD_ECON  Per-quarter labor/output, hybrid endogenous labor.
-%
-% In-sample (t <= T_sample): l from data (N = N_insample). Out-of-sample:
-% l from the closed-form intratemporal FOC with the terminal psi.
-    if t <= T_sample
-        l = l_data(t);
-        N = N_insample(t);
-    else
-        l = solve_labor_foc(c, K, A(t), WAP(t), h(t), alpha, sigma, phi, psi_term);
-        N = l * WAP(t);
-    end
     Y = A(t) * K^alpha * (N * h(t))^(1-alpha);
 end
 
@@ -1366,8 +1064,8 @@ function [K, c, Y, l, N, iter, converged] = ramsey_stacked_newton( ...
     % Feasible BGP-like initial guess via a constant BGP investment share.
     % m2: terminal gross growth mirrors RamseyTrendModel.terminalGrossGrowth —
     % TFP-augmented growth times the exogenous labour-scale growth (Java's
-    % nPath = WAP in endo, N in exo; here labScale plays the same role). Falls
-    % back to the TFP-only factor if the empirical ratio is non-finite.
+    % nPath; here labScale plays the same role). Falls back to the TFP-only
+    % factor if the empirical ratio is non-finite.
     aGross   = A(Tt) / A(Tt-1);
     labGross = (labScale(Tt) * h(Tt)) / (labScale(Tt-1) * h(Tt-1));
     G_term   = aGross^(1/(1-alpha)) * labGross;
@@ -1376,17 +1074,17 @@ function [K, c, Y, l, N, iter, converged] = ramsey_stacked_newton( ...
     end
     invShare = max(0.03, min(0.45, (G_term - 1 + delta) * KY_bgp));
     Kg = K0;
-    % m1: per-capita consumption carried across periods. The hybrid endo econ
-    % ignores c in-sample (data N) but needs a realistic c out-of-sample for
-    % the intratemporal FOC; the previous period's guessed c is the right
-    % scale. (The old code passed 0.5*Kg — an aggregate capital value used as
-    % per-capita consumption, which drove the out-of-sample FOC to the l=0.01
-    % clamp — and a dead Ng<=0 branch that econ can never trigger.)
-    [Ng1, ~, ~] = econ(1, K0, 1);   % t=1 is in-sample: econ ignores the c arg
+    % m1: per-capita consumption carried across periods. The exogenous econ
+    % ignores c (N is given), but the solver's econ interface takes (t, K, c)
+    % and the previous period's guessed c is the consistent value to pass.
+    % (The old code passed 0.5*Kg, an aggregate capital value used as
+    % per-capita consumption, and had a dead Ng<=0 branch that econ can never
+    % trigger.)
+    [Ng1, ~, ~] = econ(1, K0, 1);   % the exogenous econ ignores the c arg
     Yg1 = A(1) * K0^alpha * (Ng1*h(1))^(1-alpha);
     cg_prev = max(1e-6*Yg1/Ng1, (1 - gY(1) - nxY(1) - invShare) * Yg1 / Ng1);
     for t = 1:Tt
-        [Ng, ~, ~] = econ(t, Kg, cg_prev);   % exo / in-sample endo ignore c
+        [Ng, ~, ~] = econ(t, Kg, cg_prev);   % the exogenous econ ignores c
         Yg = A(t) * Kg^alpha * (Ng*h(t))^(1-alpha);
         iG = invShare * Yg;
         privAbs = (1 - gY(t) - nxY(t)) * Yg - iG;
@@ -1734,8 +1432,6 @@ function pi_star = compute_pi_trend(data, inflation_params)
 end
 
 
-
-
 function plot_trend_vs_actual(actual, trend_vals, time_labels, title_str)
 % PLOT_TREND_VS_ACTUAL  Diagnostic plot of actual vs Ramsey trend.
 %
@@ -1806,44 +1502,6 @@ function x_out = interpolate_through(x, mask)
 end
 
 
-function [psi_out, sol] = solve_endo_psi_pass(psi_in, K0, T_total, alpha, ...
-        delta, beta, sigma, gY_ext, nxY_ext, KY_bgp, A_ext, WAP_ext, ...
-        h_ext, N_insample, l_data, phi, T, window_size, tol, max_iter)
-% SOLVE_ENDO_PSI_PASS  One evaluation of the terminal-psi fixed-point map.
-%
-% Given a trial disutility weight psi_in, solve the hybrid endogenous-labour
-% Ramsey path and return psi_out = the implied psi averaged over the last
-% `window_size` in-sample quarters (the terminal-psi convention documented in
-% ramsey_trend), together with the full solved path so the accepted iterate
-% does not need an extra re-solve.
-    econ = @(t, K, c) endo_period_econ(t, K, c, A_ext, WAP_ext, h_ext, ...
-        N_insample, l_data, alpha, sigma, phi, psi_in, T);
-
-    [K_path, c_path, Y_path, l_path, N_path, iter, converged] = ...
-        ramsey_stacked_newton(K0, T_total, alpha, delta, beta, sigma, ...
-            gY_ext, nxY_ext, KY_bgp, A_ext, h_ext, WAP_ext, econ, ...
-            tol, max_iter);
-
-    % Invert the SAME FOC that solve_labor_foc solves forward:
-    %   psi * l^phi = w * h * c^(-sigma)
-    % The h factor is not optional bookkeeping - dropping it here while the forward
-    % FOC keeps it makes the in-sample wedge and the projection describe different
-    % preferences, off by a factor of h (~500 at Polish quarterly hours), which is
-    % exactly the gap that appeared between the psi seed and the terminal psi.
-    psi_path = zeros(T_total, 1);
-    for t = 1:T_total
-        eff_labor = N_path(t) * h_ext(t);
-        w_t = (1 - alpha) * Y_path(t) / eff_labor;
-        psi_path(t) = backout_labor_psi(w_t, h_ext(t), c_path(t), l_path(t), sigma, phi);
-    end
-
-    psi_out = mean(psi_path(T - window_size + 1 : T));
-    sol = struct('K_path', K_path, 'c_path', c_path, 'Y_path', Y_path, ...
-                 'l_path', l_path, 'N_path', N_path, 'iter', iter, ...
-                 'converged', converged, 'psi_path', psi_path);
-end
-
-
 function s = ramsey_sanity_check(I_trend, Y_trend, C_trend, gY, nxY, inv_obs, y_obs)
 % RAMSEY_SANITY_CHECK  Quantitative replacement for eyeballing the trend plots.
 %
@@ -1857,7 +1515,7 @@ function s = ramsey_sanity_check(I_trend, Y_trend, C_trend, gY, nxY, inv_obs, y_
 % investment trend from observed investment) is reported as ADVISORY only,
 % never a FAIL: investment is the volatile Y-C-G-NX residual, so its level
 % RMSE is structurally larger than Y/C/G even in an accepted run (the
-% endogenous Poland baseline sits ~0.27). A genuine blow-up still trips the
+% Poland baseline sits ~0.27). A genuine blow-up still trips the
 % gating checks; this number is the honest fit signal you previously read
 % off the Investment panel, surfaced but not used to reject the run.
     IY  = I_trend ./ Y_trend;

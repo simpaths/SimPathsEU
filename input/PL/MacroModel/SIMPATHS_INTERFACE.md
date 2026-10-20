@@ -1,6 +1,6 @@
 # DSGE Policy Function Export for SimPaths
 
-**Generated:** 14-Oct-2026 12:57:03
+**Generated:** 20-Oct-2026 17:55:34
 **Model:** Macromodel_Poland_frozen
 
 ## 1. State-Space Representation
@@ -55,7 +55,7 @@ downstream is how the two sides drift apart without any error surfacing.
 | `growth_model_reference_poland.csv` | In-sample Ramsey solution; its last row is the handoff quarter that every other file aligns to |
 | `growth_params_Poland.json` | Calibrated structural parameters and solver settings |
 | `growth_terminal_state.json` | Terminal K and A, the handoff quarter, and `projection_quarters` (the forward horizon; a mismatch silently changes the terminal closure) |
-| `population_projection_Poland.csv` | SimPaths-consistent demographic path, `time,N` (`time,N,WAP` in endogenous mode) |
+| `population_projection_Poland.csv` | SimPaths-consistent demographic path, `time,N` |
 | `hours_projection_Poland.csv` | Planner hours per worker, `time,h`, `projection_quarters + 1` rows from the handoff |
 
 **Alignment.** Each projection is located by DATE, not by row position: find the

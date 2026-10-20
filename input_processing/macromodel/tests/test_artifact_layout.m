@@ -39,7 +39,6 @@ function test_artifact_layout()
         'ramsey_projection_*.pdf',       'figures/'
         'calibrate_growth_model_*.log',  'logs/'
         'ramsey_trend_*.log',            'logs/'
-        'foc_parity_cases.csv',          'tests/fixtures/'
         '_macroScenario_*.csv',          '../../input/{CC}/MacroModel/'
     };
 
