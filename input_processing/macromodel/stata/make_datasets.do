@@ -534,7 +534,12 @@ label variable w "Real wage per employee - HP-filtered (% deviation)"
 * 1. Wage variable (w) is compensation per employee (excludes self-employed)
 * 2. Hours variable (h) is hours per employee (excludes self-employed)
 * 3. Search-matching framework models employee-vacancy matching
-* 4. Discrete choice labor supply models typically exclude self-employment
+*
+* SimPaths' labour-supply model does NOT exclude the self-employed: its working
+* state is Les_c4.EmployedOrSelfEmployed, and its wage equation pools employee
+* and self-employment income. The Ramsey feedback bridges the two concepts with
+* a level factor that holds the employee share of workers fixed (contract 16 in
+* docs/Integration_Contracts.md; docs/SimPaths_Coupling.md, section 8.1).
 *
 * The identity becomes: L - self_empl - n = u (approximately)
 * This is documented as a known measurement limitation.

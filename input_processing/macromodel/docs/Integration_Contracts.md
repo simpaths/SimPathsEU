@@ -43,7 +43,7 @@ Three enforcement patterns cover almost everything here:
 | 13 | K₀/A₀ are anchored at the first data row | growth params `base_year` ↔ data file start | assert in `ramsey_trend.m` | enforced |
 | 14 | LBJ Jacobian bandwidth kl=ku=1 is valid | residual structure ↔ banded solver | runtime off-band probe, throws | enforced |
 | 15 | Exported ψ describes the exported path | ψ fixed point ↔ `growth_terminal_state.json` | exports the solved-at ψ; warns with residual | enforced |
-| 16 | `n` is employees, χ_n is total employment | observable ↔ calibration | **documented assumption only** | ⚠ unenforced |
+| 16 | `n` and the planner's `N` are employees; χ_n is total employment, and SimPaths' `L_sim` counts all workers | DSGE observable ↔ calibration; Ramsey `N` ↔ `L_sim` through the feedback's `lambda` | **documented assumption only**: self-employment moves proportionally with employees | ⚠ unenforced |
 | 17 | Scenario shocks are applied from the year they declare | scenario CSV ↔ `updateEquilibrium` | `MacroModelManagerTest.testScenarioShocksApplyInBaselinePendingYears` | enforced |
 | 18 | Committed bundle is built from the tracked inputs beside it | `input_processing/macromodel/` inputs and the bundle's own files ↔ `input/{CC}/MacroModel/BUNDLE_PROVENANCE.txt` | exporter writes SHA-256 per input (`write_bundle_provenance`); `BundleProvenanceTest` recomputes them in CI; exporter writes into `input/` directly, no copy step; the Ramsey-only export carries the DSGE-half input lines forward from the previous file | enforced |
 | 19 | MATLAB↔Java exogenous parity is machine-precision | `ramsey_trend.m` ↔ `RamseyTrendModel` | `RELATIVE_TOLERANCE = 1e-9` (measured worst 4.4e-11) | enforced |
@@ -76,6 +76,16 @@ proportionally with employees. In Poland self-employment is 20% of employment, s
 is load-bearing. There is no natural check because the assumption is about what the
 data *means*, not about two numbers agreeing — the honest enforcement is that it stays
 written down where the calibration is.
+
+The Ramsey feedback rests on the same assumption. The planner's `N` is employees, while
+SimPaths' `L_sim` counts all workers with positive hours, employees and self-employed
+alike, because SimPaths carries no status in employment. The level factor `lambda`,
+latched once in `startYear+1`, therefore holds the employee share of workers at its
+latch-year value for the rest of the run: `n_realized_gap` includes any shift in that
+share, and the planner prices it like any other employment surprise. Accepted and
+written down in `SimPaths_Coupling.md` §8.1 ("Employees versus all workers"). Removing
+it needs a projected employee-share path in the bundle or a status-in-employment
+variable in SimPaths.
 
 **#33 — the data vintage.** `input_processing/macromodel/data/` is tracked, so the estimation input is
 versioned alongside the frozen posterior and the export bundle it produced. Nothing
