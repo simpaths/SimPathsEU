@@ -442,22 +442,29 @@ public class MacroModelManager {
             return;
         }
 
-        var shocks = laborSupplyAggregator.aggregate(persons);
+        // Read-only. The shock state (rolling baseline, the snapshot roll after the
+        // startYear+1 latch, the last aggregates) belongs to the yearly macro update alone.
+        // Until 2026-10-20 this called aggregate(), which consumed the snapshot roll right
+        // after the latch and reopened the mixed-snapshot shock in startYear+2.
+        var aggregates = laborSupplyAggregator.computeRawAggregates(persons);
         double baselineL = laborSupplyAggregator.getBaselineL();
         double baselineH = laborSupplyAggregator.getBaselineH();
-        double currentL = shocks.aggregates().laborForce();
-        double currentH = shocks.aggregates().avgHoursPerWorker();
+        double currentL = aggregates.laborForce();
+        double currentH = aggregates.avgHoursPerWorker();
 
         double lPct = (currentL / baselineL - 1.0) * 100.0;
         double hPct = (currentH / baselineH - 1.0) * 100.0;
+        double rawLogDevL = laborSupplyAggregator.computeLogDeviation(currentL, baselineL);
+        double rawLogDevH = laborSupplyAggregator.computeLogDeviation(currentH, baselineH);
 
         double wageCycle = wageDeviation - capitalDeepeningWageAdjustment;
 
         log.info(String.format(
             "DSGE %s (year %d): L=%.0f (%+.3f%% vs base), h=%.2f (%+.3f%% vs base), "
-                + "eps_L=%+.4f, eps_h=%+.4f, wage_total=%+.3f%% (cycle=%+.3f%% + trend=%+.3f%%)",
+                + "raw log-dev L=%+.4f, h=%+.4f (not the shock: no projection term, no snapshot roll), "
+                + "wage_total=%+.3f%% (cycle=%+.3f%% + trend=%+.3f%%)",
             phaseLabel, year, currentL, lPct, currentH, hPct,
-            shocks.epsL(), shocks.epsH(), wageDeviation, wageCycle, capitalDeepeningWageAdjustment
+            rawLogDevL, rawLogDevH, wageDeviation, wageCycle, capitalDeepeningWageAdjustment
         ));
     }
 
@@ -743,6 +750,10 @@ public class MacroModelManager {
                 // correct if that ordering is ever changed.
                 validateRamseyFeedbackConfig();
                 requireRamseyTrendSolved();
+            } else {
+                // No trend layer, but the labour shock is still measured against the
+                // projection (projectedLaborGrowthPct); the bundle carries it, so load it.
+                loadProjectionForLaborShock(macroModelPath);
             }
 
             wageDeviation = 0.0;
@@ -1398,6 +1409,93 @@ public class MacroModelManager {
         if (Double.isFinite(revisionPct)) recorder.amendTrendForYear(year, TREND_KEY_WAGE_REVISION, revisionPct);
     }
 
+    /**
+     * {@code mm_macroModel: dsge}: no Ramsey trend is solved, but the labour shock still needs
+     * the population projection ({@link #projectedLaborGrowthPct}). Finds the bundle's files
+     * exactly as {@link #initializeRamseyTrend} does (country tag from {@code growth_params_*.json},
+     * handoff quarter from {@code growth_terminal_state.json}, projection located by DATE), and
+     * retains the projection from the handoff quarter on as {@code ramseyProjN}. Fails loudly
+     * when any of them is missing: the bundle carries the projection, nothing is re-derived here.
+     */
+    private void loadProjectionForLaborShock(String macroModelPath) {
+        File macroDir = new File(macroModelPath);
+        File[] growthParamFiles = macroDir.listFiles(
+                (dir, name) -> name.startsWith("growth_params_") && name.endsWith(".json"));
+        if (growthParamFiles == null || growthParamFiles.length == 0) {
+            throw new IllegalStateException("DSGE labour shock: no growth_params_*.json found in " + macroModelPath
+                    + "; it names the country whose population projection the shock is measured against.");
+        }
+        Arrays.sort(growthParamFiles, Comparator.comparing(File::getName));
+        String fileName = growthParamFiles[0].getName();
+        String countryTag = fileName.substring("growth_params_".length(), fileName.length() - ".json".length());
+        Path paramsPath = growthParamFiles[0].toPath();
+        Path terminalPath = paramsPath.resolveSibling("growth_terminal_state.json");
+        Path popProjPath = paramsPath.resolveSibling("population_projection_" + countryTag + ".csv");
+        if (!terminalPath.toFile().exists()) {
+            throw new IllegalStateException("DSGE labour shock: growth_terminal_state.json not found in " + macroModelPath
+                    + "; it declares the handoff quarter the projection is aligned on.");
+        }
+        if (!popProjPath.toFile().exists()) {
+            throw new IllegalStateException(String.format(
+                    "DSGE labour shock for %s requires %s, which is missing from %s. The shock is measured "
+                    + "against the projected labour input; re-export the macro files.",
+                    countryTag, popProjPath.getFileName(), popProjPath.getParent()));
+        }
+        PopulationProjectionData popProjection;
+        try {
+            validateRamseyHandoffTime(terminalPath);
+            popProjection = loadPopulationProjection(popProjPath);
+        } catch (IOException e) {
+            throw new IllegalStateException(String.format(
+                    "DSGE labour shock for %s could not read the projection: %s", countryTag, e.getMessage()), e);
+        }
+        int startIdx = indexOfHandoffQuarter(popProjection.times(), popProjPath, null);
+        ramseyProjN = Arrays.copyOfRange(popProjection.n(), startIdx, popProjection.n().length);
+        ramseyProjLen = ramseyProjN.length;
+        if (logMacroState) {
+            log.info(String.format(
+                    "Population projection loaded for the DSGE labour shock: %d quarters of %s from the handoff.",
+                    ramseyProjLen, popProjPath.getFileName()));
+        }
+    }
+
+    /**
+     * The projection's own growth of the labour input from {@code year - 1} to {@code year}, as
+     * a percent log change of the annual means: {@code 100 ln(meanN(year) / meanN(year - 1))}.
+     *
+     * <p>This is what the DSGE's labour-force shock is measured against
+     * ({@link LaborSupplyAggregator#aggregate(Set, double)}): the DSGE was estimated on the
+     * labour force net of its demographic trend, and the Ramsey layer already prices the
+     * projected decline, so only the deviation from the projection is a shock. The projection
+     * is the retained original one ({@code ramseyProjN}), never a fed-back revision, so the
+     * reference does not drift with the feedback.</p>
+     *
+     * @throws IllegalStateException if no projection is loaded or {@code year} lies outside it;
+     *                               the bundle carries the projection and a run without it must fail
+     */
+    double projectedLaborGrowthPct(int year) {
+        if (ramseyProjN == null || ramseyProjLen == 0) {
+            throw new IllegalStateException(
+                    "The DSGE labour shock needs the population projection to measure against, but none is loaded. "
+                    + "population_projection_{COUNTRY}.csv must be in the MacroModel folder for every DSGE mode.");
+        }
+        int qPrev = 4 * (year - 1 - simulationStartYear);
+        int qCur = qPrev + 4;
+        if (qPrev < 0 || qCur + 4 > ramseyProjLen) {
+            throw new IllegalStateException(String.format(
+                    "The population projection does not cover %d and %d (quarters %d..%d of %d from the handoff); "
+                    + "the DSGE labour shock cannot be measured against it.",
+                    year - 1, year, qPrev, qCur + 3, ramseyProjLen));
+        }
+        double meanPrev = 0.0;
+        double meanCur = 0.0;
+        for (int j = 0; j < 4; j++) {
+            meanPrev += ramseyProjN[qPrev + j];
+            meanCur += ramseyProjN[qCur + j];
+        }
+        return 100.0 * Math.log(meanCur / meanPrev);
+    }
+
     /** MacroEndYearCapture hook: realized post-alignment employment -> extended-path re-solve. */
     public void applyRamseyRecursiveFeedback(int year, Set<Person> persons) {
         if (!ramseyFeedbackMargins.isOn() || !enabled) return;
@@ -1852,8 +1950,8 @@ public class MacroModelManager {
     }
 
     private void runDynamicSinglePass(int year, Set<Person> persons) {
-        // Aggregate labor supply into shocks
-        var shocks = laborSupplyAggregator.aggregate(persons);
+        // Aggregate labor supply into shocks, net of the projection's own labour growth
+        var shocks = laborSupplyAggregator.aggregate(persons, projectedLaborGrowthPct(year));
         
         // Compute capital-deepening trend BEFORE stepping the DSGE model,
         // so the path recorder captures the trend for all 4 quarterly records

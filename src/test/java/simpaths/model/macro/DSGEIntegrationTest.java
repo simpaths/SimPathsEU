@@ -419,20 +419,23 @@ class DSGEIntegrationTest {
         Set<Person> persons = Set.of(worker);
 
         // Year 1: initialize DSGE, but baseline must remain unset until post-labor-market latch.
-        manager.updateEquilibrium(2027, 2027, "PL", persons, Collections.emptySet(), false);
+        // The start year is the bundle's handoff year: since 2026-10-20 the DSGE-only mode loads
+        // the population projection for the labour shock and aligns it on the handoff quarter,
+        // exactly as the trend layer does, so an arbitrary start year is refused.
+        manager.updateEquilibrium(2023, 2023, "PL", persons, Collections.emptySet(), false);
         assertFalse(manager.isLaborSupplyBaselineSet(),
             "Baseline should not be auto-set during first-year DSGE macro update");
 
         // Strict fix: latch baseline from post-labor-market state.
-        assertTrue(manager.latchBaselineFromPostLaborMarket(2027, persons),
+        assertTrue(manager.latchBaselineFromPostLaborMarket(2023, persons),
             "Baseline should be latched exactly once from post-labor-market state");
         assertTrue(manager.isLaborSupplyBaselineSet(),
             "Baseline should be set after explicit post-labor-market latch");
-        assertFalse(manager.latchBaselineFromPostLaborMarket(2027, persons),
+        assertFalse(manager.latchBaselineFromPostLaborMarket(2023, persons),
             "Second latch call should be a no-op");
 
         // Year 2 should run normally now that baseline exists.
-        manager.updateEquilibrium(2028, 2027, "PL", persons, Collections.emptySet(), false);
+        manager.updateEquilibrium(2024, 2023, "PL", persons, Collections.emptySet(), false);
         assertTrue(Double.isFinite(manager.getWageDeviation()),
             "Wage deviation should be finite after year-2 DSGE update");
 
@@ -441,8 +444,8 @@ class DSGEIntegrationTest {
         noLatchManager.setEnabled(true);
         noLatchManager.setUseDsge(true);
         noLatchManager.setUseRamseyTrend(false);
-        noLatchManager.updateEquilibrium(2027, 2027, "PL", persons, Collections.emptySet(), false);
-        noLatchManager.updateEquilibrium(2028, 2027, "PL", persons, Collections.emptySet(), false);
+        noLatchManager.updateEquilibrium(2023, 2023, "PL", persons, Collections.emptySet(), false);
+        noLatchManager.updateEquilibrium(2024, 2023, "PL", persons, Collections.emptySet(), false);
         assertFalse(noLatchManager.isLaborSupplyBaselineSet(),
             "Without post-labor-market latch, baseline should remain unset");
         }
