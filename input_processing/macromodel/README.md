@@ -104,10 +104,12 @@ StataMP-64.exe /e do make_datasets.do
 - `smoke_test.ps1` is the fresh-clone test: dependency check, `run_all_tests`, the
   workflow from tracked inputs with estimation, frozen-model generation,
   post-estimation and the projection plot skipped, and `compare_bundles` of the
-  regenerated bundle against the committed one at `rel_tol = 1e-6` (byte identity is
-  not expected: generation stamps and SHA-256 digests differ, and the regenerated
-  datafile carries floating-point solver noise). It restores the committed bundle
-  afterwards. About 5 minutes. A tolerance this tight works because estimation is
+  regenerated `data/` folder and of the regenerated bundle against snapshots taken
+  before the run, at `rel_tol = 1e-6` (byte identity is not expected: generation
+  stamps and SHA-256 digests differ, and the regenerated datafile carries
+  floating-point solver noise). It restores the committed bundle and `data/`
+  afterwards, also after a failure or Ctrl+C, and fails if a restore fails. About
+  5 minutes. A tolerance this tight works because estimation is
   skipped, so the Dynare solve of the tracked frozen model and the Ramsey solve are
   deterministic up to that noise; the fourth-digit differences seen across machines
   come from re-estimation, which the smoke test does not do. The comparison blanks the
@@ -119,6 +121,10 @@ StataMP-64.exe /e do make_datasets.do
   ```powershell
   powershell -NoProfile -ExecutionPolicy Bypass -File input_processing\macromodel\smoke_test.ps1 [-MatlabExe <path>]
   ```
+
+  It is tested on Windows PowerShell 5.1 only. On Linux or macOS the same script
+  should run under PowerShell 7 (`pwsh -NoProfile -File input_processing/macromodel/smoke_test.ps1
+  -MatlabExe <path to matlab>`); that has not been tried.
 - `mvn -q test -Dtest='simpaths.model.macro.*Test'` runs the Java side.
   `BundleProvenanceTest` recomputes the SHA-256 hashes in
   `input/PL/MacroModel/BUNDLE_PROVENANCE.txt` from the tracked frozen model, the
