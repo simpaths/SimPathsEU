@@ -2177,6 +2177,15 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
                     stat.execute("CREATE TABLE " + tableName + " AS SELECT * FROM " + tableName + "_" + country + "_" + year);
                     System.out.println("Completed reading from " + tableName + "_" + country + "_" + year);
                 }
+
+                // Clean up orphaned PROCESSED entries whose linked tables were just dropped and recreated.
+                // Without this, getProcessed() would find a stale entry with zero households and throw.
+                try {
+                    stat.execute("DELETE FROM PROCESSED");
+                    log.info("Cleared stale PROCESSED cache entries after table rebuild");
+                } catch (SQLException ignore) {
+                    // PROCESSED table may not exist yet on first-ever run; Hibernate will create it later
+                }
             }
 
             //If start year is higher than the last available population, calculate the uprating factor and apply it to the monetary values in the database:
@@ -3172,20 +3181,62 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
             txn.begin();
             String query = "SELECT processed FROM Processed processed WHERE processed.startYear = " + startYear + " AND processed.popSize = " + popSize + " AND processed.country = " + country + " AND processed.noTargets = " + ignoreTargetsAtPopulationLoad;
 
-            List<Processed> processedList = em.createQuery(query).getResultList();
+            List<Processed> processedList = em.createQuery(query, Processed.class).getResultList();
             if (!processedList.isEmpty()) {
 
                 if (processedList.size()>1)
                     throw new RuntimeException("more than one relevant dataset returned from database");
                 processed = processedList.get(0);
-                // Force-initialize all collections within the session (triggers SUBSELECT fetches:
-                // one query per collection level, no Cartesian product)
-                for (Household hh : processed.getHouseholds()) {
-                    for (BenefitUnit bu : hh.getBenefitUnits()) {
-                        bu.getMembers().size();
-                    }
+                long processedId = processed.getId();
+
+                // Load the cached entity graph with three flat, single-column-indexed
+                // queries instead of letting Hibernate emit nested composite-key
+                // IN-subqueries (SUBSELECT fetch), which H2 cannot index and which
+                // therefore scale ~O(n^2). Each query filters on the scalar processed
+                // id and is O(n); the parent/child graph is stitched in memory in O(n).
+                //
+                // Ordering note: the old SUBSELECT path's @OrderBy("key ASC") on the
+                // @EmbeddedId was a no-op in H2, so members were returned in arbitrary
+                // cache row order. We deliberately impose a deterministic ORDER BY
+                // key.id here. This is a re-baseline: cache-reuse runs are now stable
+                // and reproducible, but their RNG-coupled trajectories no longer match
+                // pre-fix results produced from the legacy arbitrary order. Parity is
+                // intra-version (run-to-run), not across this fix. Verified 2026-05-16.
+                List<Household> hhList = em.createQuery(
+                        "SELECT h FROM Household h WHERE h.processed = :proc ORDER BY h.key.id ASC", Household.class)
+                        .setParameter("proc", processed).getResultList();
+                List<BenefitUnit> buList = em.createQuery(
+                        "SELECT b FROM BenefitUnit b WHERE b.key.workingId = :pid ORDER BY b.key.id ASC", BenefitUnit.class)
+                        .setParameter("pid", processedId).getResultList();
+                List<Person> personList = em.createQuery(
+                        "SELECT p FROM Person p WHERE p.key.workingId = :pid ORDER BY p.key.id ASC", Person.class)
+                        .setParameter("pid", processedId).getResultList();
+
+                // Parent back-references are populated by Hibernate via the EAGER
+                // @ManyToOne (resolved from the L1 cache, since households and benefit
+                // units are loaded first in this same EntityManager), so only the
+                // inverse collections need filling here.
+                Map<Long, Set<BenefitUnit>> busByHousehold = new HashMap<>();
+                for (BenefitUnit bu : buList) {
+                    Household parent = bu.getHousehold();
+                    if (parent == null)
+                        throw new RuntimeException("cached benefit unit " + bu.getId() + " has no household");
+                    busByHousehold.computeIfAbsent(parent.getId(), k -> new LinkedHashSet<>()).add(bu);
                 }
-                processed.resetDependents();
+                Map<Long, Set<Person>> personsByBenefitUnit = new HashMap<>();
+                for (Person person : personList) {
+                    BenefitUnit parent = person.getBenefitUnit();
+                    if (parent == null)
+                        throw new RuntimeException("cached person " + person.getId() + " has no benefit unit");
+                    personsByBenefitUnit.computeIfAbsent(parent.getId(), k -> new LinkedHashSet<>()).add(person);
+                }
+                for (BenefitUnit bu : buList)
+                    bu.setMembers(personsByBenefitUnit.getOrDefault(bu.getId(), new LinkedHashSet<>()));
+                Set<Household> households = new LinkedHashSet<>(hhList);
+                for (Household hh : households)
+                    hh.setBenefitUnits(busByHousehold.getOrDefault(hh.getId(), new LinkedHashSet<>()));
+
+                processed.setHouseholds(households);
             }
 
             // close database connection
@@ -3268,12 +3319,77 @@ public class SimPathsModel extends AbstractSimulationManager implements EventLis
             em.persist(processed);
             txn.commit();
             em.close();
+
+            // Post-persist cleanup: remove raw survey rows and create indexes.
+            // Raw survey rows (loaded by inputDatabaseInteraction/loadStaringPopulation) remain
+            // in the tables with PRID IS NULL or WORKING_ID = 0. They bloat the tables and
+            // dramatically slow down the JOIN FETCH query in getProcessed() for large populations.
+            cleanupAfterPersist();
+
         } catch (Exception e) {
             if (txn != null) {
                 txn.rollback();
             }
             e.printStackTrace();
             throw new RuntimeException("Problem sourcing data for starting population");
+        }
+    }
+
+    /**
+     * Post-persist cleanup: remove raw survey rows that were only needed as templates
+     * for cloning, and create the database indexes that {@link #getProcessed} relies on.
+     *
+     * <p>The decisive indexes are the single-column ones on the scalar processed id
+     * ({@code HOUSEHOLD.PRID}, {@code BENEFITUNIT.WORKING_ID}, {@code PERSON.WORKING_ID}):
+     * {@code getProcessed()} reloads the cache with one flat per-level query filtered
+     * on that column, which H2 can serve from these indexes in O(n). The composite-key
+     * indexes are retained for the entities' normal association lookups.</p>
+     */
+    private void cleanupAfterPersist() {
+        Connection conn = null;
+        Statement stat = null;
+        try {
+            conn = DriverManager.getConnection(
+                    "jdbc:h2:file:" + DatabaseUtils.databaseInputUrl
+                    + ";TRACE_LEVEL_FILE=0;TRACE_LEVEL_SYSTEM_OUT=0;AUTO_SERVER=TRUE", "sa", "");
+            stat = conn.createStatement();
+
+            // 1. Remove raw survey rows (those not linked to any Processed entry).
+            //    Processed rows have WORKING_ID set to the Processed.id (> 0).
+            //    Raw survey rows have WORKING_ID = 0 (PanelEntityKey default) and PRID IS NULL.
+            int deletedPersons = stat.executeUpdate(
+                    "DELETE FROM PERSON WHERE WORKING_ID = 0");
+            int deletedBUs = stat.executeUpdate(
+                    "DELETE FROM BENEFITUNIT WHERE WORKING_ID = 0");
+            int deletedHHs = stat.executeUpdate(
+                    "DELETE FROM HOUSEHOLD WHERE WORKING_ID = 0 AND PRID IS NULL");
+            log.info(String.format(
+                    "Cleaned raw survey rows: %d persons, %d benefit units, %d households removed",
+                    deletedPersons, deletedBUs, deletedHHs));
+
+            // 2. Create indexes on foreign key columns used in the JOIN FETCH query.
+            //    These are critical for performance: without them, H2 does full table scans
+            //    on composite-key joins, which is O(n²) for large populations.
+            stat.execute("CREATE INDEX IF NOT EXISTS IDX_HH_PRID ON HOUSEHOLD(PRID)");
+            stat.execute("CREATE INDEX IF NOT EXISTS IDX_BU_HH_FK ON BENEFITUNIT(HHID, HHTIME, HHRUN, PRID)");
+            stat.execute("CREATE INDEX IF NOT EXISTS IDX_PERSON_BU_FK ON PERSON(BUID, BUTIME, BURUN, PRID)");
+            // Single-column indexes on the scalar processed id (working_id), used by
+            // the flat per-level reload queries in getProcessed(). These replace the
+            // unindexable composite-key IN-subqueries that scaled ~O(n^2).
+            stat.execute("CREATE INDEX IF NOT EXISTS IDX_BU_WORKINGID ON BENEFITUNIT(WORKING_ID)");
+            stat.execute("CREATE INDEX IF NOT EXISTS IDX_PERSON_WORKINGID ON PERSON(WORKING_ID)");
+            log.info("Created FK indexes on HOUSEHOLD, BENEFITUNIT, PERSON tables");
+
+        } catch (SQLException e) {
+            // Non-fatal: the simulation will still work, just with slower cache reloads
+            log.warn("Post-persist cleanup failed (non-fatal): " + e.getMessage());
+        } finally {
+            try {
+                if (stat != null) stat.close();
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                log.debug("SQL Exception in cleanup finally: " + e.getMessage());
+            }
         }
     }
 }
