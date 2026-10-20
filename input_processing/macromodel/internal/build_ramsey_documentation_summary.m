@@ -1,10 +1,14 @@
-function summary = build_ramsey_documentation_summary(params, country, labor_supply_mode, diagnostics)
+function summary = build_ramsey_documentation_summary(params, country, diagnostics)
 % BUILD_RAMSEY_DOCUMENTATION_SUMMARY  Build Ramsey documentation summary payload.
+%
+% Schema note (2026-10-20, JuergenWiemers/SimPathsEU#28): the fields
+% structural.labor_supply_mode_default, structural.phi, structural.psi,
+% base_year_values.WAP0, base_year_values.l0, base_year_values.c0 and
+% base_year_values.w0 were removed with the endogenous-labour variant.
 
     arguments
         params (1,1) struct
         country (1,:) char
-        labor_supply_mode (1,:) char
         diagnostics struct = struct()
     end
 
@@ -26,8 +30,6 @@ function summary = build_ramsey_documentation_summary(params, country, labor_sup
     summary.structural.tfp_growth_annual = p.tfp_growth_annual;
     summary.structural.tfp_growth_terminal_annual = derived.tfp_growth_annual_terminal;
     summary.structural.rho_g = get_optional_nested_value(params, {'terminal_growth', 'rho_quarterly'});
-    summary.structural.phi = get_optional_value(p, 'phi');
-    summary.structural.psi = get_optional_value(p, 'psi');
     summary.structural.inflation_target_annual = get_optional_nested_value(params, {'inflation_target', 'pi_star_annual'});
     summary.structural.beta_quarterly = derived.beta_quarterly;
     summary.structural.delta_quarterly = derived.delta_quarterly;
@@ -38,7 +40,6 @@ function summary = build_ramsey_documentation_summary(params, country, labor_sup
     else
         summary.structural.solver_horizon_quarters = params.solver.terminal_extension_quarters;
     end
-    summary.structural.labor_supply_mode_default = labor_supply_mode;
     summary.structural.K_override = get_optional_value(p, 'K_override');
 
     summary.base_year_values = struct();
@@ -46,11 +47,7 @@ function summary = build_ramsey_documentation_summary(params, country, labor_sup
     summary.base_year_values.Y0_annual = base.Y;
     summary.base_year_values.N0 = base.N;
     summary.base_year_values.L0 = base.L;
-    summary.base_year_values.WAP0 = get_optional_value(base, 'WAP');
     summary.base_year_values.h0 = base.h;
-    summary.base_year_values.l0 = get_optional_value(base, 'l_base');
-    summary.base_year_values.c0 = get_optional_value(base, 'c_per_worker');
-    summary.base_year_values.w0 = get_optional_value(base, 'w_implied');
     summary.base_year_values.A0 = base.A_implied;
     summary.base_year_values.CY = params.expenditure_shares.CY_base;
     summary.base_year_values.IY = params.expenditure_shares.IY_base;

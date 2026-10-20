@@ -1,25 +1,16 @@
-function failures = run_all_tests(options)
+function failures = run_all_tests()
 % RUN_ALL_TESTS  Run the macro model's MATLAB checks and report a summary.
 %
-%   run_all_tests                 run the fast checks (default)
-%   run_all_tests('slow', true)   also run the checks that solve the model
-%   run_all_tests('slow', true, 'country', 'Spain')   slow checks for another country
-%   failures = run_all_tests(...) return the number of failed checks
+%   run_all_tests                 run the checks
+%   failures = run_all_tests      return the number of failed checks
 %
 % Must be run with the working directory set to the model root (the folder
 % containing run_full_workflow.m), because the checks read data files by
 % pwd-relative paths -- see setup_path.m for why that is deliberate.
 %
-% The slow set is opt-in because test_endogenous_labor runs several full
-% Ramsey solves for options.country and, while it does so, rewrites that
-% country's bundle JSON and tracked Dynare datafile. It restores both through
-% onCleanup, but it is not something to run casually. The fast checks take no
-% country.
-
-    arguments
-        options.slow (1,1) logical = false
-        options.country (1,:) char = 'Poland'
-    end
+% Every check is fast and takes no country: none solves the model. (The
+% former slow set, test_endogenous_labor, went with the endogenous-labour
+% variant on 2026-10-20, JuergenWiemers/SimPathsEU#28.)
 
     here = fileparts(mfilename('fullpath'));
     root = fileparts(here);
@@ -30,34 +21,23 @@ function failures = run_all_tests(options)
     end
     setup_path();
 
-    fast = {'test_name_collisions', 'test_artifact_layout', 'test_labor_foc', 'test_calibration_identities', ...
-            'test_frozen_model_generator', 'test_data_loading', 'test_demographic_pair_coherence', ...
-            'test_export_bundle_marker', 'test_bundle_provenance', 'test_compare_bundles', ...
-            'test_check_dependencies'};
-    slow = {'test_endogenous_labor'};
-
-    names = fast;
-    if options.slow
-        names = [names slow];
-    end
+    names = {'test_name_collisions', 'test_artifact_layout', 'test_calibration_identities', ...
+             'test_frozen_model_generator', 'test_data_loading', 'test_demographic_pair_coherence', ...
+             'test_export_bundle_marker', 'test_bundle_provenance', 'test_compare_bundles', ...
+             'test_check_dependencies'};
 
     results = cell(numel(names), 1);
     failures = 0;
 
     fprintf('\n');
     fprintf('==========================================================\n');
-    fprintf('  MACRO MODEL CHECKS  (%d selected%s)\n', numel(names), ...
-            ternary(options.slow, '', ', slow set skipped'));
+    fprintf('  MACRO MODEL CHECKS  (%d selected)\n', numel(names));
     fprintf('==========================================================\n');
 
     for i = 1:numel(names)
         name = names{i};
         try
-            if ismember(name, slow)
-                evalc(sprintf('%s(''%s'')', name, options.country));
-            else
-                evalc(name);
-            end
+            evalc(name);
             results{i} = 'PASS';
             fprintf('  [PASS]  %s\n', name);
         catch ME
@@ -69,9 +49,6 @@ function failures = run_all_tests(options)
 
     fprintf('----------------------------------------------------------\n');
     fprintf('  %d of %d passed\n', numel(names) - failures, numel(names));
-    if ~options.slow
-        fprintf('  (%s not run; pass ''slow'', true to include)\n', strjoin(slow, ', '));
-    end
     fprintf('==========================================================\n\n');
 
     if failures > 0
@@ -84,13 +61,5 @@ function failures = run_all_tests(options)
 
     if nargout == 0
         clear failures;
-    end
-end
-
-function out = ternary(cond, a, b)
-    if cond
-        out = a;
-    else
-        out = b;
     end
 end

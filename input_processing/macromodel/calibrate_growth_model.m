@@ -1,4 +1,4 @@
-function calibrate_growth_model(country, options)
+function calibrate_growth_model(country)
 % CALIBRATE_GROWTH_MODEL  Calibrate Ramsey growth model parameters from data.
 %
 % Reads national accounts data (from Stata-exported levels CSV) and external
@@ -31,7 +31,6 @@ function calibrate_growth_model(country, options)
 %
 % Usage:
 %   >> calibrate_growth_model('Poland')
-%   >> calibrate_growth_model('Sweden', 'ramsey_labor_supply', 'endogenous')
 %
 % Prerequisites:
 %   - data_for_dynare_levels_{COUNTRY}.csv exists (from make_datasets.do)
@@ -43,7 +42,6 @@ function calibrate_growth_model(country, options)
 % =========================================================================
     arguments
         country (1,:) char = 'Poland'
-        options.ramsey_labor_supply (1,:) char = 'exogenous'
     end
     % Resolve the model's code folders (internal/, diagnostics/, ...).
     % Idempotent; see setup_path.m for why MATLAB cannot do this itself.
@@ -297,105 +295,12 @@ function calibrate_growth_model(country, options)
     Y_check = A_0 * K_0^alpha * eff_labor_0^(1-alpha);
     fprintf('  Y check (should = %.1f): %.1f\n', Y_q, Y_check);
     assert(abs(Y_check - Y_q) / Y_q < 1e-6, 'Production function identity check failed!');
-    
-    %% 5b. Calibrate endogenous labor supply parameters (phi, psi)
-    %
-    % If ramsey_labor_supply = "endogenous", compute:
-    %   WAP_0 = working-age population (15-64) at base year
-    %   l_0   = N_0 / WAP_0 (employment-to-population ratio)
-    %   w_0   = (1-alpha) Y_q / (N_0 * h_0) (marginal product per eff. labor unit)
-    %   c_0   = C_q / N_0 (per-worker quarterly consumption)
-    %   psi   = w_0 * c_0^{-sigma} / l_0^phi (from intratemporal FOC)
-    %
-    % phi is user-specified (literature or SimPaths response surface).
-    % psi is a normalization parameter, computed analytically.
-    %
-    % Note: c_0 here uses observed C/N as a proxy for the Ramsey-solved c_0.
-    % Ex-post validation in ramsey_trend.m will check that the solved l(1)
-    % matches l_0 within 0.5 pp. See scoping doc Section 3.1.
-    
-    labor_supply_mode = options.ramsey_labor_supply;
-    
-    if strcmp(labor_supply_mode, 'endogenous')
-        fprintf('\n--- Endogenous labor supply calibration ---\n');
-        
-        % Read phi from JSON (must be user-specified)
-        if ~isfield(p, 'phi') || isempty(p.phi) || p.phi <= 0
-            error(['labor_supply is "endogenous" but phi is not set (or <= 0).\n' ...
-                   'Set parameters.phi in %s (recommended: phi=3.0).'], source_json_file);
-        end
-        phi = p.phi;
-        sigma = p.sigma;
-        
-        % --- Get WAP_0 (working-age population, 15-64) ---
-        % Priority: (1) data CSV, (2) JSON template, (3) error
-        if ismember('WAP_level', data.Properties.VariableNames)
-            WAP_0 = mean(data.WAP_level(base_rows));
-            fprintf('  WAP_0 (from data)  = %.1f thousand\n', WAP_0);
-        elseif isfield(params, 'base_year_values') && ...
-               isfield(params.base_year_values, 'WAP') && ...
-               ~isempty(params.base_year_values.WAP) && ...
-               params.base_year_values.WAP > 0
-            WAP_0 = params.base_year_values.WAP;
-            fprintf('  WAP_0 (from JSON)  = %.1f thousand (user-specified)\n', WAP_0);
-            fprintf('  ⚠ Using user-specified WAP. Verify against Eurostat demo_pjan (age 15-64).\n');
-        else
-            error(['WAP_0 not found in data CSV or JSON template.\n' ...
-                   'Either:\n' ...
-                   '  1. Add WAP_level to data_for_dynare_levels_%s.csv (via make_datasets.do), or\n' ...
-                   '  2. Set base_year_values.WAP in %s (Eurostat demo_pjan, age 15-64).'], country, source_json_file);
-        end
-        
-        % --- Participation rate ---
-        l_0 = N_0 / WAP_0;
-        
-        % --- Per-worker consumption (quarterly) ---
-        C_q = C_annual / 4;
-        c_0 = C_q / N_0;  % units: million EUR / thousand = thousand EUR per person
-        
-        % --- Implied wage per effective labor unit ---
-        w_0 = (1 - alpha) * Y_q / (N_0 * h_0);
-        
-        % --- Compute initial psi from intratemporal FOC ---
-        % FOC: psi * l^phi = w * h * c^{-sigma}
-        % The margin is PARTICIPATION, so it is priced at per-participant earnings
-        % w*h, not at the hourly wage. Must match solve_labor_foc.m exactly: this
-        % seed and the forward FOC have to be the same equation, or the base year
-        % and the projection sit on different preferences.
-        % NOTE: In the hybrid endogenous solver, psi becomes a time-varying
-        % institutional wedge during the in-sample period. This base-year
-        % psi is stored as a reference, but ramsey_trend.m will extract
-        % the terminal psi and overwrite it for the out-of-sample forward projection.
-        psi_val = backout_labor_psi(w_0, h_0, c_0, l_0, sigma, phi);
-        
-        fprintf('  phi (inv. Frisch)  = %.2f\n', phi);
-        fprintf('  l_0 = N/WAP       = %.4f (%.1f%%)\n', l_0, l_0*100);
-        fprintf('  c_0 (per worker)  = %.4f (thousand EUR/quarter)\n', c_0);
-        fprintf('  w_0 (MPL)         = %.6f\n', w_0);
-        fprintf('  psi (disutility)  = %.6e\n', psi_val);
-        
-        % --- Sanity checks ---
-        if l_0 < 0.3 || l_0 > 0.9
-            warning('l_0 = %.3f is outside typical range [0.3, 0.9]. Check WAP_0 and N_0.', l_0);
-        end
-        
-        % Verify FOC identity: psi * l^phi should equal w * h * c^{-sigma}
-        foc_lhs = psi_val * l_0^phi;
-        foc_rhs = w_0 * h_0 * c_0^(-sigma);
-        fprintf('  FOC check: psi*l^phi = %.6e, w*h*c^{-sigma} = %.6e (ratio = %.10f)\n', ...
-                foc_lhs, foc_rhs, foc_lhs / foc_rhs);
-        assert(abs(foc_lhs / foc_rhs - 1) < 1e-10, ...
-               'Intratemporal FOC identity check failed!');
-        
-        fprintf('  ✓ Endogenous labor supply parameters calibrated\n');
-    else
-        fprintf('\n  Labor supply mode: exogenous (N taken as given)\n');
-        % Initialize variables for later use (won't be written to JSON)
-        WAP_0 = NaN;
-        l_0 = NaN;
-        psi_val = NaN;
-    end
-    
+
+    % Labour input is exogenous: N is taken as given (the endogenous-labour
+    % variant with its phi/psi calibration was removed on 2026-10-20,
+    % JuergenWiemers/SimPathsEU#28).
+    fprintf('\n  Labor supply mode: exogenous (N taken as given)\n');
+
     %% 6. Compute balanced growth path values for cross-validation
     %
     % BGP capital-output ratio under the modified golden rule:
@@ -512,24 +417,7 @@ function calibrate_growth_model(country, options)
     params.expenditure_shares.IY_base = IY_raw;
     params.expenditure_shares.GY_base = GY;
     params.expenditure_shares.NXY_base = NXY;
-    
-    % Write labor_supply mode into JSON (for Java/SimPaths import)
-    params.parameters.labor_supply = labor_supply_mode;
-    
-    % Endogenous labor supply parameters (if active)
-    if strcmp(labor_supply_mode, 'endogenous')
-        params.parameters.psi = psi_val;
-        % Immutable base-year FOC seed. ramsey_trend overwrites parameters.psi
-        % with the converged terminal psi but never touches psi_seed, so the
-        % terminal-psi fixed point always starts from this deterministic value
-        % regardless of prior ramsey_trend runs (see ramsey_trend.m seed note).
-        params.parameters.psi_seed = psi_val;
-        params.base_year_values.WAP = WAP_0;
-        params.base_year_values.l_base = l_0;
-        params.base_year_values.c_per_worker = c_0;
-        params.base_year_values.w_implied = w_0;
-    end
-    
+
     % Also store derived quarterly values for convenience
     params.derived = struct();
     params.derived.beta_quarterly = beta_q;
@@ -610,7 +498,7 @@ function calibrate_growth_model(country, options)
 
     %% 8b. Export documentation summary (rendered from WELLSIM_SVEC_Overleaf, not here)
     try
-        ramsey_summary = build_ramsey_documentation_summary(params, country, labor_supply_mode);
+        ramsey_summary = build_ramsey_documentation_summary(params, country);
         summary_file = artifact_path('output', fullfile('documentation_data', 'ramsey', ...
                                      sprintf('ramsey_summary_%s.json', country)));
         validate_documentation_summary(ramsey_summary, 'ramsey');
@@ -642,14 +530,6 @@ function calibrate_growth_model(country, options)
     if isfield(params, 'terminal_growth') && isfield(params.terminal_growth, 'enabled') && params.terminal_growth.enabled
         print_box_line(sprintf('  g_A term. = %12.2f%%%% (annual)', 100*params.terminal_growth.g_A_terminal_annual), box_width);
         print_box_line(sprintf('  rho_g     = %12.4f (quarterly)', params.terminal_growth.rho_quarterly), box_width);
-    end
-    if strcmp(labor_supply_mode, 'endogenous')
-        fprintf('╠%s╣\n', repmat('═', 1, box_width));
-        print_box_line('ENDOGENOUS LABOR SUPPLY', box_width, 'center');
-        print_box_line(sprintf('  phi        = %12.2f (inv. Frisch elasticity)', phi), box_width);
-        print_box_line(sprintf('  psi        = %12.6e (disutility weight)', psi_val), box_width);
-        print_box_line(sprintf('  l_0        = %12.4f (N/WAP at base year)', l_0), box_width);
-        print_box_line(sprintf('  WAP_0      = %12.1f thousand (15-64)', WAP_0), box_width);
     end
     fprintf('╚%s╝\n', repmat('═', 1, box_width));
     fprintf('\n');

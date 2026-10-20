@@ -61,8 +61,6 @@ function report = validate_documentation_summary(summary, kind, options)
             'tfp_growth_annual', 'beta_quarterly', 'delta_quarterly', ...
             'r_star_annual', 'ky_bgp_quarterly', 'solver_horizon_quarters'});
 
-        require_nonempty_fields(payload.structural, 'structural', {'labor_supply_mode_default'});
-
         require_numeric_fields(payload.base_year_values, 'base_year_values', { ...
             'K0', 'Y0_annual', 'N0', 'L0', 'h0', 'A0', 'CY', 'IY', 'GY', 'NXY'});
 
@@ -197,13 +195,6 @@ function report = validate_documentation_summary(summary, kind, options)
         end
     end
 
-    function require_nonempty_fields(payload, scope_name, field_names)
-        for idx = 1:numel(field_names)
-            if ~has_nonempty_field(payload, field_names{idx})
-                add_error(sprintf('%s is missing non-empty field %s.', scope_name, field_names{idx}));
-            end
-        end
-    end
 
     function check_numeric_scalar(payload, field_name, scope_name)
         if ~isfield(payload, field_name)

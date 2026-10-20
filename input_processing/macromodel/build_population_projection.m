@@ -1,19 +1,13 @@
 function build_population_projection(dsge_country, simpaths_pop_file, options)
-% BUILD_POPULATION_PROJECTION  Build quarterly WAP/N projection from SimPaths population data.
+% BUILD_POPULATION_PROJECTION  Build the quarterly N projection from SimPaths population data.
 %
 % Reads align_popProjections.xlsx from the SimPaths input directory,
 % extracts working-age (15–64) population totals by year, and applies
-% growth rates to build a forward path for the Ramsey model.
-%
-% The ramsey_labor_supply option controls the projection mode:
-%   - ENDOGENOUS: Applies growth rates to terminal WAP (working-age population)
-%     from the reference CSV. N is derived as WAP × l_terminal, where l_terminal
-%     is the terminal participation rate from the Ramsey solver.
-%   - EXOGENOUS: Applies growth rates to terminal N (employees) from the
-%     reference CSV. This is the backward-compatible behavior.
+% their growth rates to the terminal N (employees) of the reference CSV to
+% build a forward path for the Ramsey model.
 %
 % Design principle: keep the DSGE/Ramsey calibration for the selected
-% country (K₀, A₀, α, δ, σ, g_A) but replace the forward WAP/N path with
+% country (K₀, A₀, α, δ, σ, g_A) but replace the forward N path with
 % the demographic trend from the matching SimPaths population projections.
 % This ensures that:
 %   (1) The Ramsey growth model's demographic path is consistent with
@@ -25,7 +19,6 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
 %
 % Usage:
 %   build_population_projection('Spain', '../../input/ES/align_popProjections.xlsx')
-%   build_population_projection('UK', '...', 'ramsey_labor_supply', 'endogenous')
 %   build_population_projection('Poland', '...', 'projection_start', '2023q1')
 %
 % Inputs:
@@ -33,10 +26,8 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
 %   simpaths_pop_file  - Full path to align_popProjections.xlsx
 %
 % Output:
-%   population_projection_[COUNTRY].csv in the current directory.
-%   Columns depend on mode:
-%     ENDOGENOUS: time, N, WAP  (N at column 1 for backward compat)
-%     EXOGENOUS:  time, N       (unchanged from original)
+%   population_projection_[COUNTRY].csv in the current directory, columns
+%   time, N.
 %
 % The CSV starts at projection_start (default: shared SimPaths integration
 % handoff quarter) and extends through the final projection
@@ -44,12 +35,11 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
 % last available annual growth rate.
 %
 % Author: WELLSIM Project
-% Date: June 2025 (updated Feb 2026 for endogenous labor support)
+% Date: June 2025
 % =========================================================================
     arguments
         dsge_country (1,:) char = 'Poland'
         simpaths_pop_file (1,:) char = ''
-        options.ramsey_labor_supply (1,:) char = 'exogenous'
         options.projection_start (1,:) char = ''
     end
     % Resolve the model's code folders (internal/, diagnostics/, ...).
@@ -68,23 +58,10 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     fprintf('\n');
     box_width = 62;
     fprintf('╔%s╗\n', repmat('═', 1, box_width));
-    print_box_line('POPULATION PROJECTION: SimPaths → Ramsey WAP/N path', box_width, 'center');
+    print_box_line('POPULATION PROJECTION: SimPaths → Ramsey N path', box_width, 'center');
     fprintf('╚%s╝\n', repmat('═', 1, box_width));
     fprintf('\n');
-    
-    %% =====================================================================
-    %% 0. DETECT LABOR SUPPLY MODE
-    %% =====================================================================
-    
-    endogenous_labor = strcmpi(options.ramsey_labor_supply, 'endogenous');
-    
-    if endogenous_labor
-        fprintf('  Labor supply mode: ENDOGENOUS (projecting WAP, deriving N = WAP × l)\n');
-    else
-        fprintf('  Labor supply mode: EXOGENOUS (projecting N directly)\n');
-    end
-    fprintf('\n');
-    
+
     %% =====================================================================
     %% 1. READ SIMPATHS POPULATION PROJECTIONS
     %% =====================================================================
@@ -258,25 +235,7 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     end
 
     fprintf('  Projection start: %s\n', projection_start);
-    
-    % Load endogenous-labor-specific terminal values
-    if endogenous_labor
-        if ~ismember('WAP', ref.Properties.VariableNames)
-            error(['Reference CSV missing WAP column. ' ...
-                   'Re-run ramsey_trend(''%s'') with endogenous labor enabled.'], dsge_country);
-        end
-        if ~ismember('l', ref.Properties.VariableNames)
-            error(['Reference CSV missing l column. ' ...
-                   'Re-run ramsey_trend(''%s'') with endogenous labor enabled.'], dsge_country);
-        end
-        WAP_terminal = ref.WAP(end);
-        l_terminal = ref.l(end);
-        fprintf('  Terminal WAP: %.1f\n', WAP_terminal);
-        fprintf('  Terminal l:   %.4f (%.1f%%)\n', l_terminal, 100 * l_terminal);
-        fprintf('  Check: WAP × l = %.1f  vs  N = %.1f\n', ...
-                WAP_terminal * l_terminal, N_terminal);
-    end
-    
+
     %% =====================================================================
     %% 3. COMPUTE QUARTERLY PROJECTION FROM POPULATION GROWTH RATES
     %% =====================================================================
@@ -285,17 +244,7 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     %   - Annual population data gives WAP(y) for y = 2011, ..., 2060
     %   - Annual growth rate: g_a(y) = WAP(y+1)/WAP(y) - 1
     %   - Quarterly growth rate (uniform within year): g_q = (1+g_a)^(1/4) - 1
-    %
-    % ENDOGENOUS LABOR MODE:
-    %   - Apply growth rates to terminal WAP, preserving level continuity:
-    %     WAP_proj(terminal) = WAP_terminal
-    %     WAP_proj(t+1) = WAP_proj(t) * (1 + g_q(year(t)))
-    %   - Derive N = WAP × l_terminal (l held constant at Ramsey terminal value)
-    %   This gives SimPaths a demographically-consistent WAP path.
-    %   The Java Ramsey solver (Phase 2) will compute l endogenously from the FOC.
-    %
-    % EXOGENOUS LABOR MODE (backward-compatible):
-    %   - Apply growth rates to terminal N directly:
+    %   - Apply growth rates to terminal N, preserving level continuity:
     %     N_proj(terminal) = N_terminal
     %     N_proj(t+1) = N_proj(t) * (1 + g_q(year(t)))
     
@@ -359,11 +308,7 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
               terminal_time, time_labels{1}, time_labels{end});
     end
 
-    if endogenous_labor
-        proj_primary(terminal_position) = WAP_terminal;
-    else
-        proj_primary(terminal_position) = N_terminal;
-    end
+    proj_primary(terminal_position) = N_terminal;
 
     quarter_growth = nan(size(annual_growth));
     for i = 1:length(annual_growth)
@@ -391,61 +336,28 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
         proj_primary(idx) = proj_primary(idx - 1) * (1 + quarter_growth(growth_idx));
     end
     
-    % Derive the complementary path
-    if endogenous_labor
-        WAP_proj = proj_primary;
-        % N = WAP × l_terminal (participation rate held constant at Ramsey terminal)
-        % Note: In Phase 2, the Java Ramsey solver will recompute l endogenously
-        % from the FOC. This N is a reference for backward compat and diagnostics.
-        N_proj = WAP_proj * l_terminal;
-        fprintf('\n  Quarterly WAP projection:\n');
-        fprintf('    Start: %s, WAP = %.1f, N = %.1f (l=%.4f)\n', ...
-                time_labels{1}, WAP_proj(1), N_proj(1), l_terminal);
-        fprintf('    Anchor: %s, WAP = %.1f, N = %.1f\n', ...
-            terminal_time, WAP_terminal, N_terminal);
-        fprintf('    End:   %s, WAP = %.1f, N = %.1f\n', ...
-                time_labels{end}, WAP_proj(end), N_proj(end));
-        fprintf('    WAP change: %.1f%%\n', 100 * (WAP_proj(end) / WAP_proj(1) - 1));
-        fprintf('    N change:   %.1f%% (constant l = %.4f)\n', ...
-                100 * (N_proj(end) / N_proj(1) - 1), l_terminal);
-    else
-        N_proj = proj_primary;
-        WAP_proj = [];  % not available in exogenous mode
-        fprintf('\n  Quarterly N projection:\n');
-        fprintf('    Start: %s, N = %.1f\n', time_labels{1}, N_proj(1));
-        fprintf('    Anchor: %s, N = %.1f\n', terminal_time, N_terminal);
-        fprintf('    End:   %s, N = %.1f\n', time_labels{end}, N_proj(end));
-        fprintf('    Total change: %.1f%%\n', 100 * (N_proj(end) / N_proj(1) - 1));
-    end
+    N_proj = proj_primary;
+    fprintf('\n  Quarterly N projection:\n');
+    fprintf('    Start: %s, N = %.1f\n', time_labels{1}, N_proj(1));
+    fprintf('    Anchor: %s, N = %.1f\n', terminal_time, N_terminal);
+    fprintf('    End:   %s, N = %.1f\n', time_labels{end}, N_proj(end));
+    fprintf('    Total change: %.1f%%\n', 100 * (N_proj(end) / N_proj(1) - 1));
     fprintf('    Quarters: %d (%.0f years)\n', total_quarters, total_quarters / 4);
-    
+
     %% =====================================================================
     %% 4. WRITE OUTPUT CSV
     %% =====================================================================
-    
+
     output_file = artifact_path('output', sprintf('population_projection_%s.csv', dsge_country), 'create', true);
-    
+
     fid = fopen(output_file, 'w');
-    if endogenous_labor
-        % N at column 1 for backward compat with Java loadPopulationProjectionN().
-        % WAP at column 2 for Phase 2 Java endogenous labor support.
-        fprintf(fid, 'time,N,WAP\n');
-        for i = 1:total_quarters
-            fprintf(fid, '%s,%.6f,%.6f\n', time_labels{i}, N_proj(i), WAP_proj(i));
-        end
-    else
-        fprintf(fid, 'time,N\n');
-        for i = 1:total_quarters
-            fprintf(fid, '%s,%.6f\n', time_labels{i}, N_proj(i));
-        end
+    fprintf(fid, 'time,N\n');
+    for i = 1:total_quarters
+        fprintf(fid, '%s,%.6f\n', time_labels{i}, N_proj(i));
     end
     fclose(fid);
-    
-    if endogenous_labor
-        fprintf('\n  ✓ %s (%d rows, columns: time, N, WAP)\n', output_file, total_quarters);
-    else
-        fprintf('\n  ✓ %s (%d rows, columns: time, N)\n', output_file, total_quarters);
-    end
+
+    fprintf('\n  ✓ %s (%d rows, columns: time, N)\n', output_file, total_quarters);
     
     %% =====================================================================
     %% 5. DIAGNOSTIC SUMMARY
@@ -493,13 +405,6 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     fprintf('    Difference:               %.0f (%.1f pp)\n', ...
             N_2050_trend - N_2050_simpaths, ...
             100 * (N_2050_trend / N_terminal - N_2050_simpaths / N_terminal));
-    
-    if endogenous_labor
-        fprintf('\n  Endogenous labor info:\n');
-        fprintf('    l_terminal (from Ramsey): %.4f (%.1f%%)\n', l_terminal, 100 * l_terminal);
-        fprintf('    Note: N projections use constant l. Phase 2 Java solver\n');
-        fprintf('    will recompute l endogenously from the intratemporal FOC.\n');
-    end
 
     %% =====================================================================
     %% 6. EXTEND demographic_L_{country}.csv WITH SAME SimPaths GROWTH PATH
