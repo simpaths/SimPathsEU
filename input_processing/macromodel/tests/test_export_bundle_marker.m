@@ -9,7 +9,7 @@ function test_export_bundle_marker
 
     setup_path();
     td = tempname; mkdir(td);
-    cleanup = onCleanup(@() rmdir(td, 's')); %#ok<NASGU>
+    cleanup = onCleanup(@() rmdir(td, 's'));
 
     country = 'Testland';
     marker = fullfile(td, 'BUNDLE_NOT_VERIFIED.txt');
@@ -30,7 +30,11 @@ function test_export_bundle_marker
 
     % 2. The marker is deterministic: a second identical refusal rewrites the
     %    same bytes, so a re-run leaves git status clean.
-    try, verify_export_bundle(td, country); catch, end %#ok<CTCH>
+    try
+        verify_export_bundle(td, country);
+    catch %#ok<CTCH>
+        % The refusal is expected; only the marker's bytes are checked.
+    end
     assert(strcmp(txt, fileread(marker)), 'marker content is not deterministic');
 
     % 3. Completing the bundle and verifying again removes the marker.

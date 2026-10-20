@@ -5,7 +5,7 @@ function test_compare_bundles
 
     setup_path();
     td = tempname; mkdir(td);
-    cleanup = onCleanup(@() rmdir(td, 's')); %#ok<NASGU>
+    cleanup = onCleanup(@() rmdir(td, 's'));
     a = fullfile(td, 'a'); b = fullfile(td, 'b'); mkdir(a); mkdir(b);
 
     put(a, 'policy_A.csv', sprintf('var,k,a\nk,0.95,0.10\na,0.00,0.90\n'));
@@ -35,7 +35,11 @@ function test_compare_bundles
     r = compare_bundles(a, b); assert(~r.ok && any(contains(r.differences, 'only in')), 'missing file');
 
     raised = false;
-    try, compare_bundles(a, b, 'fail', true); catch ME, raised = strcmp(ME.identifier, 'compare_bundles:Different'); end
+    try
+        compare_bundles(a, b, 'fail', true);
+    catch ME
+        raised = strcmp(ME.identifier, 'compare_bundles:Different');
+    end
     assert(raised, '''fail'', true must throw on differences');
 
     % An empty text cell reads as <missing>, which isequal never calls equal: on

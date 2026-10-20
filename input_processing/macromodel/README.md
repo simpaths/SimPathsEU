@@ -30,7 +30,9 @@ work, nothing older has been tried.
 - **MATLAB R2025b** with the **Statistics and Machine Learning Toolbox**. That is the
   complete product list reported by `matlab.codetools.requiredFilesAndProducts` on
   the entry points. Tested on R2025b; at least R2020a is needed (`arguments` blocks,
-  `readtable(..., 'VariableNamingRule', ...)`, `exportgraphics`).
+  `readtable(..., 'VariableNamingRule', ...)`, `exportgraphics`). `check_dependencies`
+  reports an R2019b as too old; a release before R2019b cannot parse the `arguments`
+  blocks and stops with a syntax error before any check runs.
 - **Dynare 6.5**, with `<dynare>/matlab` on the MATLAB path. Estimation runs
   `dynare ... use_dll`, which needs a C compiler; the Windows Dynare installer
   bundles MinGW for this. On Linux/macOS use the system compiler (`mex -setup C`).

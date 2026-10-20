@@ -94,10 +94,18 @@ function test_artifact_layout()
     assert(strcmp(artifact_path('bundle', '', 'country', 'Sweden'), ...
                   fullfile('..', '..', 'input', 'SE', 'MacroModel')), 'bundle dir for Sweden');
     raised = false;
-    try, artifact_path('bundle', 'x'); catch ME, raised = strcmp(ME.identifier, 'artifact_path:CountryRequired'); end
+    try
+        artifact_path('bundle', 'x');
+    catch ME
+        raised = strcmp(ME.identifier, 'artifact_path:CountryRequired');
+    end
     assert(raised, 'bundle role without a country must refuse');
     raised = false;
-    try, artifact_path('scenarios', 'x'); catch ME, raised = strcmp(ME.identifier, 'artifact_path:UnknownKind'); end
+    try
+        artifact_path('scenarios', 'x');
+    catch ME
+        raised = strcmp(ME.identifier, 'artifact_path:UnknownKind');
+    end
     assert(raised, 'the scenarios role no longer exists: scenario CSVs live in input/{CC}/MacroModel/');
     fprintf('  [PASS] bundle role resolves into ../../input/{CC}/MacroModel\n\n');
 
