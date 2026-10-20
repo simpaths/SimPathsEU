@@ -92,7 +92,9 @@ public class MacroPathRecorder {
      * see {@code MacroModelManager.startYearAtRiskWage} before reading an
      * early-year level difference as a treatment effect.
      * n_realized_gap / w_trend_revision: the recursive Ramsey feedback's diagnostics
-     * (realized-vs-assumed labor-force gap, % change in next year's trend wage from the
+     * (realized-vs-assumed headcount gap: SimPaths' workers with positive hours, scaled by
+     * lambda, against the planner's employees path, so it includes shifts in the employee
+     * share of workers; % change in next year's trend wage from the
      * re-solve); see {@code MacroModelManager.applyRamseyFeedbackWithRealized}. Zero for
      * every run where the feedback is disabled or has not yet latched its lambda.
      */

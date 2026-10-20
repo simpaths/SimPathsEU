@@ -208,6 +208,21 @@ public class RamseyTrendModelTest {
         assertTrue(e.getMessage().contains("removed"), e.getMessage());
     }
 
+    @Test
+    public void testExogenousLaborSupplyKeyStillLoads() throws IOException {
+        assumeTestDataAvailable();
+        Path json = tempDir.resolve("growth_params_exogenous.json");
+        // Bundles exported before the endogenous variant was removed (DE, ES, SE) still
+        // declare "labor_supply": "exogenous"; only "endogenous" is refused.
+        String content = growthParamsContent.replaceFirst("\"parameters\"\\s*:\\s*\\{",
+                "\"parameters\": {\n    \"labor_supply\": \"exogenous\",");
+        assertNotEquals(growthParamsContent, content, "fixture should have a parameters block");
+        Files.writeString(json, content);
+        RamseyTrendModel loaded = new RamseyTrendModel();
+        assertDoesNotThrow(() -> loaded.loadParams(json));
+        assertEquals(model.getDeltaQ(), loaded.getDeltaQ(), 0.0, "the key must not change the parameters");
+    }
+
         @Test
         public void testQuarterlyConversions() {
         assumeTestDataAvailable();
