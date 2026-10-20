@@ -23,6 +23,7 @@
 | **v15** | **Feb 18, 2026** | **Inflation indexation (iota_p=0.35, hybrid NKPC with pi(-1)); restored investment accelerator (phi_inv_y=0.3 calibrated); log ML improved +20.7 (−920.25 → −899.51); σ_p dropped 37% (2.26 → 1.43); investment VD reshaped (95.7% own → 72.4% own + 13.6% cost-push + 9.2% monetary)** ⭐ |
 | **v16** | **Feb 26, 2026** | **Dual-layor macro architecture: Long-run trend component (Ramsey growth model) + business cycle component (DSGE)** ⭐ |
 | **v17** | **Mar 09, 2026** | **Ramsey Model: Endogenous labor supply implementation; `ramsey_labor_supply` switch (defaults to exogenous). Dynare files template-based structure (`Macromodel_[COUNTRY].mod`).** ⭐ |
+| **v18** | **Oct 20, 2026** | **Ramsey Model: endogenous labour supply removed (JuergenWiemers/SimPathsEU#28). The Ramsey layer solves exogenous labour only; SimPaths' realized labour reaches the planner through the yearly re-solve (`mm_ramseyFeedbackMargins`, `SimPaths_Coupling.md` §8.1).** |
 
 ---
 
@@ -44,7 +45,7 @@ This replaces the previous HP-filter-based detrending architecture.
 │ SimPaths population scenario │
 │ (align_popProjections.xlsx)  │
 └──────────────┬───────────────┘
-                    │ (top-down demographic path: N trend or WAP)
+                    │ (top-down demographic path: N trend)
                     ▼
 ┌──────────────────────────────┐
 │ Ramsey growth model          │
@@ -68,7 +69,7 @@ This replaces the previous HP-filter-based detrending architecture.
 ```
 
 **Key design choices implemented:**
-- Growth model is **strictly top-down** (no SimPaths-to-Ramsey feedback), though it can now endogenously solve for labor participation.
+- Growth model labour input is exogenous (employees `N`); SimPaths' realized labour feeds back through the yearly re-solve of the planner's remaining path (`SimPaths_Coupling.md` §8.1, `mm_ramseyFeedbackMargins`).
 - DSGE-SimPaths channel remains **two-way**
 - **Static integration mode is fully removed**; dynamic state-space integration is the only supported mode
 
@@ -76,22 +77,19 @@ This replaces the previous HP-filter-based detrending architecture.
 
 The `run_full_workflow.m` pipeline is now:
 
-- **Step 0a:** `calibrate_growth_model(country, 'ramsey_labor_supply', mode)`
-- **Step 0b:** `ramsey_trend(country, 'ramsey_labor_supply', mode)`
-- **Step 0c:** `build_population_projection(country, simpaths_pop_file, 'ramsey_labor_supply', mode)`
+- **Step 0a:** `calibrate_growth_model(country)`
+- **Step 0b:** `ramsey_trend(country)`
+- **Step 0c:** `build_population_projection(country, simpaths_pop_file)`
 - **Step 1:** DSGE Bayesian estimation (`dynare Macromodel_{country}.mod`)
 - **Step 2:** `generate_frozen_model(country)`
 - **Step 3:** `export_dynamic_for_simpaths` (A, Bs, C, D)
 - **Step 4:** `postestimation_analysis`
 
-#### Endogenous vs. Exogenous Labor Supply
+#### Labor Supply
 
-The Ramsey component now supports two modes for labor supply, configured via the `ramsey_labor_supply` switch in `run_full_workflow` (defaults to `"exogenous"`):
+The Ramsey model takes the number of employees (`N`) as an externally provided trend (the HP trend of the data in sample, the SimPaths population projection out of sample) and solves for consumption and capital. SimPaths' realized labour supply reaches the planner through the yearly re-solve described in `SimPaths_Coupling.md` §8.1, not through a participation choice inside the planner: the endogenous-labour variant of v17 was removed on 2026-10-20 (JuergenWiemers/SimPathsEU#28).
 
-- **`exogenous` (default)**: The Ramsey model takes the number of employees (`N`) as an externally provided trend (from data or an extrapolation scenario) and solves only for consumption and capital.
-- **`endogenous`**: The Ramsey model solves the social planner problem where labor participation ($l$) is chosen endogenously given a disutility parameter ($\phi$) and a specified path for the working-age population (WAP) – closing the gap between macro wages and labor supply participation rates.
-
-The user-maintained source template lives at `country_params/{Country}_growth_params.json`. During calibration the selected mode is written into the calibrated runtime copy `input/{CC}/MacroModel/growth_params_{COUNTRY}.json`, which is the file consumed by the Java integration.
+The user-maintained source template lives at `country_params/{Country}_growth_params.json`. During calibration the calibrated runtime copy `input/{CC}/MacroModel/growth_params_{COUNTRY}.json` is written, which is the file consumed by the Java integration.
 
 ### A.4 Ramsey Calibration Procedure (`calibrate_growth_model.m`)
 
@@ -99,8 +97,8 @@ Calibration is performed on **level data** (`data_for_dynare_levels_{COUNTRY}.cs
 
 Core steps:
 
-1. Load structural parameters from JSON (`alpha_K`, `delta_annual`, `beta_annual`, `sigma`, `tfp_growth_annual`, base year, and optionally `phi` for endogenous mode). If a `terminal_growth` block is present and enabled, also load the terminal TFP-growth anchor `g_A_terminal_annual` and convergence parameter `rho_quarterly`.
-2. Extract base-year levels (annual GDP/investment/consumption; average employment `N`, labor force `L`, hours `h`, and working-age population `WAP`).
+1. Load structural parameters from JSON (`alpha_K`, `delta_annual`, `beta_annual`, `sigma`, `tfp_growth_annual`, base year). If a `terminal_growth` block is present and enabled, also load the terminal TFP-growth anchor `g_A_terminal_annual` and convergence parameter `rho_quarterly`.
+2. Extract base-year levels (annual GDP/investment/consumption; average employment `N`, labor force `L`, hours `h`).
 3. Compute expenditure shares (`C/Y`, `I/Y`, optional `G/Y`, `NX/Y`) with unit-consistency checks.
 4. Calibrate initial capital via perpetual inventory:
     \[
@@ -111,11 +109,7 @@ Core steps:
     \[
     A_0 = \frac{Y_q}{K_0^{\alpha}(N_0h_0)^{1-\alpha}}
     \]
-7. **If endogenous mode:** compute labor disutility `psi` from base-year observables:
-    \[
-    \psi = \frac{(1-\alpha) A_0 K_0^\alpha l_0^{-(\phi+\alpha)} (h_0 \cdot WAP_0)^{-\alpha} c_0^{-\sigma}}{1}
-    \]
-8. Write calibrated base-year values and derived quarterly parameters back to JSON.
+7. Write calibrated base-year values and derived quarterly parameters back to JSON.
 
 ### A.5 Trend Construction and Detrending (`ramsey_trend.m`)
 
@@ -128,28 +122,11 @@ K_{t+1}=(1-\delta)K_t + Y_t - N_tc_t - G_t - NX_t
 \]
 with open-economy resource constraint (`G_t = g_Y(t)Y_t`, `NX_t = nx_Y(t)Y_t`) and Cobb-Douglas production. Labor input uses an externally provided exogenously growing trend for the number of employees, `N_trend`.
 
-**In endogenous mode:**
-The problem is expanded to include the disutility of labor ($\psi$) and the Frisch-like inverse elasticity ($\phi$), scaled by the Working Age Population (WAP):
-\[
-\max_{\{c_t, l_t\}} \sum_t \beta^t WAP_t \left[ \frac{c_t^{1-\sigma} - 1}{1-\sigma} - \psi \frac{l_t^{1+\phi}}{1+\phi} \right]
-\]
-where $N_t = l_t \cdot WAP_t$. The margin is participation, so it is priced at
-per-participant earnings $w_t h_t$, not at the hourly wage:
-$\psi l_t^{\phi} = w_t h_t c_t^{-\sigma}$. With Cobb-Douglas production this gives
-a closed form for the participation rate $l_t$:
-\[
-l_{t}=\left[\frac{(1-\alpha)A_t K_t^\alpha WAP_t^{-\alpha} h_t^{1-\alpha} c_t^{-\sigma}}{\psi}\right]^{\frac{1}{\phi+\alpha}}
-\]
-Hours enter with exponent $(1-\alpha)/(\phi+\alpha) > 0$, so a falling hours trend
-lowers participation. The hourly-wage form used until 2026-08 gave exponent
-$-\alpha/(\phi+\alpha) < 0$ and reversed that sign out of sample.
-which connects aggregate participation structurally to secular shifts in TFP and wages. The inverse elasticity parameter ($\phi$) is calibrated using the extensive-margin elasticity response from SimPaths permanent wage-shift experiments (e.g. $\phi \approx 1.3$).
-
 Implementation details:
 
 - Hours trend is log-linear. TFP grows at calibrated in-sample `g_A`; if terminal-growth convergence is enabled, the forward extension lets annual `g_A` decay toward `g_A_terminal_annual` using an AR(1)-style rule with persistence `rho_quarterly`.
 - Government/net-export shares are smoothed and extrapolated; COVID windows are interpolated before smoothing to avoid pulled-down structural trends.
-- Solver uses a stacked-time Newton (LBJ) perfect-foresight solve over the full transition path, with terminal condition `K/Y → K/Y_bgp`, where `K/Y_bgp = alpha / (((1 + g_A^{BGP}/(1-alpha))^sigma / beta) - 1 + delta)` in quarterly units and `g_A^{BGP}` equals the terminal growth anchor when convergence is enabled. The residual system stacks the resource constraint and Euler equation for all periods simultaneously, eliminating the saddle-path instability of the old forward shooter. In endogenous mode the intratemporal labor FOC is solved within each period of that global Newton system.
+- Solver uses a stacked-time Newton (LBJ) perfect-foresight solve over the full transition path, with terminal condition `K/Y → K/Y_bgp`, where `K/Y_bgp = alpha / (((1 + g_A^{BGP}/(1-alpha))^sigma / beta) - 1 + delta)` in quarterly units and `g_A^{BGP}` equals the terminal growth anchor when convergence is enabled. The residual system stacks the resource constraint and Euler equation for all periods simultaneously, eliminating the saddle-path instability of the old forward shooter.
 
 For Poland, the current implementation keeps `tfp_growth_annual = 1.5%` during the historical detrending sample but sets `terminal_growth.g_A_terminal_annual = 0.8%` with `rho_quarterly = 0.99` in the extension. This lowers the terminal BGP real rate from the implausible permanent-catch-up value while leaving the in-sample trend essentially unchanged.
 
@@ -165,7 +142,7 @@ Resulting detrended sample is exported to `data_for_dynare_{COUNTRY}.csv` for DS
 
 `build_population_projection.m` reads SimPaths `align_popProjections.xlsx` from the `Population_projections` sheet, aggregates working-age (15–64) population across regions and genders, and produces two consistent demographic artefacts:
 
-1. `population_projection_{COUNTRY}.csv` — quarterly `N` (and `WAP` in endogenous mode) anchored at the Ramsey reference CSV's terminal value, used by the Java SimPaths runtime.
+1. `population_projection_{COUNTRY}.csv` — quarterly `N` anchored at the Ramsey reference CSV's terminal value, used by the Java SimPaths runtime.
 2. An updated `demographic_L_{country}.csv` — the historical rows up to `projection_start` are preserved, and the post-`projection_start` portion is rewritten using the same SimPaths-aligned demographic growth path. The MATLAB Ramsey solver consumes this file.
 
 Both consumers now see the same demographic story:
@@ -1365,7 +1342,7 @@ Macromodel_{COUNTRY}.mod                 ← Thin wrapper (@#define country + @#
 | `growth_params_{COUNTRY}.json` | input/{CC}/MacroModel/ | Calibrated runtime copy exported to Java after `calibrate_growth_model.m` |
 | `growth_model_reference_{country}.csv` | input_processing/macromodel/output/ and input/{CC}/MacroModel/ | Ramsey cross-validation reference path |
 | `growth_terminal_state.json` | input/{CC}/MacroModel/ | Terminal `K`, `A` for Java forward projection |
-| `population_projection_{COUNTRY}.csv` | input_processing/macromodel/output/ and input/{CC}/MacroModel/ | SimPaths-consistent forward demographic path (`N` in exogenous mode, plus `WAP` column in endogenous mode when exported) |
+| `population_projection_{COUNTRY}.csv` | input_processing/macromodel/output/ and input/{CC}/MacroModel/ | SimPaths-consistent forward demographic path (`time,N`) |
 | `ramsey_trends_{country}.csv` | input_processing/macromodel/output/ | Full trend paths used for detrending diagnostics |
 
 ### 14.4 Frequency Conversion for Microsim

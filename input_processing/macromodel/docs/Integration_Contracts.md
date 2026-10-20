@@ -32,8 +32,8 @@ Three enforcement patterns cover almost everything here:
 | 2 | π is read from whichever vector declares it | exporter `model_info.json` ↔ `DSGEState.VarIndices` | throws if neither map declares `pi`; `DSGEStateTest` | enforced |
 | 3 | Non-`eps_L/h` shocks are σ-scaled exactly once | scenario CSVs ↔ `stepQuarterly` | `DSGEShockScenarioTest`, `DSGEModelTest` | enforced |
 | 4 | χ_u = χ_L − χ_n, and the implied U/L rate matches the estimation sample | calibration ↔ template eq. 10 ↔ data | `test_calibration_identities.m` (identity **and** sample rate) | enforced |
-| 5 | Intratemporal FOC and ψ backout are exact inverses | `solve_labor_foc.m` ↔ `backout_labor_psi.m` | `test_labor_foc.m` round-trip | enforced |
-| 6 | MATLAB and Java solve the same FOC | `solve_labor_foc.m` ↔ `RamseyTrendModel.solveLaborFOC` | `foc_parity_cases.csv`, asserted by both suites | enforced |
+| 5 | Intratemporal FOC and ψ backout are exact inverses | the FOC solver ↔ its ψ back-out (MATLAB) | — | retired 2026-10-20 with the endogenous-labour variant (JuergenWiemers/SimPathsEU#28); number kept |
+| 6 | MATLAB and Java solve the same FOC | the MATLAB FOC solver ↔ its Java mirror | — | retired 2026-10-20 with the endogenous-labour variant (JuergenWiemers/SimPathsEU#28); number kept |
 | 7 | Frozen-model substitutions actually matched | template text ↔ `generate_frozen_model.m` patterns | `subst_verified` (match count), `test_frozen_model_generator.m` | enforced |
 | 8 | Export bundle layout matches its own `model_info.json` | `export_dynamic_for_simpaths.m` ↔ `DSGEModel` loaders | row/column name validation on load; `DSGEIntegrationTest` | enforced |
 | 9 | Forward horizon is the same on both sides | `ramsey_trend.m` `projection_quarters` ↔ `MacroModelManager` | exported in `growth_terminal_state.json`, read by Java | enforced |

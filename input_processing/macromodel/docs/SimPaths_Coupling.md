@@ -268,7 +268,6 @@ Implications:
 - The terminal balanced-growth-path target in Java is computed from the terminal TFP growth anchor, not from a
 	zero-growth shortcut. This keeps SimPaths aligned with the MATLAB export contract used to generate the Ramsey
 	inputs.
-- The Ramsey trend output varies depending on whether it was calibrated with exogenous or endogenous labour supply in the macro repository. For endogenous labour supply, adjustments are sensitive to the flexible/time-varying disutility parameter `psi`.
 - If Ramsey trend is unavailable, secular wage trend fallback is currently `0` (no reduced-form alpha/gamma fallback)
 - With `mm_ramseyFeedbackMargins: none` the trend is strictly top-down. The default, `employment_and_hours`,
 	feeds realized labour supply back into the yearly re-solve (§8.1)
@@ -300,10 +299,10 @@ solved path positioned at `t + 1`.
 year `t`'s own realized labour. Only `advanceRamseyTrend()` for year `t+1` steps into the revised
 path. This one-period lag is the standard extended-path convention, not a defect to be closed.
 
-**Mutual exclusions.** The feedback requires an exogenous-labour Ramsey bundle, and is fatal
-(rather than silently self-disabling) if the Ramsey trend fails to solve. The endogenous-labour FOC
-bundle already approximates the realized labour response ex ante, so combining it with this
-channel's own realized-employment revision would count that response twice.
+**Mutual exclusions.** The feedback is fatal (rather than silently self-disabling) if the Ramsey
+trend fails to solve. (Until 2026-10-20 it also refused the endogenous-labour Ramsey bundle, whose
+participation FOC approximated the same response ex ante; that variant was removed,
+JuergenWiemers/SimPathsEU#28, so the feedback is the only labour channel into the planner.)
 
 A DSGE mode was also fatal until 2026-08-18; it now only warns. The two channels do not
 measure the same object: `eps_L` is a *year-over-year* log change against a rolling baseline, net of the
