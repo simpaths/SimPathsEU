@@ -93,10 +93,13 @@ legacy constant-growth interpretation.
 
 ### 3.1 SimPaths -> DSGE inputs
 
-- `epsilon_L`: labor-force/positive-hours shock (raw log-deviation)
+- `epsilon_L`: labor-force/positive-hours shock (raw log-deviation, net of the projection's own labour growth)
 - `epsilon_h`: hours shock (raw log-deviation)
 
-Both are computed by `LaborSupplyAggregator` as log deviations from baseline.
+Both are computed by `LaborSupplyAggregator` as log deviations from the rolling baseline; `epsilon_L` additionally
+subtracts the percent log change of the population projection's annual means
+(`MacroModelManager.projectedLaborGrowthPct`), so it is the year-over-year change of the employment rate against
+the projection, the object the DSGE was estimated on (§7.1).
 
 ### 3.2 DSGE -> SimPaths outputs
 
@@ -115,7 +118,7 @@ In SimPaths wage equations, macro feedback is applied as:
 
 1. Aggregate current labor outcomes in SimPaths
 2. Advance the Ramsey trend by one year along the currently solved path
-3. Build `epsilon_L` and `epsilon_h` relative to baseline
+3. Build `epsilon_L` and `epsilon_h` relative to the rolling baseline, `epsilon_L` net of the projection's labour growth
 4. Advance DSGE quarterly state internally and aggregate annual cycle feedback
 5. Compose total wage effect (`cycle + trend`) and apply macro feedback
 6. Advance rolling baseline for next year
@@ -185,12 +188,31 @@ The following are removed from active code/config:
 
 ### 7.1 Rolling baseline
 
-Shocks are always year-over-year:
+Shocks are always year-over-year, and `epsilon_L` is measured against the projection:
 
-- `epsilon_L,t = ln(L_t / L_{t-1})`
-- `epsilon_h,t = ln(h_t / h_{t-1})`
+- `epsilon_L,t = 100 [ln(L_t / L_{t-1}) - ln(N_proj,t / N_proj,t-1)]`
+- `epsilon_h,t = 100 ln(h_t / h_{t-1})`
+
+`N_proj` is the retained original population projection (`ramseyProjN`, annual means), the same path the
+Ramsey feedback gap is measured against (§8.1); `epsilon_L` is the first difference of that gap. The DSGE was
+estimated on `L` net of its demographic trend (`detrended.L = 100 (ln L - ln L_demo)` in `ramsey_trend.m`);
+handing it the raw change of the headcount gave it the whole projected workforce decline as a standing shock
+(about -0.85%/yr for Poland against -0.89%/yr projected, measured 2026-10-20) while the trend layer already
+priced that decline. Hours are not detrended: SimPaths has no hours trend and the planner's hours trend is
+kept out of the feedback. `mm_macroModel: dsge` loads the projection for this purpose alone
+(`loadProjectionForLaborShock`), aligned on the handoff quarter like the trend layer, and fails without it or
+with a start year other than the handoff year.
 
 This keeps shocks in the local-linear range and avoids secular drift overwhelming the DSGE approximation.
+
+**Snapshot timing.** The baseline is latched after the labour market of `startYear+1`
+(`latchBaselineFromPostLaborMarket`), but every later aggregate is taken at `DSGEMacroUpdate`, before the
+year's labour market. The first aggregate after the latch (`startYear+2`) would therefore compare a
+pre-labour-market snapshot with a post-labour-market one and report the year's gross outflow (retirements,
+deaths, entrants without hours) as a labour-supply shock (-3.4% in every DSGE run before 2026-10-20). That call
+now reports no shock and rolls the baseline to its own snapshot (`LaborSupplyAggregator.aggregate`); the first
+live `epsilon_L` is in `startYear+3`. Pinned by `LaborSupplyAggregatorTest` and, end to end through
+`updateEquilibrium`, by `LaborShockProjectionTest`.
 
 ### 7.2 Anchor-year asymmetry: L/N lag the demographic indices by one year
 
@@ -284,16 +306,21 @@ bundle already approximates the realized labour response ex ante, so combining i
 channel's own realized-employment revision would count that response twice.
 
 A DSGE mode was also fatal until 2026-08-18; it now only warns. The two channels do not
-measure the same object: `eps_L` is a *year-over-year* log change against a rolling baseline
-(`LaborSupplyAggregator.advanceBaseline`), while `delta_t` is a *cumulative level* ratio against the
-fixed original projection. A permanent labour-supply shift therefore gives `eps_L` once and zero
+measure the same object: `eps_L` is a *year-over-year* log change against a rolling baseline, net of the
+projection's growth (§7.1), while `delta_t` is a *cumulative level* ratio against the same fixed original
+projection; the one is the first difference of the other. A permanent labour-supply shift therefore gives `eps_L` once and zero
 thereafter, the DSGE response decays back to the trend (the DSGE steady state *is* the Ramsey path),
 and only the Ramsey revision persists — the overlap is a transitional overshoot while the cycle
 decays, not a permanent double count. Its size is bounded by the measured loop gain of about -0.04,
 i.e. a few percent of the labour response. What does remain is a different problem: at `rho=1` the
 planner extrapolates *every* realized deviation as permanent, and with the DSGE on part of that
-deviation is cyclical by construction. Prefer `rho < 1` when running both, and note that the
-combination has not yet been measured end to end.
+deviation is cyclical by construction. Prefer `rho < 1` when running both. Measured end to end on
+2026-10-20 (one seed, both margins, `rho = 1`, no scenario shocks; `config/ramsey-feedback-persistent.yml`
+against `config/ramsey-dsge-feedback-persistent.yml`, after the fix of the same day): with `eps_L` measured
+against the projection it averages +0.01 over 2026-2060 (it averaged -0.85 before, the projected decline
+itself), the first comparison after the latch is zero, and the cycle layer's response to SimPaths' own labour
+input moves `w_total` by 0.29 pp of the index on average in absolute value (maximum 0.84 pp), with a mean of
++0.004 pp: a zero-mean wobble, no standing offset. The Ramsey-only arm is unchanged to the last digit.
 
 **Hours feedback (the `hours` margin of `mm_ramseyFeedbackMargins`, added 2026-08-18 as a separate
 switch).** On by default since 2026-08-19 (`employment_and_hours`); it was off in the four arms behind

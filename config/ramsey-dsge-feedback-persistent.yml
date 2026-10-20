@@ -1,0 +1,41 @@
+# Recursive Ramsey feedback experiment - arm 3: as ramsey-feedback-persistent.yml, with the
+# DSGE cycle layer on and no scenario shocks. Paired with arm 2 (same seed) it isolates what the
+# cycle layer adds in response to SimPaths' own labour input, the combination that
+# docs/SimPaths_Coupling.md §8.1 calls unmeasured.
+maxNumberOfRuns: 8
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation:   true
+    alignRetirement:   true
+    alignDisability:   true
+    alignEducation:    true
+    alignInSchool:     true
+    alignCohabitation: true
+    # Inert for startYear >= 2023: LabourMarket gates employment alignment on
+    # year <= EMPLOYMENT_ALIGNMENT_END_YEAR (=2023), and the labour market first
+    # runs in startYear+1. Kept only for parity with the other config files.
+    # alignRetirement/alignDisability above have NO end year and do run to 2060.
+    alignEmployment:   true
+    alignFertility:    true
+
+    # Macro Model
+    mm_macroModel: ramsey_dsge
+    # off | ramsey | dsge | ramsey_dsge
+    mm_macroLogging: state          # off | state | verbose (verbose implies state)
+    mm_dsgeMaxStateDeviation: 30
+
+    mm_ramseyFeedbackMargins: employment_and_hours
+    # none | employment | hours | employment_and_hours
+    mm_ramseyFeedbackPersistence: 1.0
+    mm_ramseyFeedbackHoursPersistence: 1.0
+
+    # No mm_ramseyScenario and no mm_dsgeShockScenario: the only shocks are SimPaths' own.
+
+
+collector_args:
+    exportToCSV: true

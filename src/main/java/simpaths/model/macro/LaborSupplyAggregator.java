@@ -148,6 +148,16 @@ public class LaborSupplyAggregator {
     /** Whether baseline has been set */
     private boolean baselineSet = false;
 
+    /**
+     * Whether the current baseline is the post-labour-market latch of {@code startYear+1}
+     * ({@link #computeAndSetBaseline}). Every later {@link #aggregate} is taken before the
+     * year's labour market, so the first one after that latch would compare two different
+     * snapshots of one year's turnover (retirements, deaths, entrants without hours). That
+     * call reports no shock and rolls the baseline to its own, pre-labour-market snapshot;
+     * from then on the shocks are year-over-year changes between snapshots of the same kind.
+     */
+    private boolean baselineIsPostLabourMarket = false;
+
     /** Whether DSGE logging is enabled */
     private boolean logEnabled = false;
     
@@ -248,6 +258,7 @@ public class LaborSupplyAggregator {
     public LaborSupplyAggregates computeAndSetBaseline(Set<Person> persons) {
         LaborSupplyAggregates aggregates = computeRawAggregates(persons);
         setBaseline(aggregates.laborForce(), aggregates.avgHoursPerWorker());
+        baselineIsPostLabourMarket = true;
         
         // L/h start anchors + cumulative tracking: MUST be the post-labour-market
         // state, latched once.
@@ -471,20 +482,64 @@ public class LaborSupplyAggregator {
      * @throws IllegalStateException If baseline not set
      */
     public LaborSupplyShocks aggregate(Set<Person> persons) {
+        return aggregate(persons, 0.0);
+    }
+
+    /**
+     * Aggregate individual labor supply into macro shocks, net of the labour growth the
+     * macro layers already assume.
+     *
+     * <p>The DSGE was estimated on the labour force relative to its demographic trend
+     * ({@code detrended.L = 100 (ln L - ln L_demo)} in {@code ramsey_trend.m}), and the
+     * Ramsey layer prices the projected workforce decline in the trend wage. The raw
+     * year-over-year change of the headcount would hand the DSGE that same decline as a
+     * standing shock it was never estimated to see (JuergenWiemers/SimPathsEU#26), so
+     * {@code eps_L = 100 ln(L_t / L_{t-1}) - assumedLaborGrowthPct}: the year-over-year
+     * change of the employment rate against the projection. Hours are not detrended; the
+     * planner's own hours trend is deliberately kept out of the feedback.</p>
+     *
+     * <p>The first call after the post-labour-market latch reports no shock at all and
+     * rolls the baseline, see {@link #baselineIsPostLabourMarket}.</p>
+     *
+     * @param persons               Set of all persons in the simulation
+     * @param assumedLaborGrowthPct The projection's own growth of the labour input from the
+     *                              previous year to this one, as a percent log change
+     * @return Labor supply shocks (eps_L, eps_h) for the DSGE model
+     * @throws IllegalStateException If baseline not set
+     */
+    public LaborSupplyShocks aggregate(Set<Person> persons, double assumedLaborGrowthPct) {
         validateBaselineSet();
         Objects.requireNonNull(persons, "Persons set cannot be null");
-        
+
         // Compute current aggregates
         LaborSupplyAggregates current = computeRawAggregates(persons);
-        
+
         // Store for debugging
         this.lastL = current.laborForce();
         this.lastH = current.avgHoursPerWorker();
         this.lastWorkingAgeCount = current.workingAgePopulation();
         this.lastWorkersCount = current.laborForce();
-        
-        // Compute log-deviations from baseline
-        double epsL = computeLogDeviation(current.laborForce(), baselineL);
+
+        if (baselineIsPostLabourMarket) {
+            // Mixed snapshots: the baseline was taken after last year's labour market, this
+            // aggregate before this year's. Report no shock and make this pre-labour-market
+            // snapshot the baseline; advanceBaseline() then finds nothing to accumulate.
+            baselineIsPostLabourMarket = false;
+            if (current.laborForce() > EPSILON && current.avgHoursPerWorker() > EPSILON) {
+                baselineL = current.laborForce();
+                baselineH = current.avgHoursPerWorker();
+            }
+            if (logEnabled) {
+                log.info(String.format(
+                        "Labor aggregation: first pre-labour-market snapshot after the post-labour-market latch; "
+                        + "no shock reported, baseline rolled to L=%.1f, h=%.2f",
+                        baselineL, baselineH));
+            }
+            return new LaborSupplyShocks(0.0, 0.0, current);
+        }
+
+        // Compute log-deviations from baseline, net of the assumed growth of the labour input
+        double epsL = computeLogDeviation(current.laborForce(), baselineL) - assumedLaborGrowthPct;
         double epsH = computeLogDeviation(current.avgHoursPerWorker(), baselineH);
         
         if (logEnabled && log.isDebugEnabled()) {

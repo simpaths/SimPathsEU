@@ -1,7 +1,14 @@
 package simpaths.model.macro;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import simpaths.model.Person;
+import simpaths.model.enums.Labour;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -28,6 +35,77 @@ class LaborSupplyAggregatorTest {
     @Test
     void testInitialStateNotBaselineSet() {
         assertFalse(aggregator.isBaselineSet(), "Baseline should not be set initially");
+    }
+
+    // ========== Snapshot timing and the assumed labour growth ==========
+
+    /**
+     * A working-age person at risk of work. {@code computeRawAggregates} only calls
+     * getWeight, getDag, atRiskOfWork, getLabourSupplyWeekly and getLabourSupplyHoursWeekly,
+     * so a mock is enough (see RamseyRecursiveFeedbackTest.buildSyntheticPersons).
+     */
+    private static Person worker(double weight, int hoursWeekly) {
+        Person p = Mockito.mock(Person.class);
+        Mockito.when(p.getWeight()).thenReturn(weight);
+        Mockito.when(p.getDag()).thenReturn(40);
+        Mockito.when(p.atRiskOfWork()).thenReturn(true);
+        Mockito.when(p.getLabourSupplyWeekly()).thenReturn(Labour.ZERO);
+        Mockito.when(p.getLabourSupplyHoursWeekly()).thenReturn(hoursWeekly);
+        return p;
+    }
+
+    private static Set<Person> persons(Person... ps) {
+        return new HashSet<>(java.util.List.of(ps));
+    }
+
+    /**
+     * CONTRACT: the baseline latched after the first labour market (startYear+1) is a
+     * post-labour-market snapshot, but every later aggregate() is taken before the year's
+     * labour market. The first aggregate() after that latch therefore compares two different
+     * snapshots of the same year's turnover (retirements, deaths, entrants without hours) and
+     * must not be reported as a labour-supply shock: it returns zero shocks and becomes the
+     * new, pre-labour-market baseline. From the next year on both snapshots are of the same
+     * kind and the shock is live.
+     */
+    @Test
+    void testFirstAggregateAfterPostLabourMarketLatchReportsNoShockAndRollsBaseline() {
+        Set<Person> postLabourMarket = persons(worker(1.0, 40), worker(1.0, 40), worker(1.0, 40));
+        Set<Person> preLabourMarketNextYear = persons(worker(1.0, 40), worker(1.0, 40), worker(1.0, 0));
+        Set<Person> preLabourMarketYearAfter = persons(worker(1.0, 40), worker(1.0, 40), worker(1.0, 40), worker(1.0, 40));
+
+        aggregator.computeAndSetBaseline(postLabourMarket);                  // startYear+1, after the labour market
+        LaborSupplyAggregator.LaborSupplyShocks first = aggregator.aggregate(preLabourMarketNextYear);  // startYear+2, before it
+
+        assertEquals(0.0, first.epsL(), 1e-12, "mixed snapshots: no labour-force shock");
+        assertEquals(0.0, first.epsH(), 1e-12, "mixed snapshots: no hours shock");
+        assertEquals(2.0, first.aggregates().laborForce(), 1e-12, "the aggregates themselves are still reported");
+
+        aggregator.advanceBaseline();
+        assertEquals(2.0, aggregator.getBaselineL(), 1e-12, "the pre-labour-market snapshot is the new baseline");
+
+        LaborSupplyAggregator.LaborSupplyShocks second = aggregator.aggregate(preLabourMarketYearAfter);
+        assertEquals(100.0 * Math.log(4.0 / 2.0), second.epsL(), 1e-9,
+                "from the second pre-labour-market snapshot on, the shock is the year-over-year change");
+    }
+
+    /**
+     * CONTRACT: the DSGE was estimated on the labour force net of its demographic trend, so
+     * the shock handed to it is the year-over-year change net of the assumed labour growth of
+     * the projection both macro layers share: eps_L = 100 ln(L_t/L_{t-1}) - g_assumed. A
+     * workforce that shrinks exactly as projected is no shock.
+     */
+    @Test
+    void testShockIsMeasuredNetOfTheAssumedLabourGrowth() {
+        aggregator.setBaseline(1.0, 40.0);
+        Set<Person> shrunkAsProjected = persons(worker(0.99, 40));
+        double assumedGrowthPct = 100.0 * Math.log(0.99);
+
+        LaborSupplyAggregator.LaborSupplyShocks net = aggregator.aggregate(shrunkAsProjected, assumedGrowthPct);
+        assertEquals(0.0, net.epsL(), 1e-9, "shrinking as projected is no shock");
+
+        LaborSupplyAggregator.LaborSupplyShocks raw = aggregator.aggregate(shrunkAsProjected);
+        assertEquals(100.0 * Math.log(0.99), raw.epsL(), 1e-9, "without an assumed growth the raw change is reported");
+        assertEquals(net.epsH(), raw.epsH(), 1e-12, "hours are not detrended");
     }
     
     @Test
