@@ -7,10 +7,13 @@ function result = compare_bundles(dir_a, dir_b, options)
 %
 % Byte identity is the wrong test for a regenerated bundle: the batch-run
 % notes show fourth-digit noise across machines. So CSVs and JSON are compared
-% number by number with |x-y| <= abs_tol + rel_tol*max(|x|,|y|), text columns
-% and JSON strings must be equal. Other files (SIMPATHS_INTERFACE.md,
-% BUNDLE_PROVENANCE.txt) are compared line by line: the numbers in a line under
-% the same tolerance, the text around them exactly. Ignored there: generation
+% number by number with |x-y| <= abs_tol + rel_tol*max(|x|,|y|) (an infinity
+% only agrees with the same infinity), text columns and JSON strings must be
+% equal, JSON arrays (of numbers, objects or mixed) element by element with
+% their lengths, and a CSV's '#' comment lines as exact text. Other files
+% (SIMPATHS_INTERFACE.md, BUNDLE_PROVENANCE.txt) are compared line by line: the
+% decimal numbers in a line under the same tolerance, integers and the text
+% around them exactly. Ignored there: generation
 % stamps, and the hex of `sha256` lines (kind and path are compared; the Java
 % provenance test owns the digests, which noise in a regenerated datafile
 % changes). A file present on one side only, a different header, a different
@@ -61,8 +64,13 @@ end
 
 function d = compare_csv(fa, fb, name, options)
     d = {};
-    ta = readtable(fa, 'TextType', 'string', 'VariableNamingRule', 'preserve');
-    tb = readtable(fb, 'TextType', 'string', 'VariableNamingRule', 'preserve');
+    % '#' lines are comments (the scenario CSVs open with a block of them); left to
+    % readtable's detection, the '=' in them was taken for the delimiter.
+    if ~isequal(comment_lines(fa), comment_lines(fb))
+        d{end+1} = sprintf('%s: comment lines differ', name);
+    end
+    ta = readtable(fa, 'Delimiter', ',', 'CommentStyle', '#', 'TextType', 'string', 'VariableNamingRule', 'preserve');
+    tb = readtable(fb, 'Delimiter', ',', 'CommentStyle', '#', 'TextType', 'string', 'VariableNamingRule', 'preserve');
     if ~isequal(ta.Properties.VariableNames, tb.Properties.VariableNames)
         d{end+1} = sprintf('%s: columns differ', name); return;
     end
@@ -88,8 +96,24 @@ function d = compare_json(a, b, where, options)
     if isstruct(a) && isstruct(b)
         fa = sort(fieldnames(a)); fb = sort(fieldnames(b));
         if ~isequal(fa, fb), d{end+1} = sprintf('%s: keys differ', where); return; end
-        for f = fa'
-            d = [d compare_json(a.(f{1}), b.(f{1}), [where '.' f{1}], options)]; %#ok<AGROW>
+        % A JSON array of objects with the same keys decodes to a struct array.
+        if numel(a) ~= numel(b)
+            d{end+1} = sprintf('%s: array length differs (%d vs %d)', where, numel(a), numel(b)); return;
+        end
+        for k = 1:numel(a)
+            at = where;
+            if numel(a) > 1, at = sprintf('%s(%d)', where, k); end
+            for f = fa'
+                d = [d compare_json(a(k).(f{1}), b(k).(f{1}), [at '.' f{1}], options)]; %#ok<AGROW>
+            end
+        end
+    elseif iscell(a) && iscell(b)
+        % Ragged arrays and arrays of mixed objects decode to cells.
+        if ~isequal(size(a), size(b))
+            d{end+1} = sprintf('%s: array length differs (%d vs %d)', where, numel(a), numel(b)); return;
+        end
+        for k = 1:numel(a)
+            d = [d compare_json(a{k}, b{k}, sprintf('%s{%d}', where, k), options)]; %#ok<AGROW>
         end
     elseif isnumeric(a) && isnumeric(b)
         if ~isequal(size(a), size(b)) || any(~within(a(:), b(:), options))
@@ -114,7 +138,10 @@ function d = compare_text(fa, fb, name, options)
         if ~isequal(ta, tb)
             bad{end+1} = sprintf('line %d text differs', ia(i)); %#ok<AGROW>
         else
-            k = find(~within(str2double(na), str2double(nb), options), 1);
+            % Integers (a date stamp, a count) must match exactly: under a relative
+            % tolerance, 1e6 or more differing by 1 would pass.
+            ints = is_integer_token(na) & is_integer_token(nb);
+            k = find((ints & ~strcmp(na, nb)) | (~ints & ~within(str2double(na), str2double(nb), options)), 1);
             if ~isempty(k), bad{end+1} = sprintf('line %d: %s vs %s', ia(i), na{k}, nb{k}); end %#ok<AGROW>
         end
     end
@@ -132,6 +159,19 @@ end
 
 function ok = within(x, y, options)
     both_nan = isnan(x) & isnan(y);
-    ok = both_nan | (abs(x - y) <= options.abs_tol + options.rel_tol * max(abs(x), abs(y)));
+    % An infinity agrees only with the same infinity: abs(Inf - Inf) is NaN, and
+    % Inf <= rel_tol * Inf would let Inf pass against -Inf or any number.
+    inf_any = isinf(x) | isinf(y);
+    near = abs(x - y) <= options.abs_tol + options.rel_tol * max(abs(x), abs(y));
+    ok = both_nan | (inf_any & x == y) | (~inf_any & near);
     ok(isnan(x) ~= isnan(y)) = false;
+end
+
+function tf = is_integer_token(tokens)
+    tf = ~cellfun(@isempty, regexp(tokens, '^-?\d+$', 'once'));
+end
+
+function lines = comment_lines(file)
+    lines = strsplit(strrep(fileread(file), char(13), ''), newline);
+    lines = lines(startsWith(lines, '#'));
 end

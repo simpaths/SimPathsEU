@@ -83,6 +83,55 @@ function test_compare_bundles
     put(u, 'BUNDLE_PROVENANCE.txt', sprintf('BUNDLE_PROVENANCE\nsha256 t 7b1e0482 input_processing/macromodel/data/data_for_dynare_Spain.csv\n'));
     r = compare_bundles(s, u); assert(~r.ok && any(contains(r.differences, 'BUNDLE_PROVENANCE.txt')), 'path must be compared');
 
+    % JSON arrays of objects: compared element by element, and their length counts.
+    j1 = fullfile(td, 'j1'); j2 = fullfile(td, 'j2'); mkdir(j1); mkdir(j2);
+    put(j1, 'model_info.json', '{"x": [{"k": 1}, {"k": 2}]}');
+    put(j2, 'model_info.json', '{"x": [{"k": 1}, {"k": 2.0000001}]}');
+    r = compare_bundles(j1, j2, 'rel_tol', 1e-6); assert(r.ok, 'object array within tolerance: %s', strjoin(r.differences, '; '));
+    put(j2, 'model_info.json', '{"x": [{"k": 1}, {"k": 3}]}');
+    r = compare_bundles(j1, j2); assert(~r.ok && any(contains(r.differences, 'model_info.json')), 'object array value');
+    put(j2, 'model_info.json', '{"x": [{"k": 1}, {"k": 2}, {"k": 3}]}');
+    r = compare_bundles(j1, j2); assert(~r.ok && any(contains(r.differences, 'model_info.json')), 'object array length');
+
+    % Ragged JSON arrays decode to cells; the numbers in them keep the tolerance.
+    put(j1, 'model_info.json', '{"r": [[1, 2], [3]]}');
+    put(j2, 'model_info.json', '{"r": [[1, 2.0000001], [3]]}');
+    r = compare_bundles(j1, j2, 'rel_tol', 1e-6); assert(r.ok, 'ragged array within tolerance: %s', strjoin(r.differences, '; '));
+    put(j2, 'model_info.json', '{"r": [[1, 2], [4]]}');
+    r = compare_bundles(j1, j2); assert(~r.ok && any(contains(r.differences, 'model_info.json')), 'ragged array value');
+    put(j2, 'model_info.json', '{"r": [[1, 2], [3], [5]]}');
+    r = compare_bundles(j1, j2); assert(~r.ok && any(contains(r.differences, 'model_info.json')), 'ragged array length');
+
+    % Equal infinities agree; opposite ones do not.
+    i1 = fullfile(td, 'i1'); i2 = fullfile(td, 'i2'); mkdir(i1); mkdir(i2);
+    put(i1, 'inf.csv', sprintf('key,v\nx,Inf\ny,-Inf\n'));
+    put(i2, 'inf.csv', sprintf('key,v\nx,Inf\ny,-Inf\n'));
+    r = compare_bundles(i1, i2); assert(r.ok, 'equal infinities: %s', strjoin(r.differences, '; '));
+    put(i2, 'inf.csv', sprintf('key,v\nx,-Inf\ny,-Inf\n'));
+    r = compare_bundles(i1, i2); assert(~r.ok && any(contains(r.differences, 'inf.csv')), 'opposite infinities');
+    put(i2, 'inf.csv', sprintf('key,v\nx,1e300\ny,-Inf\n'));
+    r = compare_bundles(i1, i2); assert(~r.ok && any(contains(r.differences, 'inf.csv')), 'infinity against a number');
+
+    % Integers in text are compared exactly: under a relative tolerance, 1e6 or more
+    % differing by 1 would pass (a date stamp, a count).
+    put(p, 'SIMPATHS_INTERFACE.md', sprintf('# Export\nstamp 20261013\n'));
+    put(q, 'SIMPATHS_INTERFACE.md', sprintf('# Export\nstamp 20261014\n'));
+    r = compare_bundles(p, q, 'rel_tol', 1e-6); assert(~r.ok && any(contains(r.differences, 'SIMPATHS_INTERFACE.md')), 'integers in text are exact');
+
+    % Scenario CSVs: '=' in the comment block must not become the delimiter, the data
+    % keep the tolerance, and the comment lines are compared as text.
+    hdr = sprintf(['# Scenario: higher TFP growth (+0.25 pp)\n#\n# Parameters:\n' ...
+                   '#   g_A     = TFP growth rate deviation (annual, e.g. 0.0025 = +0.25pp)\n' ...
+                   '#   delta   = depreciation rate deviation (annual)\n#\n']);
+    v1 = fullfile(td, 'v1'); v2 = fullfile(td, 'v2'); mkdir(v1); mkdir(v2);
+    put(v1, '_macroScenario_x.csv', [hdr sprintf('year,g_A\n2023,0.0025\n2024,0.0030\n')]);
+    put(v2, '_macroScenario_x.csv', [hdr sprintf('year,g_A\n2023,0.0025000001\n2024,0.0030\n')]);
+    r = compare_bundles(v1, v2, 'rel_tol', 1e-6); assert(r.ok, 'scenario CSV within tolerance: %s', strjoin(r.differences, '; '));
+    put(v2, '_macroScenario_x.csv', [hdr sprintf('year,g_A\n2023,0.0050\n2024,0.0030\n')]);
+    r = compare_bundles(v1, v2); assert(~r.ok && any(contains(r.differences, '_macroScenario_x.csv')), 'scenario CSV value');
+    put(v2, '_macroScenario_x.csv', [strrep(hdr, '+0.25 pp', '+0.50 pp') sprintf('year,g_A\n2023,0.0025\n2024,0.0030\n')]);
+    r = compare_bundles(v1, v2); assert(~r.ok && any(contains(r.differences, '_macroScenario_x.csv')), 'scenario CSV comment');
+
     fprintf('test_compare_bundles: PASS\n');
 end
 
