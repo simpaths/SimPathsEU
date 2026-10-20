@@ -37,6 +37,10 @@ $onWindows = ($env:OS -eq 'Windows_NT')
 # Paths go into single-quoted MATLAB strings, where a quote is written twice.
 function ConvertTo-MatlabText([string]$text) { return $text.Replace("'", "''") }
 
+# Cleanup messages go to stderr directly: once Ctrl+C has stopped the pipeline,
+# Write-Warning output from the finally block no longer reaches the console.
+function Write-Cleanup([string]$message) { [Console]::Error.WriteLine("WARNING: $message") }
+
 if (-not $MatlabExe) {
     $cmd = Get-Command matlab -ErrorAction SilentlyContinue
     if (-not $cmd) { throw 'matlab is not on PATH; pass -MatlabExe <path to matlab.exe>' }
@@ -105,7 +109,7 @@ finally {
     $ErrorActionPreference = 'Continue'   # report every cleanup failure; do not stop at the first
     try {
         if ($proc -and -not $proc.HasExited) {
-            Write-Warning "stopping MATLAB (process $($proc.Id)) and its children"
+            Write-Cleanup "stopping MATLAB (process $($proc.Id)) and its children"
             if ($onWindows) { & taskkill /T /F /PID $proc.Id 2>&1 | Out-Null }
             else { Stop-Process -Id $proc.Id -Force }
         }
@@ -118,18 +122,18 @@ finally {
             }
             catch {
                 $keepSnapshot = $true
-                Write-Warning "restoring the bundle failed: $($_.Exception.Message). The committed bundle is in $bundleSnapshot; copy it back into $bundle."
+                Write-Cleanup "restoring the bundle failed: $($_.Exception.Message). The committed bundle is in $bundleSnapshot; copy it back into $bundle."
             }
         }
         $gitOut = & git -C $root checkout -q -- input_processing/macromodel/data 2>&1
         if ($LASTEXITCODE -ne 0) {
             $keepSnapshot = $true
-            Write-Warning ("restoring input_processing/macromodel/data failed (git exit $LASTEXITCODE): " + ($gitOut -join ' ') +
+            Write-Cleanup ("restoring input_processing/macromodel/data failed (git exit $LASTEXITCODE): " + ($gitOut -join ' ') +
                            " Restore it with: git -C `"$root`" checkout -- input_processing/macromodel/data")
         }
         if (Test-Path $script) { Remove-Item $script -Force }
         if ($keepSnapshot) {
-            Write-Warning "snapshot kept: $snapshot"
+            Write-Cleanup "snapshot kept: $snapshot"
             if ($exit -eq 0) { $exit = 2 }
         }
         elseif (Test-Path $snapshot) {
@@ -137,7 +141,7 @@ finally {
         }
     }
     catch {
-        Write-Warning "cleanup failed: $($_.Exception.Message). Snapshot, if any: $snapshot"
+        Write-Cleanup "cleanup failed: $($_.Exception.Message). Snapshot, if any: $snapshot"
         if ($exit -eq 0) { $exit = 2 }
     }
     finally {
