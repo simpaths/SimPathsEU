@@ -1,6 +1,6 @@
 // =========================================================================
 // FROZEN MODEL - AUTO-GENERATED
-// Generated: 2026-10-20 17:55:32
+// Generated: 2026-10-21 14:35:25
 // Source: Macromodel_Poland (estimation results)
 // DO NOT EDIT MANUALLY - regenerate with generate_frozen_model.m
 // =========================================================================
@@ -254,7 +254,7 @@ lambda_w = 0.65;    // baseline: shorter average wage duration than Germany
     rho_h    = 0.80;    // Estimation mode: AR(1) captures observed persistence
                         // (calibrated in country_params/Poland_calibration.mod)
 @#endif
-omega_h  = 0.319455;  // ESTIMATED (posterior mode)    // hours weight in production (same starting point)
+omega_h  = 0.319454;  // ESTIMATED (posterior mode)    // hours weight in production (same starting point)
 
 // ----- DIRECT LABOR FORCE → WAGE EFFECT (CALIBRATED) -----
 // Polish labor market shows stronger wage response to supply shifts
@@ -275,7 +275,7 @@ delta_k  = 0.025;   // quarterly depreciation ≈ 9.6% annual
                     // delta_k governs the cyclical capital law of motion only.
 rho_inv  = 0.85;    // investment persistence (same starting point)
 phi_inv_y = 0.3;    // investment sensitivity to output gap (structural floor)
-phi_inv_r = 0.135773;  // ESTIMATED (posterior mode)    // investment sensitivity to interest rate
+phi_inv_r = 0.135775;  // ESTIMATED (posterior mode)    // investment sensitivity to interest rate
 
 // =========================================================================
 // STEADY STATE LABOR MARKET (Poland, 2018-2023 averages)

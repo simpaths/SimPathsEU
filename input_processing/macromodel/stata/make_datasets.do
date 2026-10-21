@@ -12,6 +12,11 @@ if !inlist("$country", "Germany", "Poland", "Sweden", "Spain", "UK") {
 }
 
 // Current implementation status of this Stata pipeline.
+// When the UK block is added it follows the rule Poland and Sweden follow
+// ("Currency" in docs/MULTI_COUNTRY_WORKFLOW.md): wage aggregates D1/D11 in GBP,
+// the currency of the HICP that deflates them, never a current-rate euro series.
+// Add "UK" to non_euro below and fetch gdpr_nac, the national-currency twin of
+// gdpr, from which the wage section reads the fixed 2015 euro rate.
 if "$country" == "UK" {
     display as error "Country $country is on the project roadmap, but make_datasets.do currently defines dbnomics series codes only for Germany, Poland, Spain and Sweden."
     exit 1
@@ -48,6 +53,11 @@ else {
     display as error "Country $country not recognized. Please check the country name and series codes in the script."
     exit 1
 }
+
+// Countries with their own currency. Their series block takes the wage
+// aggregates in national currency and also fetches gdpr_nac; the wage section
+// converts the wages to euro at the fixed 2015 rate read off gdpr / gdpr_nac.
+local non_euro = inlist("$country", "Poland", "Sweden")
 
 // Use dbnomics to fetch data
 // To get the package, run in Stata:
@@ -194,14 +204,22 @@ else if "$country" == "Poland" {
         // =====================================================================
         "Eurostat"  , "namq_10_pe"  , "Q.THS_PER.SA.SAL_DC.PL"                  , "employees"                , "Employees, domestic concept (1000 persons, SCA)"                        \
         "Eurostat"  , "namq_10_pe"  , "Q.THS_PER.SA.SAL_NC.PL"                  , "employees_nat"            , "Employees, national concept (1000 persons, SCA)"                        \
-        "Eurostat"  , "namq_10_gdp" , "Q.CP_MEUR.SCA.D1.PL"                     , "labour_cost"              , "Compensation of employees D1 (million euro, current prices, SCA)"       \
-        "Eurostat"  , "namq_10_gdp" , "Q.CP_MEUR.SCA.D11.PL"                    , "gross_wages"              , "Wages and salaries – Poland D11 (million euro, current prices, SCA)"    \
+        // CURRENCY: wage aggregates in million PLN (CP_MNAC), the currency of the
+        // HICP that deflates them, as for Sweden. Until 2026-10 these were CP_MEUR,
+        // converted at the CURRENT exchange rate, so every PLN/EUR swing landed in
+        // the "real" wage (-28% in w_level between 2008q3 and 2009q1; issue #29).
+        // The wage section converts them to euro at the fixed 2015 rate.
+        "Eurostat"  , "namq_10_gdp" , "Q.CP_MNAC.SCA.D1.PL"                     , "labour_cost"              , "Compensation of employees D1 (million PLN, current prices, SCA)"        \
+        "Eurostat"  , "namq_10_gdp" , "Q.CP_MNAC.SCA.D11.PL"                    , "gross_wages"              , "Wages and salaries - Poland D11 (million PLN, current prices, SCA)"     \
         "Eurostat"  , "namq_10_a10_e", "Q.THS_HW.TOTAL.SCA.SAL_DC.PL"           , "hours_employees_total"    , "Hours worked by employees, domestic concept (1000 hours, SCA)"          \
 
         // =====================================================================
         // GDP AND EXPENDITURE COMPONENTS (chain-linked volumes)
         // =====================================================================
+        // Euro volumes, as for Sweden: CLV15_MEUR is CLV15_MNAC at the FIXED 2015
+        // rate. gdpr_nac is the PLN twin of gdpr; it only supplies that rate.
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.B1GQ.PL"                , "gdpr"                    , "GDP at market prices, chain linked (million EURO)"                       \
+        "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MNAC.SCA.B1GQ.PL"                , "gdpr_nac"                , "GDP at market prices, chain linked (million PLN)"                        \
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.P31_S14.PL"             , "cons_mn"                 , "Household final consumption, chain linked (million EURO)"                \
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.P51G.PL"                , "gfcf_mn"                 , "Gross fixed capital formation, chain linked (million EURO)"              \
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.P3_S13.PL"              , "gov_cons_mn"             , "Government final consumption, chain linked (million EURO)"               \
@@ -308,8 +326,8 @@ else if "$country" == "Sweden" {
         // pushes every SEK/EUR swing straight into the "real" wage. Measured on
         // this sample the implied conversion factor runs from 0.085 (2023q3) to
         // 0.119 (2012q3), and falls 15% within three quarters in 2008-09.
-        // So w_level is the one Swedish level series in SEK; see the note on the
-        // volumes below for why those can be euro.
+        // The wage section converts them to euro at the FIXED 2015 rate instead;
+        // see the note on the volumes below for why a fixed rate is harmless.
         "Eurostat"  , "namq_10_gdp" , "Q.CP_MNAC.SCA.D1.SE"                     , "labour_cost"              , "Compensation of employees D1 (million SEK, current prices, SCA)"        \
         "Eurostat"  , "namq_10_gdp" , "Q.CP_MNAC.SCA.D11.SE"                    , "gross_wages"              , "Wages and salaries - Sweden D11 (million SEK, current prices, SCA)"     \
         "Eurostat"  , "namq_10_a10_e", "Q.THS_HW.TOTAL.SCA.SAL_DC.SE"           , "hours_employees_total"    , "Hours worked by employees, domestic concept (1000 hours, SCA)"          \
@@ -320,8 +338,10 @@ else if "$country" == "Sweden" {
         // Chain-linked volumes in euro are safe for a floating currency:
         // CLV15_MEUR is CLV15_MNAC converted at the FIXED 2015 rate, i.e. a
         // constant rescaling (0.10691 for SEK) that drops out of every ratio and
-        // log deviation the Ramsey and DSGE layers use.
+        // log deviation the Ramsey and DSGE layers use. gdpr_nac is the SEK twin
+        // of gdpr; it only supplies that rate to the wage section.
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.B1GQ.SE"                , "gdpr"                    , "GDP at market prices, chain linked (million EURO)"                       \
+        "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MNAC.SCA.B1GQ.SE"                , "gdpr_nac"                , "GDP at market prices, chain linked (million SEK)"                        \
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.P31_S14.SE"             , "cons_mn"                 , "Household final consumption, chain linked (million EURO)"                \
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.P51G.SE"                , "gfcf_mn"                 , "Gross fixed capital formation, chain linked (million EURO)"              \
         "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.P3_S13.SE"              , "gov_cons_mn"             , "Government final consumption, chain linked (million EURO)"               \
@@ -459,34 +479,53 @@ label variable cons_cycle "Consumption (mn EUR) - HP-filtered (% deviation)"
 *===============================================================================
 
 
-local factor = cond("$country" == "Germany", 1000, 1) // Convert bn EUR to million EUR for Germany (DESTATIS labour_cost is bn EUR); Poland and Spain take Eurostat D1 already in million EUR, Sweden in million SEK
+local factor = cond("$country" == "Germany", 1000, 1) // Convert bn EUR to million EUR for Germany (DESTATIS labour_cost is bn EUR); the other countries take Eurostat D1/D11 already in millions
 
-// Currency of the WAGE aggregates only (labour_cost, gross_wages), for labels.
-// Everything else in this file is euro. The wage numerator has to be in the
-// currency of the price index that deflates it; see the Sweden series block.
-local wage_cur = cond("$country" == "Sweden", "SEK", "EUR")
+// CURRENCY OF THE WAGE AGGREGATES (labour_cost, gross_wages). They are fetched
+// in the currency of the HICP that deflates them: euro for Germany and Spain,
+// national currency for the non_euro countries (see the Poland and Sweden
+// series blocks). To keep w_level in euro like every other level column, the
+// national-currency wages are converted at the FIXED 2015 rate, the constant
+// Eurostat uses to turn CLV15_MNAC into CLV15_MEUR, read off the GDP pair rather
+// than typed in. A fixed rate is a constant rescaling, so the real wage carries
+// no exchange-rate movement, and every country's w_level is euro at 2015 rates.
+local eur_per_nac = 1
+if (`non_euro') {
+    gen double eur_per_nac = gdpr / gdpr_nac
+    quietly summarize eur_per_nac
+    // Rounding in the published millions moves the ratio by about 1e-6; anything
+    // larger means the two series are not a fixed-rate pair.
+    if (r(N) == 0) | (r(max) - r(min) > 1e-4 * r(mean)) {
+        display as error "gdpr / gdpr_nac is not constant for $country (N = `r(N)', min `r(min)', max `r(max)')."
+        display as error "gdpr must be CLV15_MEUR and gdpr_nac CLV15_MNAC of the same series; check the series block."
+        exit 9
+    }
+    local eur_per_nac = r(mean)
+    display as text "Wage aggregates converted to euro at the fixed 2015 rate: " %9.6f `eur_per_nac' " EUR per unit of national currency"
+    drop eur_per_nac gdpr_nac
+}
 *---------------------------------------------------------------------------
 * Method 1: Total Compensation per Employee (RECOMMENDED)
 *---------------------------------------------------------------------------
 * ETG005 = Total compensation of employees (Arbeitnehmerentgelt)
 * ERW061 = Number of employees (domestic concept)
 
-gen comp_per_employee_q = (labour_cost * `factor') / employees
-label variable comp_per_employee_q "Compensation per employee (thousands `wage_cur'/quarter)"
+gen comp_per_employee_q = (labour_cost * `factor' * `eur_per_nac') / employees
+label variable comp_per_employee_q "Compensation per employee (thousands EUR/quarter)"
 * Annualize (multiply by 4) for easier interpretation
 gen comp_per_employee_annual = comp_per_employee_q * 4
-label variable comp_per_employee_annual "Compensation per employee (thousands `wage_cur'/year)"
+label variable comp_per_employee_annual "Compensation per employee (thousands EUR/year)"
 
 *---------------------------------------------------------------------------
 * Method 2: Gross Wages per Employee (Alternative)
 *---------------------------------------------------------------------------
 * VST020 = Gross wages and salaries only (excludes social contributions)
 
-gen wage_per_employee_q = (gross_wages * `factor') / employees
-label variable wage_per_employee_q "Gross wages per employee (thousands `wage_cur'/quarter)"
+gen wage_per_employee_q = (gross_wages * `factor' * `eur_per_nac') / employees
+label variable wage_per_employee_q "Gross wages per employee (thousands EUR/quarter)"
 
 gen wage_per_employee_annual = wage_per_employee_q * 4
-label variable wage_per_employee_annual "Gross wages per employee (thousands `wage_cur'/year)"
+label variable wage_per_employee_annual "Gross wages per employee (thousands EUR/year)"
 
 *---------------------------------------------------------------------------
 * Convert to Real Terms (Deflate by HICP)
@@ -497,7 +536,7 @@ label variable real_comp_per_employee "Real compensation per employee (2020=100)
 
 * Real wages per employee (2020=100)
 gen real_wage_per_employee = (wage_per_employee_q / hicp_2020) * 100
-label variable real_wage_per_employee "Real wage per employee (in thousand `wage_cur'/quarter, 2020=100)"
+label variable real_wage_per_employee "Real wage per employee (in thousand EUR/quarter, 2020=100)"
 
 *---------------------------------------------------------------------------
 * HP-Filter Real Compensation (For DSGE Observable "w")
@@ -706,7 +745,7 @@ if `do_dsge_graphs' {
     else local interest_rate_string "Short-term interest rate (%)"
 
     local level_vars "y_level c_level inv_level g_level nx_level P R w_level n_level u_level L_level h_level"
-    local level_titles `" "Real GDP (mn EUR)" "Consumption (mn EUR)" "Investment (mn EUR)" "Gov. Cons. (mn EUR)" "Net Exports (mn EUR)" "HICP (2020=100)" "`interest_rate_string'" "Real wage per employee (in thousand `wage_cur'/quarter)" "Employees nat. (1000s)" "Unemp. Rate (%)" "Labor Force (1000s)" "Hours/Employee" "'
+    local level_titles `" "Real GDP (mn EUR)" "Consumption (mn EUR)" "Investment (mn EUR)" "Gov. Cons. (mn EUR)" "Net Exports (mn EUR)" "HICP (2020=100)" "`interest_rate_string'" "Real wage per employee (in thousand EUR/quarter)" "Employees nat. (1000s)" "Unemp. Rate (%)" "Labor Force (1000s)" "Hours/Employee" "'
     
     local cycle_vars "y c inv pi R w n u_rate L h"
     local cycle_titles `" "Output Gap (%)" "Consumption Gap (%)" "Investment Gap (%)" "Inflation (% Q-o-Q)" "Interest Rate (%)" "Wage Gap (%)" "Empl. Gap (%)" "Unemp. Gap (pp)" "LF Gap (%)" "Hours Gap (%)" "'
@@ -763,10 +802,11 @@ save data_for_dynare_${country}, replace
 //   R        = 3-month money-market rate (% p.a.), monthly average of the last
 //              month of the quarter: Euribor for Germany and Spain, WIBOR for
 //              Poland, the Swedish 3-month rate for Sweden (see series_codes_me)
-//   w_level  = real gross wages (D11) per employee, thousand per quarter at
-//              2020 prices. Euro, except Sweden (SEK). Poland's is euro at the
-//              CURRENT exchange rate (CP_MEUR), so it still carries PLN/EUR
-//              movements; nothing in the MATLAB pipeline reads this column.
+//   w_level  = real gross wages (D11) per employee, thousand EUR per quarter at
+//              2020 prices. Poland and Sweden deflate their national-currency
+//              D11 by their own HICP and convert at the FIXED 2015 rate, so the
+//              column carries no exchange-rate movement. Diagnostic only:
+//              nothing in the MATLAB pipeline reads it.
 //   n_level  = employees, national concept excl. self-employed (thousands)
 //   u_level  = ILO unemployment rate (%)
 //   L_level  = labor force, national concept (thousands)

@@ -169,15 +169,18 @@ Two rules, for any country with its own currency:
   that deflates them.** Eurostat converts `CP_MEUR` at the *current* exchange
   rate. `real_wage_per_employee` divides by the domestic HICP, so a euro
   numerator puts every exchange-rate swing into the "real" wage. For Sweden the
-  implied conversion factor runs from 0.085 to 0.119 over 2001-2025. Sweden's
-  D1/D11 are therefore `CP_MNAC`, and `w_level` is the one Swedish level series
-  in SEK.
+  implied conversion factor runs from 0.085 to 0.119 over 2001-2025; for Poland
+  `w_level` fell 28% between 2008q3 and 2009q1 while output per hour was flat
+  (issue #29). Poland's and Sweden's D1/D11 are therefore `CP_MNAC`.
 
-Poland does not follow the second rule yet: its D1/D11 are `CP_MEUR` against a
-PLN-denominated HICP, so `w_level` for Poland carries PLN/EUR movements. This is
-harmless for the model (`w` is not in `varobs`, and no MATLAB stage reads
-`w_level`), but the column is not a clean real wage. Switch it to `CP_MNAC` at
-the next Poland data refresh.
+The deflated national-currency wage is then converted to euro at the *fixed*
+2015 rate, the same constant Eurostat applies to the volumes, so `w_level` is
+euro at 2015 rates for every country, like the other level columns. The do-file
+reads that rate off the GDP pair `CLV15_MEUR / CLV15_MNAC` (`gdpr / gdpr_nac`)
+and stops if the ratio is not constant. A country with its own currency joins
+`non_euro` in `make_datasets.do` and fetches `gdpr_nac` next to `gdpr`; the UK
+block, when it is added, does the same. `w_level` is diagnostic only: `w` is not
+in `varobs` and no MATLAB stage reads the column.
 
 ### Interest rate
 

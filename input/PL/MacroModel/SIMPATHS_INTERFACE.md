@@ -1,6 +1,6 @@
 # DSGE Policy Function Export for SimPaths
 
-**Generated:** 20-Oct-2026 17:55:34
+**Generated:** 21-Oct-2026 14:35:31
 **Model:** Macromodel_Poland_frozen
 
 ## 1. State-Space Representation
