@@ -5,7 +5,8 @@ with the U.S. Census Bureau's X-13ARIMA-SEATS, called from Stata by `stata/x13_s
 It expects the Windows ASCII-output build here, as `x13as_ascii.exe`. The binary is not
 in git (`.gitignore`): the tracked `stata/hicp_q_sa_uk.dta` is the cached result, so
 X-13 is needed only to regenerate that file, the same status EViews has for
-`stata/hicp_q_sa.dta`.
+`stata/hicp_q_sa.dta`. X-13 is to replace EViews for every country (see "Next step"
+in `../../README.md`), which leaves it the only seasonal-adjustment tool in stage 1.
 
 | | |
 |---|---|

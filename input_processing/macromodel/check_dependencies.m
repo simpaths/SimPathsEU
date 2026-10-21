@@ -9,10 +9,11 @@ function report = check_dependencies(options)
 % on R2025b),
 % Statistics and Machine Learning Toolbox (the only
 % toolbox matlab.codetools.requiredFilesAndProducts reports for the entry
-% points; re-run it if the code changes), Dynare on the path (6.5 produced the
+% points; re-run it if the code changes), Dynare on the path (7.1 produced the
 % committed bundles), a JVM (sha256_file hashes through java.security).
 % Soft: a C compiler for Dynare's use_dll. The Windows Dynare installer ships
-% MinGW under <dynare>/mingw64, so a missing mex compiler is only a note there.
+% gcc under <dynare>/mingw64 (6.x) or <dynare>/ucrt64 (7.x), so a missing mex
+% compiler is only a note there.
 
     arguments
         options.strict (1,1) logical = false
@@ -45,13 +46,15 @@ function report = check_dependencies(options)
         catch
             report.dynare_version = 'unknown';
         end
-        if ~strcmp(report.dynare_version, '6.5')
-            report.notes{end+1} = sprintf('Dynare %s found; the committed bundles were produced with 6.5', report.dynare_version);
+        if ~strcmp(report.dynare_version, '7.1')
+            report.notes{end+1} = sprintf('Dynare %s found; the committed bundles were produced with 7.1', report.dynare_version);
         end
-        mingw = fullfile(fileparts(fileparts(dyn)), 'mingw64');
+        dynare_root = fileparts(fileparts(dyn));
+        bundled_gcc = exist(fullfile(dynare_root, 'mingw64'), 'dir') || ...
+                      exist(fullfile(dynare_root, 'ucrt64'), 'dir');
         cc = mex.getCompilerConfigurations('C', 'Selected');
-        if isempty(cc) && ~exist(mingw, 'dir')
-            report.notes{end+1} = ['no C compiler selected (mex -setup C) and no <dynare>/mingw64: ' ...
+        if isempty(cc) && ~bundled_gcc
+            report.notes{end+1} = ['no C compiler selected (mex -setup C) and no <dynare>/mingw64 or <dynare>/ucrt64: ' ...
                                    'estimation with use_dll will fail; run dynare without use_dll'];
         end
     end

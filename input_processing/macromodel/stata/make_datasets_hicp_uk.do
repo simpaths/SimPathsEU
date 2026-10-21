@@ -30,6 +30,11 @@
 // (regressing quarterly inflation on quarter dummies gives p > 0.9 for both, over
 // 2000q1-2020q3 and over 2010q1-2020q3), and X-13's own test finds none either.
 //
+// NEXT STEP. This path is to replace EViews for every country: run the other
+// countries' HICP through the same x13_seats call and spec, write hicp_q_sa.dta from
+// it, and retire make_datasets_hicp_tramoseats.prg and the EViews call in
+// make_datasets.do. See "Next step" in ../README.md.
+//
 // SPAN. 1996m1-2025m12, the span of the EViews workfile the other countries are
 // adjusted on, so a new ONS release does not move the fit unless the span is moved
 // deliberately.

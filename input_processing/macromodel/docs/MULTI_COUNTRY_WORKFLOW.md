@@ -184,6 +184,10 @@ pair like Poland's and Sweden's, and hours per employee must lie in [200, 700] p
 quarter for every country. Before it was replaced, ONS `D7BT` equalled Eurostat's
 UK HICP in all 299 months of 1996m1-2020m11.
 
+The two seasonal adjustments in the price-level row are an interim state. The next
+step is to adjust every country's HICP with X-13 from Stata, as the UK's already is,
+and drop EViews; the README's "Next step" section lists what that involves.
+
 The re-referencing is not cosmetic. A chain-linked component is valued at its
 reference year's relative prices, so the base-year shares `calibrate_growth_model`
 reads (C/Y, I/Y, NX/Y) depend on the reference year, not only on a currency factor.
@@ -237,7 +241,8 @@ Extend the Stata script `make_datasets.do` with a country branch. For each count
 1. Add a `series_codes_q` block with that country's dbnomics provider/dataset/series IDs
 2. Map them onto the internal variable names the rename block expects
 3. Set `startdate`/`enddate`
-4. Add the HICP series to the seasonal-adjustment program if it is not already there.
+4. Add the HICP series to the seasonal-adjustment program if it is not already there
+   (the EViews `make_datasets_hicp_tramoseats.prg` until every country moves to X-13).
    A country Eurostat no longer covers needs its own price-level file, as the UK's
    `hicp_q_sa_uk.dta` from `make_datasets_hicp_uk.do`, selected through `hicp_file`
 5. Add the SimPaths population workbook as `input/{CC}/align_popProjections.xlsx`.

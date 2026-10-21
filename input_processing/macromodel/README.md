@@ -17,7 +17,7 @@ re-estimation, a model change, or for a new country.
 
 | Stage | Tool | Reads | Writes | Who runs it |
 |---|---|---|---|---|
-| 1 Data | Stata 19 + `dbnomics`; EViews 13 only for HICP seasonal adjustment (X-13ARIMA-SEATS for the UK's CPI) | Eurostat/ECB/OECD via DBnomics (ONS/OECD for the UK); `stata/hicp_q_sa.dta` (`stata/hicp_q_sa_uk.dta` for the UK) | `data/data_for_dynare_levels_{Country}.csv`, `data/PROVENANCE_{Country}.txt` | Whoever refreshes the data vintage. The CSVs are tracked, so stages 2 and 3 run without Stata. |
+| 1 Data | Stata 19 + `dbnomics`; EViews 13 only for HICP seasonal adjustment (X-13ARIMA-SEATS for the UK's CPI; X-13 for every country is the next step) | Eurostat/ECB/OECD via DBnomics (ONS/OECD for the UK); `stata/hicp_q_sa.dta` (`stata/hicp_q_sa_uk.dta` for the UK) | `data/data_for_dynare_levels_{Country}.csv`, `data/PROVENANCE_{Country}.txt` | Whoever refreshes the data vintage. The CSVs are tracked, so stages 2 and 3 run without Stata. |
 | 2 Trend | MATLAB + Dynare | `data/*.csv`, `country_params/`, `../../input/{CC}/align_popProjections.xlsx` | `output/` (ignored), Ramsey files in the bundle, `data/data_for_dynare_{Country}.csv` (the Dynare datafile) | Anyone rebuilding a bundle |
 | 3 Cycle | MATLAB + Dynare | the datafile, `Macromodel_{Country}.mod` | `Macromodel_{Country}_frozen.mod` (tracked), policy matrices in the bundle | Anyone re-estimating |
 
@@ -25,8 +25,8 @@ The bundle lands in `../../input/{CC}/MacroModel/` directly. There is no copy st
 
 ## Dependencies
 
-Exact versions used for the committed Poland bundle; newer patch releases should
-work, nothing older has been tried.
+Exact versions used for the committed bundles (Poland and UK); newer patch releases
+should work, nothing older has been tried.
 
 - **MATLAB R2025b** with the **Statistics and Machine Learning Toolbox**. That is the
   complete product list reported by `matlab.codetools.requiredFilesAndProducts` on
@@ -35,16 +35,18 @@ work, nothing older has been tried.
   blocks alone would need R2019b). `check_dependencies`
   reports an R2019b as too old; a release before R2019b cannot parse the `arguments`
   blocks and stops with a syntax error before any check runs.
-- **Dynare 6.5**, with `<dynare>/matlab` on the MATLAB path. Estimation runs
-  `dynare ... use_dll`, which needs a C compiler; the Windows Dynare installer
-  bundles MinGW for this. On Linux/macOS use the system compiler (`mex -setup C`).
-  The UK bundle was estimated with Dynare 7.1 and MATLAB R2025b. A `matlab -batch`
-  run sees Dynare only if it was saved to the path or a `startup.m` adds it; otherwise
-  add it in the command (`addpath('<dynare>/matlab'); ...`) or set `MATLABPATH` to it.
+- **Dynare 7.1**, with `<dynare>/matlab` on the MATLAB path. Both committed bundles
+  were estimated with it; Poland's moved from 6.5 to 7.1 in #29, which shifted two
+  posterior modes in the sixth digit. Estimation runs `dynare ... use_dll`, which
+  needs a C compiler; the Windows Dynare installer bundles MinGW for this. On
+  Linux/macOS use the system compiler (`mex -setup C`). A `matlab -batch` run sees
+  Dynare only if it was saved to the path or a `startup.m` adds it; otherwise add it
+  in the command (`addpath('<dynare>/matlab'); ...`) or set `MATLABPATH` to it.
 - **Stata 19** with `ssc install dbnomics`, stage 1 only.
 - **EViews 13**, stage 1 only, only when `do_HICP_seasonal_adjustment = 1` in
   `stata/make_datasets.do`. The method is TRAMO/SEATS. The tracked
-  `stata/hicp_q_sa.dta` is the cached result, so EViews is optional.
+  `stata/hicp_q_sa.dta` is the cached result, so EViews is optional. EViews is to be
+  replaced by X-13 for every country; see "Next step" below.
 - **X-13ARIMA-SEATS 1.1 build 62** (U.S. Census Bureau), stage 1 for the UK only,
   only when `do_HICP_seasonal_adjustment = 1`: Eurostat's UK HICP stops at 2020m11,
   so `stata/make_datasets_hicp_uk.do` adjusts the ONS CPI instead, through
@@ -204,6 +206,34 @@ StataMP-64.exe /e do make_datasets.do UK
 | Spain | ES | yes | no | no `input/ES/align_popProjections.xlsx` yet; employment is extrapolated mechanically, bundle refused |
 | Sweden | SE | yes | no | same as Spain, and SimPathsEU has no Sweden inputs |
 | UK | UK | yes | yes | shipped, but SimPathsEU cannot run the UK yet (`Country` has no UK), so no simulation reads the bundle; `CommittedBundlesTest` and `BundleProvenanceTest` check it like Poland's. Data from the ONS and the OECD, as Eurostat has none after Brexit (`docs/MULTI_COUNTRY_WORKFLOW.md`) |
+
+## Next step: X-13 instead of EViews for every country
+
+Stage 1 seasonally adjusts the price level two ways today: EViews' TRAMO/SEATS for
+the countries in `stata/hicp_q_sa.dta`, and X-13ARIMA-SEATS from Stata for the UK
+(`stata/make_datasets_hicp_uk.do` through `stata/x13_seats.ado`). The next step is to
+move every country to X-13, so that all countries share one method and stage 1 no
+longer needs EViews:
+
+1. Run every country's HICP (the Eurostat series `stata/make_datasets_hicp.do`
+   fetches) through the same `x13_seats` call and spec the UK uses, and write
+   `stata/hicp_q_sa.dta` from it, recording the method in its `sa_method`
+   characteristic as `hicp_q_sa_uk.dta` does.
+2. Remove the EViews call from `stata/make_datasets.do` and retire
+   `stata/make_datasets_hicp_tramoseats.prg`; X-13 then replaces EViews under
+   Dependencies.
+3. Every country's datafile changes, so re-run `run_full_workflow('<Country>')` with
+   estimation for each committed bundle (Poland; the UK's only if its spec changes);
+   `BundleProvenanceTest` fails until then. If `RamseyTrendModelTest` then fails
+   parity, refresh the fixtures with `refresh_java_parity_fixtures('Poland')`.
+   Germany, Spain and Sweden take the new series at their next export.
+
+The effect should be small: Q-o-Q annualised inflation from X-13 and from the
+current EViews series differs by an RMSE of 0.001 pp (Sweden) to 0.26 pp (Spain)
+over the estimation samples (measured 2026-10; see the header of
+`stata/make_datasets_hicp_uk.do`). Once every country is on X-13, revisit the UK's
+larger measurement error on inflation in `country_params/UK_estimation.mod`, which
+allows for the gap between the two methods.
 
 ## Adding a country
 
