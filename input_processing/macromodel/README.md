@@ -6,7 +6,8 @@ the real wage, and an estimated New-Keynesian DSGE model for cyclical deviations
 around it. SimPaths applies `w_total = w_trend + w_cycle` to wages and, once per
 simulated year, feeds its realized employment and hours back into a re-solve of
 the Ramsey path. Nothing here affects a SimPaths run unless `mm_macroModel` is
-switched on in the YAML config (default `off`). Poland is the shipped country.
+switched on in the YAML config (default `off`). Poland and the UK ship bundles;
+SimPathsEU itself runs Poland, not yet the UK (see "Country status").
 
 The committed bundle is enough to run SimPaths with the macro layer on. You only
 need the toolchains below to **rebuild** a bundle: after a data refresh, a
@@ -16,7 +17,7 @@ re-estimation, a model change, or for a new country.
 
 | Stage | Tool | Reads | Writes | Who runs it |
 |---|---|---|---|---|
-| 1 Data | Stata 19 + `dbnomics`; EViews 13 only for HICP seasonal adjustment | Eurostat/ECB/OECD via DBnomics; `stata/hicp_q_sa.dta` | `data/data_for_dynare_levels_{Country}.csv`, `data/PROVENANCE_{Country}.txt` | Whoever refreshes the data vintage. The CSVs are tracked, so stages 2 and 3 run without Stata. |
+| 1 Data | Stata 19 + `dbnomics`; EViews 13 only for HICP seasonal adjustment (X-13ARIMA-SEATS for the UK's CPI) | Eurostat/ECB/OECD via DBnomics (ONS/OECD for the UK); `stata/hicp_q_sa.dta` (`stata/hicp_q_sa_uk.dta` for the UK) | `data/data_for_dynare_levels_{Country}.csv`, `data/PROVENANCE_{Country}.txt` | Whoever refreshes the data vintage. The CSVs are tracked, so stages 2 and 3 run without Stata. |
 | 2 Trend | MATLAB + Dynare | `data/*.csv`, `country_params/`, `../../input/{CC}/align_popProjections.xlsx` | `output/` (ignored), Ramsey files in the bundle, `data/data_for_dynare_{Country}.csv` (the Dynare datafile) | Anyone rebuilding a bundle |
 | 3 Cycle | MATLAB + Dynare | the datafile, `Macromodel_{Country}.mod` | `Macromodel_{Country}_frozen.mod` (tracked), policy matrices in the bundle | Anyone re-estimating |
 
@@ -37,10 +38,19 @@ work, nothing older has been tried.
 - **Dynare 6.5**, with `<dynare>/matlab` on the MATLAB path. Estimation runs
   `dynare ... use_dll`, which needs a C compiler; the Windows Dynare installer
   bundles MinGW for this. On Linux/macOS use the system compiler (`mex -setup C`).
+  The UK bundle was estimated with Dynare 7.1 and MATLAB R2025b. A `matlab -batch`
+  run sees Dynare only if it was saved to the path or a `startup.m` adds it; otherwise
+  add it in the command (`addpath('<dynare>/matlab'); ...`) or set `MATLABPATH` to it.
 - **Stata 19** with `ssc install dbnomics`, stage 1 only.
 - **EViews 13**, stage 1 only, only when `do_HICP_seasonal_adjustment = 1` in
   `stata/make_datasets.do`. The method is TRAMO/SEATS. The tracked
   `stata/hicp_q_sa.dta` is the cached result, so EViews is optional.
+- **X-13ARIMA-SEATS 1.1 build 62** (U.S. Census Bureau), stage 1 for the UK only,
+  only when `do_HICP_seasonal_adjustment = 1`: Eurostat's UK HICP stops at 2020m11,
+  so `stata/make_datasets_hicp_uk.do` adjusts the ONS CPI instead, through
+  `stata/x13_seats.ado`. The binary is not tracked; `tools/x13as/README.md` says
+  where to get it and its SHA-256. The tracked `stata/hicp_q_sa_uk.dta` is the
+  cached result, so X-13 is optional too.
 - **Java 19 and Maven**, for the bundle tests (`BundleProvenanceTest`,
   `RamseyTrendModelTest`, `DSGEBundleContractTest`), already required by SimPaths.
 
@@ -89,11 +99,13 @@ matlab -batch "cd('<repo>\input_processing\macromodel'); run_full_workflow('Pola
 ```
 
 Stage 1, when the data vintage should move (Stata's working directory must be
-`stata/`; set `global country` at the top of the do-file):
+`stata/`; pass the country as an argument, or set `global country` at the top of
+the do-file; the argument leaves the file, and so the `script_checksum` it stamps
+into `data/PROVENANCE_{Country}.txt`, unchanged):
 
 ```powershell
 cd input_processing\macromodel\stata
-StataMP-64.exe /e do make_datasets.do
+StataMP-64.exe /e do make_datasets.do UK
 ```
 
 ## Verifying it
@@ -127,6 +139,9 @@ StataMP-64.exe /e do make_datasets.do
   should run under PowerShell 7 (`pwsh -NoProfile -File input_processing/macromodel/smoke_test.ps1
   -MatlabExe <path to matlab>`); that has not been tried.
 - `mvn -q test -Dtest='simpaths.model.macro.*Test'` runs the Java side.
+  `CommittedBundlesTest` loads every committed bundle (Poland's and the UK's), replays
+  each exported impulse response through the Java DSGE at `1e-8` and solves its Ramsey
+  forward projection; the other DSGE and Ramsey tests use Poland's.
   `BundleProvenanceTest` recomputes the SHA-256 hashes in
   `input/PL/MacroModel/BUNDLE_PROVENANCE.txt` from the tracked frozen model, the
   Dynare datafile and the Stata levels CSV, the growth-params template,
@@ -188,6 +203,7 @@ StataMP-64.exe /e do make_datasets.do
 | Germany | DE | yes | no | not exported into this repository; the last export predates the units contract (`simpaths_input_scale`), so re-export before any DE run |
 | Spain | ES | yes | no | no `input/ES/align_popProjections.xlsx` yet; employment is extrapolated mechanically, bundle refused |
 | Sweden | SE | yes | no | same as Spain, and SimPathsEU has no Sweden inputs |
+| UK | UK | yes | yes | shipped, but SimPathsEU cannot run the UK yet (`Country` has no UK), so no simulation reads the bundle; `CommittedBundlesTest` and `BundleProvenanceTest` check it like Poland's. Data from the ONS and the OECD, as Eurostat has none after Brexit (`docs/MULTI_COUNTRY_WORKFLOW.md`) |
 
 ## Adding a country
 

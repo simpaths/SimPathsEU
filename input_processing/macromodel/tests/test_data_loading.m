@@ -108,7 +108,7 @@ function test_data_loading()
     [n_pass, n_fail] = check(n_lead == 0 && n_trail == 2, ...
         sprintf('a 2-quarter missing tail is detected (found %d)', n_trail), n_pass, n_fail);
 
-    countries = {'Germany', 'Poland', 'Spain', 'Sweden'};
+    countries = {'Germany', 'Poland', 'Spain', 'Sweden', 'UK'};
     for i = 1:numel(countries)
         level_file = artifact_path('data', sprintf('data_for_dynare_levels_%s.csv', countries{i}));
         if ~exist(level_file, 'file')

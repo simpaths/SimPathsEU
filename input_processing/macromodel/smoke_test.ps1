@@ -46,7 +46,7 @@ if (-not $MatlabExe) {
     if (-not $cmd) { throw 'matlab is not on PATH; pass -MatlabExe <path to matlab.exe>' }
     $MatlabExe = $cmd.Source
 }
-$codes = @{ Poland = 'PL'; Germany = 'DE'; Spain = 'ES'; Sweden = 'SE' }
+$codes = @{ Poland = 'PL'; Germany = 'DE'; Spain = 'ES'; Sweden = 'SE'; UK = 'UK' }
 if (-not $codes.ContainsKey($Country)) { throw "unknown country '$Country'; one of: $($codes.Keys -join ', ')" }
 $cc = $codes[$Country]
 $bundle = Join-Path (Join-Path (Join-Path $root 'input') $cc) 'MacroModel'

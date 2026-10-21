@@ -27,7 +27,7 @@ function test_calibration_identities()
     n_pass = 0;
     n_fail = 0;
 
-    countries = {'Germany', 'Poland', 'Spain', 'Sweden'};
+    countries = {'Germany', 'Poland', 'Spain', 'Sweden', 'UK'};
 
     %% ================================================================
     %% TEST 1: chi_u equals chi_L - chi_n in every country file

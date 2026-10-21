@@ -73,7 +73,9 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     end
     
     fprintf('Reading population projections from:\n  %s\n', simpaths_pop_file);
-    
+    pop_sheet = projection_sheet(simpaths_pop_file, country_config.simpaths_code);
+    fprintf('  Sheet: %s\n', pop_sheet);
+
     % Read the Excel file
     % Format: Gender | Region | Age | 2011 | 2012 | ... | 2060
     %
@@ -87,11 +89,11 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     % --- Step 1: Read the actual header values from the Excel file ---
     try
         % R2019a+: readcell reads everything as-is
-        header_raw = readcell(simpaths_pop_file, 'Sheet', 'Population_projections', ...
+        header_raw = readcell(simpaths_pop_file, 'Sheet', pop_sheet, ...
                               'Range', '1:1');
     catch
         % Older MATLAB: use xlsread
-        [~, header_raw, ~] = xlsread(simpaths_pop_file, 'Population_projections', '1:1');
+        [~, header_raw, ~] = xlsread(simpaths_pop_file, pop_sheet, '1:1');
     end
     
     % Flatten and convert header values to strings for display/matching
@@ -114,7 +116,7 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
             strjoin(header_str(1:min(6, n_cols)), ', '));
     
     % --- Step 2: Read the data (skip header row) ---
-    opts = detectImportOptions(simpaths_pop_file, 'Sheet', 'Population_projections');
+    opts = detectImportOptions(simpaths_pop_file, 'Sheet', pop_sheet);
     opts.DataRange = 'A2';  % start from row 2
     raw = readtable(simpaths_pop_file, opts);
     var_names = raw.Properties.VariableNames;  % these may be Var1, Var2, ...
@@ -445,4 +447,21 @@ function build_population_projection(dsge_country, simpaths_pop_file, options)
     end
 
     fprintf('\n✓ Population projection complete\n\n');
+end
+
+
+function sheet = projection_sheet(xlsx_file, simpaths_code)
+% The sheet holding Gender | Region | Age | <years>. The SimPathsEU workbooks call it
+% Population_projections; the SimPaths UK workbook names it by the country code (UK).
+% Fails, naming the sheets it found, rather than guessing at another one.
+    sheets = sheetnames(xlsx_file);
+    for candidate = {'Population_projections', simpaths_code}
+        if any(strcmp(sheets, candidate{1}))
+            sheet = candidate{1};
+            return;
+        end
+    end
+    error('build_population_projection:noProjectionSheet', ...
+          'No sheet ''Population_projections'' or ''%s'' in %s; its sheets are: %s.', ...
+          simpaths_code, xlsx_file, strjoin(cellstr(sheets), ', '));
 end

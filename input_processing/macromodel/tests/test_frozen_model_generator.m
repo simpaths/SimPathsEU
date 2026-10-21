@@ -115,7 +115,7 @@ function test_frozen_model_generator()
     fprintf('\nTEST 6: every frozen model records its own country''s persistence\n');
     % End-to-end form of TEST 5, on the generated files themselves: the
     % @#else (estimation-mode) branch must equal the calibration file.
-    countries = {'Germany', 'Poland', 'Spain', 'Sweden'};
+    countries = {'Germany', 'Poland', 'Spain', 'Sweden', 'UK'};
     for i = 1:numel(countries)
         country = countries{i};
         frozen_file = sprintf('Macromodel_%s_frozen.mod', country);

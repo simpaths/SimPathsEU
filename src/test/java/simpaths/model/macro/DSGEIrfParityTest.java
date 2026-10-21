@@ -90,11 +90,18 @@ public class DSGEIrfParityTest {
      */
     private void assertIrfMatches(String shockName, boolean sigmaUnits) throws IOException {
         assumeBundleAvailable();
-        Path irfFile = Paths.get(MODEL_PATH, "irfs_" + shockName + ".csv");
-        Assumptions.assumeTrue(Files.exists(irfFile), "no exported IRF for " + shockName);
+        Assumptions.assumeTrue(Files.exists(Paths.get(MODEL_PATH, "irfs_" + shockName + ".csv")),
+                "no exported IRF for " + shockName);
+        assertIrfMatches(MODEL_PATH, shockName, sigmaUnits);
+    }
+
+    /** The replay itself, for any bundle folder; CommittedBundlesTest runs it on every committed bundle. */
+    static void assertIrfMatches(String modelPath, String shockName, boolean sigmaUnits) throws IOException {
+        Path irfFile = Paths.get(modelPath, "irfs_" + shockName + ".csv");
+        assertTrue(Files.exists(irfFile), "no exported IRF for " + shockName + " in " + modelPath);
 
         DSGEModel model = new DSGEModel();
-        model.loadFromDirectory(MODEL_PATH);
+        model.loadFromDirectory(modelPath);
         model.setLogEnabled(false);
         model.resetToSteadyState();
 
@@ -130,8 +137,8 @@ public class DSGEIrfParityTest {
                 double want = expected.rows().get(period)[v];
                 double scale = Math.max(1.0, Math.abs(want));
                 assertEquals(want, actual, TOL * scale, String.format(
-                        "%s IRF, variable %s, period %d: MATLAB=%.12g Java=%.12g",
-                        shockName, var, period, want, actual));
+                        "%s: %s IRF, variable %s, period %d: MATLAB=%.12g Java=%.12g",
+                        modelPath, shockName, var, period, want, actual));
             }
         }
         assertFalse(compared.isEmpty(),

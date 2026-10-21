@@ -1,24 +1,19 @@
 // Switches:
 global country Poland // Roadmap options: "Germany", "Poland", "Sweden", "Spain", "UK"
 
-local do_HICP_seasonal_adjustment = 0 // Set to 1 to create datasaet with HICP variables that are seasonally adjusted in EViews
+// The country can also be passed as the first argument, which overrides the line above
+// without editing this file, so script_checksum in PROVENANCE_{country}.txt is the
+// checksum of the file as committed:  StataSE-64.exe /e do make_datasets.do UK
+args country_arg
+if `"`country_arg'"' != "" global country `country_arg'
+
+local do_HICP_seasonal_adjustment = 0 // Set to 1 to create datasaet with HICP variables that are seasonally adjusted in EViews (via X-13 for the UK)
 local fetch_vars = 1     // Set to 1 to fetch data from dbnomics; set to 0 to skip fetching and use existing dataset
 local do_dsge_graphs = 1 // Set to 1 to enable DSGE model variable graphs
 
 // Validate country choice early so unsupported cases fail before any data work starts.
 if !inlist("$country", "Germany", "Poland", "Sweden", "Spain", "UK") {
     display as error "Country $country not recognized. Valid project countries: Germany, Poland, Sweden, Spain, UK."
-    exit 1
-}
-
-// Current implementation status of this Stata pipeline.
-// When the UK block is added it follows the rule Poland and Sweden follow
-// ("Currency" in docs/MULTI_COUNTRY_WORKFLOW.md): wage aggregates D1/D11 in GBP,
-// the currency of the HICP that deflates them, never a current-rate euro series.
-// Add "UK" to non_euro below and fetch gdpr_nac, the national-currency twin of
-// gdpr, from which the wage section reads the fixed 2015 euro rate.
-if "$country" == "UK" {
-    display as error "Country $country is on the project roadmap, but make_datasets.do currently defines dbnomics series codes only for Germany, Poland, Spain and Sweden."
     exit 1
 }
 
@@ -49,15 +44,31 @@ else if "$country" == "Sweden" { // bounded by OECD LFS availability, not policy
     local startdate  2001q1
     local enddate  2025q1
 }
+else if "$country" == "UK" { // bounded by OECD LFS availability, as for Spain and Sweden
+    // The OECD LFS stocks (pop_active, unemp_pers_ilo) begin 1999q2; the ONS national
+    // accounts run from 1955q1, the OECD employment tables from 1995q1 and the 3-month
+    // rate from 1986. 2000q1 leaves three quarters of LFS burn-in and matches the German
+    // and Spanish samples. The whole sample is one monetary regime: the Bank of England
+    // has set rates independently since May 1997. Its target moved from RPIX 2.5% to
+    // CPI 2% in December 2003, a change of index rather than of stance.
+    local startdate  2000q1
+    local enddate  2025q1
+}
 else {
     display as error "Country $country not recognized. Please check the country name and series codes in the script."
     exit 1
 }
 
 // Countries with their own currency. Their series block takes the wage
-// aggregates in national currency and also fetches gdpr_nac; the wage section
-// converts the wages to euro at the fixed 2015 rate read off gdpr / gdpr_nac.
-local non_euro = inlist("$country", "Poland", "Sweden")
+// aggregates in national currency and also fetches gdpr_nac; the currency section
+// below converts them to euro at the fixed 2015 rate read off gdpr / gdpr_nac.
+local non_euro = inlist("$country", "Poland", "Sweden", "UK")
+
+// The UK's price level comes from its own file. Eurostat's UK HICP stops at 2020m11
+// (Brexit), so the UK takes the ONS CPI, which is the UK's HICP, seasonally adjusted
+// by make_datasets_hicp_uk.do with X-13ARIMA-SEATS. The UK column of hicp_q_sa.dta is
+// the truncated Eurostat series and is not read.
+local hicp_file = cond("$country" == "UK", "hicp_q_sa_uk.dta", "hicp_q_sa.dta")
 
 // Use dbnomics to fetch data
 // To get the package, run in Stata:
@@ -71,10 +82,10 @@ local non_euro = inlist("$country", "Poland", "Sweden")
 // working directory. This also catches the common case where pwd is not the
 // folder containing this script and its companion files.
 if !(`do_HICP_seasonal_adjustment') {
-    if !fileexists("hicp_q_sa.dta") {
-        display as error "Required file hicp_q_sa.dta not found in the current working directory: `c(pwd)'"
-        display as error "make_datasets.do expects Stata's pwd to point to the folder containing this script and hicp_q_sa.dta."
-        display as error "Either set do_HICP_seasonal_adjustment = 1 to regenerate the file via EViews, or start Stata in the make_datasets.do folder with an existing hicp_q_sa.dta."
+    if !fileexists("`hicp_file'") {
+        display as error "Required file `hicp_file' not found in the current working directory: `c(pwd)'"
+        display as error "make_datasets.do expects Stata's pwd to point to the folder containing this script and `hicp_file'."
+        display as error "Either set do_HICP_seasonal_adjustment = 1 to regenerate the file (via EViews; via X-13 for the UK), or start Stata in the make_datasets.do folder with an existing `hicp_file'."
         exit 1
     }
 }
@@ -98,7 +109,14 @@ if ("`datadir_ok'" != "1") {
 // path is wrong or the run aborts, so a failed regeneration used to fall straight
 // through to whatever stale hicp_q_sa.dta happened to be lying around. Moving the
 // old file aside first makes a non-run detectable: the file simply will not be there.
-if (`do_HICP_seasonal_adjustment') {
+//
+// The UK does not go through EViews: make_datasets_hicp_uk.do runs X-13 from Stata, and
+// x13_seats exits with an error when X-13 fails, so a failed regeneration stops here
+// instead of falling through to a stale hicp_q_sa_uk.dta.
+if (`do_HICP_seasonal_adjustment') & ("$country" == "UK") {
+    do make_datasets_hicp_uk.do
+}
+else if (`do_HICP_seasonal_adjustment') {
     do make_datasets_hicp.do
 
     local pwd = `"`c(pwd)'"'
@@ -369,6 +387,97 @@ else if "$country" == "Sweden" {
     end
 }
 
+else if "$country" == "UK" {
+    // NO EUROSTAT SERIES FOR THE DATA. Eurostat stopped publishing UK data after Brexit:
+    // namq_10_gdp and namq_10_pe end at 2020q3, the HICP at 2020m11 and irt_st_m at
+    // 2024m3. Each Eurostat series the other countries use is replaced by the same
+    // concept from the ONS or the OECD, for the whole sample, with no splicing. The one
+    // Eurostat pair fetched below supplies the fixed 2015 euro rate and nothing else.
+    mata:
+    series_codes_q = (
+    //  Provider    , Dataset       , Series ID                                 , Internal var name         , Variable label
+
+        // =====================================================================
+        // LABOUR MARKET: LFS-based stocks (labour force, unemployed)
+        // =====================================================================
+        // Same OECD source and concept as the other countries. These bind the sample
+        // start: they begin 1999q2.
+        "OECD"      , "DSD_LFS@DF_IALFS_LF_Q" , "GBR.LF.PS._Z.Y._T.Y15T74._Z.Q" , "pop_active"              , "Labour force (ILO, SA, 15-74, 1000 persons)"                             \
+        "OECD"      , "DSD_LFS@DF_IALFS_UNE_Q", "GBR.UNE.PS._Z.Y._T.Y15T74._Z.Q", "unemp_pers_ilo"          , "Unemployed persons (ILO, SA, 15-74, 1000 persons)"                       \
+
+        // =====================================================================
+        // LABOUR MARKET: National accounts employment & hours
+        // =====================================================================
+        // OECD QNA tables 0110 (national concept) and 0111 (domestic concept) are the
+        // same SNA transmission tables Eurostat publishes as namq_10_pe and
+        // namq_10_a10_e. UNITS: employees in thousands, as Eurostat, but hours in
+        // MILLIONS, not thousands; hours_employees_pp below rescales.
+        "OECD"      , "DSD_NAMAIN1@DF_QNA_BY_ACTIVITY_EMPDC", "Q.Y.GBR.S1.S1.SAL._Z._T._Z.PS._Z.N.T0111", "employees"             , "Employees, domestic concept (1000 persons, SCA)"                  \
+        "OECD"      , "DSD_NAMAIN1@DF_QNA_POP_EMPNC"        , "Q.Y.GBR.S1.S1.SAL._Z._T._Z.PS._Z.N.T0110", "employees_nat"         , "Employees, national concept (1000 persons, SCA)"                  \
+        "OECD"      , "DSD_NAMAIN1@DF_QNA_BY_ACTIVITY_EMPDC", "Q.Y.GBR.S1.S1.SAL._Z._T._Z.H._Z.N.T0111" , "hours_employees_total" , "Hours worked by employees, domestic concept (million hours, SCA)" \
+        // CURRENCY: the wage aggregates are GBP, the currency of the CPI that deflates
+        // them, as for Poland and Sweden; the currency section converts them to euro at
+        // the fixed 2015 rate. DTWM and DTWL are the S.1 USES side, i.e. paid by
+        // resident employers: the domestic concept of Eurostat's D1 and D11, and the
+        // same concept as the employees denominator above. (ROYJ, the D11 series ONS
+        // headlines, is RECEIVED by households, a national concept.)
+        "ONS"       , "QNA"         , "DTWM.Q"                                  , "labour_cost"              , "Compensation of employees D1, S.1 uses (million GBP, current prices, SA)" \
+        "ONS"       , "QNA"         , "DTWL.Q"                                  , "gross_wages"              , "Wages and salaries D11, S.1 uses (million GBP, current prices, SA)"     \
+
+        // =====================================================================
+        // GDP AND EXPENDITURE COMPONENTS (chained volume measures)
+        // =====================================================================
+        // ONS chained volume measures (_cvm), SA, million GBP at the reference year of
+        // the ONS vintage, each with its current-price twin (_cp). The currency section
+        // re-references each volume to 2015 with its own 2015 current-price total and
+        // converts it to euro at the fixed 2015 rate, which is how Eurostat builds the
+        // CLV15_MEUR volumes of every other country. The re-referencing matters:
+        // chain-linked components are valued at the reference year's relative prices,
+        // so the base-year shares calibrate_growth_model reads (C/Y, I/Y, NX/Y) depend
+        // on the reference year, not only on a currency factor. ONS rather than OECD
+        // QNA: ONS is the primary source and the more recent vintage. ABJR/ABJQ are
+        // households only (S.14, national concept), Eurostat's P31_S14; NPQT/NPQS are
+        // total GFCF (P51G); NMRY/NMRP general government (P3_S13); IKBK/IKBH and
+        // IKBL/IKBI total exports (P6) and imports (P7).
+        "ONS"       , "QNA"         , "ABMI.Q"                                  , "gdpr_cvm"                , "GDP at market prices, chained volume (million GBP)"                      \
+        "ONS"       , "QNA"         , "YBHA.Q"                                  , "gdpr_cp"                 , "GDP at market prices, current prices (million GBP)"                      \
+        "ONS"       , "QNA"         , "ABJR.Q"                                  , "cons_mn_cvm"             , "Household final consumption, chained volume (million GBP)"               \
+        "ONS"       , "QNA"         , "ABJQ.Q"                                  , "cons_mn_cp"              , "Household final consumption, current prices (million GBP)"               \
+        "ONS"       , "QNA"         , "NPQT.Q"                                  , "gfcf_mn_cvm"             , "Gross fixed capital formation, chained volume (million GBP)"             \
+        "ONS"       , "QNA"         , "NPQS.Q"                                  , "gfcf_mn_cp"              , "Gross fixed capital formation, current prices (million GBP)"             \
+        "ONS"       , "QNA"         , "NMRY.Q"                                  , "gov_cons_mn_cvm"         , "Government final consumption, chained volume (million GBP)"              \
+        "ONS"       , "QNA"         , "NMRP.Q"                                  , "gov_cons_mn_cp"          , "Government final consumption, current prices (million GBP)"              \
+        "ONS"       , "QNA"         , "IKBK.Q"                                  , "exports_mn_cvm"          , "Exports of goods and services, chained volume (million GBP)"             \
+        "ONS"       , "QNA"         , "IKBH.Q"                                  , "exports_mn_cp"           , "Exports of goods and services, current prices (million GBP)"             \
+        "ONS"       , "QNA"         , "IKBL.Q"                                  , "imports_mn_cvm"          , "Imports of goods and services, chained volume (million GBP)"             \
+        "ONS"       , "QNA"         , "IKBI.Q"                                  , "imports_mn_cp"           , "Imports of goods and services, current prices (million GBP)"             \
+        // Eurostat's UK GDP pair, CLV15_MEUR and its GBP twin. It ends at 2020q3 and is
+        // NOT the volume: it supplies the fixed 2015 rate, read off it exactly as for
+        // Poland and Sweden, and a cross-check of the ONS-based GDP. The currency section
+        // then replaces gdpr with the ONS-based volume.
+        "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MEUR.SCA.B1GQ.UK"                , "gdpr"                    , "GDP, chain linked (million EURO), Eurostat to 2020q3: rate source only"  \
+        "Eurostat"  , "namq_10_gdp" , "Q.CLV15_MNAC.SCA.B1GQ.UK"                , "gdpr_nac"                , "GDP, chain linked (million GBP), Eurostat to 2020q3: rate source only"   \
+
+        "", "", "", "", ""  // End marker
+    )
+
+    // Monthly variables, aggregated to quarterly, end of quarter values
+    series_codes_me = (
+        // The UK has its own currency and central bank (Bank of England), so the short
+        // rate is the UK 3-month rate, not Euribor. Eurostat irt_st_m stops at 2024m3;
+        // the OECD STES series is the same monthly-average concept (on 1999m1-2024m3
+        // the two differ by -0.002 pp on average, at most 0.12 pp) and runs past the
+        // sample end, so it is used for the WHOLE sample rather than spliced on.
+        // Not the OECD MEI series the Poland note warns about: that one was an
+        // end-of-month value from a dataset that stopped at 2024m1.
+        "OECD"      , "DSD_STES@DF_FINMARK" , "GBR.M.IR3TIB.PA._Z._Z._Z._Z.N"       , "R_eur3"                  , "UK 3-month rate, monthly average (% p.a.)"                               \
+
+        "", "", "", "", ""  // End marker
+    )
+
+    end
+}
+
 else {
     display as error "Country $country not recognized. Please check the country name and series codes in the script."
 }
@@ -396,10 +505,15 @@ if (`fetch_vars') {
     // frame drop data_mm
 
     // Merge the seasonally adjusted HICP series from EViews (exported to Stata format) into the main dataset; this is now the series we will use for the DSGE model estimation
-    use hicp_q_sa, clear
-    gen time = qofd(_date_)
-    format time %tq
-    drop _date_
+    use `hicp_file', clear
+    // hicp_q_sa.dta is written by EViews, with a daily _date_; hicp_q_sa_uk.dta is
+    // written by Stata (make_datasets_hicp_uk.do), with a quarterly time.
+    capture confirm variable _date_
+    if (_rc == 0) {
+        gen time = qofd(_date_)
+        format time %tq
+        drop _date_
+    }
     sor time
     tempfile hicp_q_sa
     save `hicp_q_sa', replace
@@ -424,6 +538,81 @@ else {
 
 cwf data
 tsset time, quarterly
+
+// =====================================================================
+// Currency: euro at the fixed 2015 rate
+// =====================================================================
+
+// CURRENCY OF THE WAGE AGGREGATES (labour_cost, gross_wages). They are fetched
+// in the currency of the HICP that deflates them: euro for Germany and Spain,
+// national currency for the non_euro countries (see the Poland, Sweden and UK
+// series blocks). To keep w_level in euro like every other level column, the
+// national-currency wages are converted at the FIXED 2015 rate, the constant
+// Eurostat uses to turn CLV15_MNAC into CLV15_MEUR, read off the GDP pair rather
+// than typed in. A fixed rate is a constant rescaling, so the real wage carries
+// no exchange-rate movement, and every country's w_level is euro at 2015 rates.
+// The rate is set here, before any series is filtered, because the UK's volumes
+// need it too (below).
+local eur_per_nac = 1
+if (`non_euro') {
+    gen double eur_per_nac = gdpr / gdpr_nac
+    quietly summarize eur_per_nac
+    // Rounding in the published millions moves the ratio by about 1e-6; anything
+    // larger means the two series are not a fixed-rate pair.
+    if (r(N) == 0) | (r(max) - r(min) > 1e-4 * r(mean)) {
+        display as error "gdpr / gdpr_nac is not constant for $country (N = `r(N)', min `r(min)', max `r(max)')."
+        display as error "gdpr must be CLV15_MEUR and gdpr_nac CLV15_MNAC of the same series; check the series block."
+        exit 9
+    }
+    local eur_per_nac = r(mean)
+    display as text "Wage aggregates converted to euro at the fixed 2015 rate: " %9.6f `eur_per_nac' " EUR per unit of national currency (`r(N)' quarters)"
+    drop eur_per_nac gdpr_nac
+}
+
+// THE UK'S VOLUMES. The ONS publishes chained volumes in GBP at the reference year
+// of its vintage, not Eurostat's CLV15_MEUR. Each is rebuilt here in that concept:
+// re-referenced to 2015 by the ratio of its own 2015 current-price total to its 2015
+// chained-volume total (re-referencing a chain-linked series is that one constant
+// factor), then converted at the fixed 2015 rate. gdpr arrives as Eurostat's UK
+// CLV15_MEUR, which ends at 2020q3; it has supplied the rate above and now serves
+// as a cross-check of the rebuilt GDP before the ONS-based series replaces it.
+if "$country" == "UK" {
+    rename gdpr gdpr_eurostat
+    foreach v in gdpr cons_mn gfcf_mn gov_cons_mn exports_mn imports_mn {
+        quietly summarize `v'_cvm if year(dofq(time)) == 2015
+        local n_cvm_2015 = r(N)
+        local cvm_2015 = r(sum)
+        quietly summarize `v'_cp if year(dofq(time)) == 2015
+        if (`n_cvm_2015' != 4) | (r(N) != 4) {
+            display as error "`v': re-referencing to 2015 needs all four quarters of 2015 in `v'_cvm and `v'_cp."
+            exit 9
+        }
+        local reref = r(sum) / `cvm_2015'
+        gen double `v' = `v'_cvm * `reref' * `eur_per_nac'
+        display as text "`v': ONS volume re-referenced to 2015 by " %8.6f `reref' ", then x " %8.6f `eur_per_nac' " EUR/GBP"
+        drop `v'_cvm `v'_cp
+    }
+    label variable gdpr        "GDP at market prices, chain linked 2015 (million EURO; ONS, fixed 2015 rate)"
+    label variable cons_mn     "Household final consumption, chain linked 2015 (million EURO; ONS, fixed 2015 rate)"
+    label variable gfcf_mn     "Gross fixed capital formation, chain linked 2015 (million EURO; ONS, fixed 2015 rate)"
+    label variable gov_cons_mn "Government final consumption, chain linked 2015 (million EURO; ONS, fixed 2015 rate)"
+    label variable exports_mn  "Exports of goods and services, chain linked 2015 (million EURO; ONS, fixed 2015 rate)"
+    label variable imports_mn  "Imports of goods and services, chain linked 2015 (million EURO; ONS, fixed 2015 rate)"
+
+    // The rebuilt GDP and Eurostat's own series differ only by ONS revisions since
+    // Eurostat's last UK vintage: on the 2026-10 vintage the gap runs from -0.3% to
+    // +3.3% (mean +0.9%, largest in 2017-2020 after the Blue Book revisions). A wrong
+    // unit or rate is off by tens of percent, and GVA at basic prices in place of GDP
+    // at market prices by about 11%, so 5% separates the cases.
+    gen double gdpr_gap_pct = 100 * (gdpr / gdpr_eurostat - 1)
+    quietly summarize gdpr_gap_pct
+    display as text "UK GDP rebuilt from ONS vs Eurostat CLV15_MEUR, `r(N)' quarters: gap mean " %6.2f r(mean) "%, min " %6.2f r(min) "%, max " %6.2f r(max) "%"
+    if (r(N) == 0) | (max(abs(r(min)), abs(r(max))) > 5) {
+        display as error "The ONS-based UK GDP is more than 5% away from Eurostat's CLV15_MEUR series; check the series codes, units and rate."
+        exit 9
+    }
+    drop gdpr_gap_pct gdpr_eurostat
+}
 
 // =====================================================================
 // Modify variables
@@ -479,31 +668,10 @@ label variable cons_cycle "Consumption (mn EUR) - HP-filtered (% deviation)"
 *===============================================================================
 
 
-local factor = cond("$country" == "Germany", 1000, 1) // Convert bn EUR to million EUR for Germany (DESTATIS labour_cost is bn EUR); the other countries take Eurostat D1/D11 already in millions
+local factor = cond("$country" == "Germany", 1000, 1) // Convert bn EUR to million EUR for Germany (DESTATIS labour_cost is bn EUR); the other countries take D1/D11 already in millions (Eurostat; ONS for the UK)
 
-// CURRENCY OF THE WAGE AGGREGATES (labour_cost, gross_wages). They are fetched
-// in the currency of the HICP that deflates them: euro for Germany and Spain,
-// national currency for the non_euro countries (see the Poland and Sweden
-// series blocks). To keep w_level in euro like every other level column, the
-// national-currency wages are converted at the FIXED 2015 rate, the constant
-// Eurostat uses to turn CLV15_MNAC into CLV15_MEUR, read off the GDP pair rather
-// than typed in. A fixed rate is a constant rescaling, so the real wage carries
-// no exchange-rate movement, and every country's w_level is euro at 2015 rates.
-local eur_per_nac = 1
-if (`non_euro') {
-    gen double eur_per_nac = gdpr / gdpr_nac
-    quietly summarize eur_per_nac
-    // Rounding in the published millions moves the ratio by about 1e-6; anything
-    // larger means the two series are not a fixed-rate pair.
-    if (r(N) == 0) | (r(max) - r(min) > 1e-4 * r(mean)) {
-        display as error "gdpr / gdpr_nac is not constant for $country (N = `r(N)', min `r(min)', max `r(max)')."
-        display as error "gdpr must be CLV15_MEUR and gdpr_nac CLV15_MNAC of the same series; check the series block."
-        exit 9
-    }
-    local eur_per_nac = r(mean)
-    display as text "Wage aggregates converted to euro at the fixed 2015 rate: " %9.6f `eur_per_nac' " EUR per unit of national currency"
-    drop eur_per_nac gdpr_nac
-}
+// eur_per_nac, the fixed 2015 rate, is set in the currency section above (1 for
+// the euro countries).
 *---------------------------------------------------------------------------
 * Method 1: Total Compensation per Employee (RECOMMENDED)
 *---------------------------------------------------------------------------
@@ -628,12 +796,25 @@ label variable L "Labor force - HP-filtered (% deviation)"
 //   - Pendlersaldo is ~300k (< 1% of 45mn workforce)
 //   - Hours adjustment is a workplace phenomenon (intensive margin)
 //   - Cyclical correlation between concepts is near-perfect
-// For Poland, Spain and Sweden: hours_employees_pp is not fetched directly but
-// computed from total hours / number of employees (both domestic concept)
-if inlist("$country", "Poland", "Spain", "Sweden") {
-    gen hours_employees_pp = hours_employees_total / employees
+// For Poland, Spain, Sweden and the UK: hours_employees_pp is not fetched directly
+// but computed from total hours / number of employees (both domestic concept).
+// UNITS: Eurostat publishes total hours in thousands, the OECD (UK) in millions;
+// employees are thousands in both. The UK factor of 1000 puts hours_employees_pp in
+// hours per employee per quarter for every country.
+if inlist("$country", "Poland", "Spain", "Sweden", "UK") {
+    local hours_factor = cond("$country" == "UK", 1000, 1)
+    gen hours_employees_pp = hours_employees_total * `hours_factor' / employees
     label variable hours_employees_pp "Hours per employee, domestic concept (computed)"
-    drop hours_employees_total 
+    drop hours_employees_total
+}
+
+// UNITS CHECK. Hours per employee per quarter sit between 310 and 520 for every
+// country so far; a thousands/millions slip in the source is a factor of 1000 and
+// lands far outside [200, 700].
+quietly summarize hours_employees_pp
+if (r(N) == 0) | (r(min) < 200) | (r(max) > 700) {
+    display as error "hours_employees_pp for $country spans `r(min)' to `r(max)' (N = `r(N)'), outside [200, 700] hours per employee per quarter; check the units of the hours series."
+    exit 9
 }
 
 gen ln_hours = log(hours_employees_pp)
@@ -742,6 +923,7 @@ if `do_dsge_graphs' {
     else if ("$country" == "Poland") local interest_rate_string "3-month WIBOR (%)"
     else if ("$country" == "Spain") local interest_rate_string "3m Euribor (%)"
     else if ("$country" == "Sweden") local interest_rate_string "3-month rate, Sweden (%)"
+    else if ("$country" == "UK") local interest_rate_string "3-month rate, UK (%)"
     else local interest_rate_string "Short-term interest rate (%)"
 
     local level_vars "y_level c_level inv_level g_level nx_level P R w_level n_level u_level L_level h_level"
@@ -798,14 +980,18 @@ save data_for_dynare_${country}, replace
 //   inv_level = gross fixed capital formation (mn EUR, chain-linked 2015, Eurostat)
 //   g_level   = government final consumption (mn EUR, chain-linked 2015, Eurostat)
 //   nx_level  = net exports (exports - imports) (mn EUR, chain-linked 2015, Eurostat)
-//   pi       = inflation (QoQ annualized, %): 400 * (P_t / P_{t-1} - 1)
+//               The UK's five volumes are ONS chained volumes rebuilt in the same
+//               concept: re-referenced to 2015 and converted at the fixed 2015 rate.
+//   pi       = inflation (QoQ annualized, %): 400 * (P_t / P_{t-1} - 1); the UK's
+//              price level is the ONS CPI (its HICP), from hicp_q_sa_uk.dta
 //   R        = 3-month money-market rate (% p.a.), monthly average of the last
 //              month of the quarter: Euribor for Germany and Spain, WIBOR for
-//              Poland, the Swedish 3-month rate for Sweden (see series_codes_me)
+//              Poland, the Swedish 3-month rate for Sweden, the UK 3-month rate
+//              (OECD) for the UK (see series_codes_me)
 //   w_level  = real gross wages (D11) per employee, thousand EUR per quarter at
-//              2020 prices. Poland and Sweden deflate their national-currency
-//              D11 by their own HICP and convert at the FIXED 2015 rate, so the
-//              column carries no exchange-rate movement. Diagnostic only:
+//              2020 prices. Poland, Sweden and the UK deflate their national-
+//              currency D11 by their own HICP and convert at the FIXED 2015 rate,
+//              so the column carries no exchange-rate movement. Diagnostic only:
 //              nothing in the MATLAB pipeline reads it.
 //   n_level  = employees, national concept excl. self-employed (thousands)
 //   u_level  = ILO unemployment rate (%)
@@ -862,6 +1048,16 @@ restore
 // series list and the checksum moves with it.
 //
 // One file per country, so re-running Germany does not overwrite Poland's.
+//
+// The UK's seasonal adjustment is stamped inside its own HICP file (char sa_method,
+// written by make_datasets_hicp_uk.do); it is copied into the stamp.
+local hicp_sa_method ""
+if "$country" == "UK" {
+    preserve
+    use "`hicp_file'", clear
+    local hicp_sa_method : char _dta[sa_method]
+    restore
+}
 quietly {
     local prov "../data/PROVENANCE_${country}.txt"
     capture file close provfh
@@ -883,7 +1079,13 @@ quietly {
 
     // Properties of the vintage rather than of the code that reads it.
     file write provfh "covid_censored   2020q1-2021q2 (y c inv pi w n u_rate L h)" _n
-    if (`do_HICP_seasonal_adjustment') {
+    if ("$country" == "UK") & (`do_HICP_seasonal_adjustment') {
+        file write provfh "hicp_seasonal    regenerated: `hicp_sa_method'" _n
+    }
+    else if ("$country" == "UK") {
+        file write provfh "hicp_seasonal    reused existing `hicp_file': `hicp_sa_method'" _n
+    }
+    else if (`do_HICP_seasonal_adjustment') {
         file write provfh "hicp_seasonal    regenerated via EViews TRAMO/SEATS" _n
     }
     else {

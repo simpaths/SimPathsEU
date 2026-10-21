@@ -11,12 +11,17 @@ output/
 logs/
 figures/
 
-# Stata working frames and logs; the two HICP caches are the only .dta tracked.
+# Stata working frames and logs; the three HICP caches are the only .dta tracked.
 stata/*.dta
 !stata/HICP.dta
 !stata/hicp_q_sa.dta
+!stata/hicp_q_sa_uk.dta
 stata/*.dtas
 stata/*.log
 stata/*.png
 # EViews workfiles, written when do_HICP_seasonal_adjustment = 1.
 stata/*.wf1
+# X-13ARIMA-SEATS: the binary (see tools/x13as/README.md) and its run files, written
+# when the UK's do_HICP_seasonal_adjustment = 1.
+tools/x13as/*.exe
+stata/x13_work/
