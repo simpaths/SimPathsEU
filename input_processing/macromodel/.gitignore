@@ -19,9 +19,7 @@ stata/*.dta
 stata/*.dtas
 stata/*.log
 stata/*.png
-# EViews workfiles, written when do_HICP_seasonal_adjustment = 1.
-stata/*.wf1
 # X-13ARIMA-SEATS: the binary (see tools/x13as/README.md) and its run files, written
-# when the UK's do_HICP_seasonal_adjustment = 1.
+# when do_HICP_seasonal_adjustment = 1.
 tools/x13as/*.exe
 stata/x13_work/

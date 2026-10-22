@@ -7,7 +7,7 @@ global country Poland // Roadmap options: "Germany", "Poland", "Sweden", "Spain"
 args country_arg
 if `"`country_arg'"' != "" global country `country_arg'
 
-local do_HICP_seasonal_adjustment = 0 // Set to 1 to create datasaet with HICP variables that are seasonally adjusted in EViews (via X-13 for the UK)
+local do_HICP_seasonal_adjustment = 0 // Set to 1 to create datasaet with HICP variables that are seasonally adjusted with X-13ARIMA-SEATS
 local fetch_vars = 1     // Set to 1 to fetch data from dbnomics; set to 0 to skip fetching and use existing dataset
 local do_dsge_graphs = 1 // Set to 1 to enable DSGE model variable graphs
 
@@ -85,7 +85,7 @@ if !(`do_HICP_seasonal_adjustment') {
     if !fileexists("`hicp_file'") {
         display as error "Required file `hicp_file' not found in the current working directory: `c(pwd)'"
         display as error "make_datasets.do expects Stata's pwd to point to the folder containing this script and `hicp_file'."
-        display as error "Either set do_HICP_seasonal_adjustment = 1 to regenerate the file (via EViews; via X-13 for the UK), or start Stata in the make_datasets.do folder with an existing `hicp_file'."
+        display as error "Either set do_HICP_seasonal_adjustment = 1 to regenerate the file (via X-13), or start Stata in the make_datasets.do folder with an existing `hicp_file'."
         exit 1
     }
 }
@@ -99,51 +99,18 @@ if ("`datadir_ok'" != "1") {
     exit 1
 }
 
-// TODO: For the time being I use EViews for seasonal adjustment
-//       This creates a heavy dependency; it would be much better to use the
-//       Census X-13 binary or the JDemetra+ binary directly or even get the sax12 command in Stata to work.
-//
-// The method is TRAMO/SEATS, not Census X-13 — see make_datasets_hicp_tramoseats.prg.
-//
-// FAIL LOUDLY ON A SILENT EVIEWS FAILURE: `shell' reports no error when the EViews
-// path is wrong or the run aborts, so a failed regeneration used to fall straight
-// through to whatever stale hicp_q_sa.dta happened to be lying around. Moving the
-// old file aside first makes a non-run detectable: the file simply will not be there.
-//
-// The UK does not go through EViews: make_datasets_hicp_uk.do runs X-13 from Stata, and
-// x13_seats exits with an error when X-13 fails, so a failed regeneration stops here
-// instead of falling through to a stale hicp_q_sa_uk.dta.
+// Seasonal adjustment of the HICP with X-13ARIMA-SEATS, run from Stata through
+// x13_seats.ado with the binary and spec in x13_settings.do (the binary is not tracked:
+// ../tools/x13as/README.md). make_datasets_hicp.do adjusts the Eurostat HICP of every
+// country into hicp_q_sa.dta; the UK's own price level goes through
+// make_datasets_hicp_uk.do into hicp_q_sa_uk.dta. x13_seats exits with an error when
+// X-13 fails, and each file is saved only after every series is adjusted, so a failed
+// regeneration stops here instead of falling through to a stale file.
 if (`do_HICP_seasonal_adjustment') & ("$country" == "UK") {
     do make_datasets_hicp_uk.do
 }
 else if (`do_HICP_seasonal_adjustment') {
     do make_datasets_hicp.do
-
-    local pwd = `"`c(pwd)'"'
-    // ADJUST PATH TO EVIEWS AS NEEDED
-    local eviews "c:\Users\PC\Apps\EViews13\\EViews13.exe"
-    local prg `"`pwd'\make_datasets_hicp_tramoseats.prg"'
-
-    capture erase "hicp_q_sa_prev.dta"
-    local had_previous = 0
-    if (fileexists("hicp_q_sa.dta")) {
-        copy "hicp_q_sa.dta" "hicp_q_sa_prev.dta"
-        erase "hicp_q_sa.dta"
-        local had_previous = 1
-    }
-
-    shell "`eviews'" run "`prg'"
-
-    if !fileexists("hicp_q_sa.dta") {
-        if (`had_previous') copy "hicp_q_sa_prev.dta" "hicp_q_sa.dta"
-        display as error "EViews did not write hicp_q_sa.dta — the seasonal adjustment did not run."
-        display as error "Checked path: `eviews'"
-        display as error "Program:      `prg'"
-        if (`had_previous') display as error "The previous hicp_q_sa.dta has been restored; it is STALE, not regenerated."
-        display as error "Fix the EViews path above, or set do_HICP_seasonal_adjustment = 0 to reuse the existing file deliberately."
-        exit 601
-    }
-    capture erase "hicp_q_sa_prev.dta"
 }
 
 if "$country" == "Germany" {
@@ -500,27 +467,9 @@ if (`fetch_vars') {
     get_data, series_codes(series_codes_me) tframe(data_me) startdate(`startdate') enddate(`enddate') replace freq(monthly) agg(quarter_end)
 
     // Merge aggreated monthly data (means) into quarterly data
-    // TODO: Only keep for comparison purposes; this gets replaced by the seasonally adjusted HICP from EViews
+    // TODO: Only keep for comparison purposes; this gets replaced by the seasonally adjusted HICP from `hicp_file' (below)
     // frame data: merge_frame, linkvar(time) use(data_mm)
     // frame drop data_mm
-
-    // Merge the seasonally adjusted HICP series from EViews (exported to Stata format) into the main dataset; this is now the series we will use for the DSGE model estimation
-    use `hicp_file', clear
-    // hicp_q_sa.dta is written by EViews, with a daily _date_; hicp_q_sa_uk.dta is
-    // written by Stata (make_datasets_hicp_uk.do), with a quarterly time.
-    capture confirm variable _date_
-    if (_rc == 0) {
-        gen time = qofd(_date_)
-        format time %tq
-        drop _date_
-    }
-    sor time
-    tempfile hicp_q_sa
-    save `hicp_q_sa', replace
-    local lower_counter = strlower("$country")
-    frame data: merge 1:1 time using `hicp_q_sa', nogen keepusing(hicp_`lower_counter'_sa)
-    frame data: cap drop HICP
-    frame data: rename hicp_`lower_counter'_sa HICP
 
     // Merge aggreated monthly data (end of quarter values) into quarterly data
     frame data: merge_frame, linkvar(time) use(data_me)
@@ -535,6 +484,21 @@ else {
     frame create data
     frame data: use data_${country}_raw, clear
 }
+
+// Merge the seasonally adjusted HICP from `hicp_file' into the main dataset; this is the
+// series we use for the DSGE model estimation. It is merged after the branch above, so a
+// regenerated `hicp_file' reaches the data whether the series were fetched or reused. A
+// data_${country}_raw.dta saved before 2026-10 still carries the HICP it was fetched
+// with; that copy is dropped.
+cwf default
+use `hicp_file', clear
+sort time
+tempfile hicp_q_sa
+save `hicp_q_sa', replace
+local lower_counter = strlower("$country")
+frame data: cap drop HICP
+frame data: merge 1:1 time using `hicp_q_sa', nogen keepusing(hicp_`lower_counter'_sa)
+frame data: rename hicp_`lower_counter'_sa HICP
 
 cwf data
 tsset time, quarterly
@@ -1049,15 +1013,12 @@ restore
 //
 // One file per country, so re-running Germany does not overwrite Poland's.
 //
-// The UK's seasonal adjustment is stamped inside its own HICP file (char sa_method,
-// written by make_datasets_hicp_uk.do); it is copied into the stamp.
-local hicp_sa_method ""
-if "$country" == "UK" {
-    preserve
-    use "`hicp_file'", clear
-    local hicp_sa_method : char _dta[sa_method]
-    restore
-}
+// The seasonal adjustment is stamped inside the HICP file (char sa_method, written by
+// make_datasets_hicp.do or make_datasets_hicp_uk.do); it is copied into the stamp.
+preserve
+use "`hicp_file'", clear
+local hicp_sa_method : char _dta[sa_method]
+restore
 quietly {
     local prov "../data/PROVENANCE_${country}.txt"
     capture file close provfh
@@ -1079,23 +1040,17 @@ quietly {
 
     // Properties of the vintage rather than of the code that reads it.
     file write provfh "covid_censored   2020q1-2021q2 (y c inv pi w n u_rate L h)" _n
-    if ("$country" == "UK") & (`do_HICP_seasonal_adjustment') {
+    if (`do_HICP_seasonal_adjustment') {
         file write provfh "hicp_seasonal    regenerated: `hicp_sa_method'" _n
     }
-    else if ("$country" == "UK") {
-        file write provfh "hicp_seasonal    reused existing `hicp_file': `hicp_sa_method'" _n
-    }
-    else if (`do_HICP_seasonal_adjustment') {
-        file write provfh "hicp_seasonal    regenerated via EViews TRAMO/SEATS" _n
-    }
     else {
-        file write provfh "hicp_seasonal    reused existing hicp_q_sa.dta" _n
+        file write provfh "hicp_seasonal    reused existing `hicp_file': `hicp_sa_method'" _n
     }
     if (`fetch_vars') {
         file write provfh "series_fetched   yes (dbnomics)" _n
     }
     else {
-        file write provfh "series_fetched   no (reused existing data_${country}.dta)" _n
+        file write provfh "series_fetched   no (reused existing data_${country}_raw.dta)" _n
     }
 
     capture checksum "make_datasets.do"

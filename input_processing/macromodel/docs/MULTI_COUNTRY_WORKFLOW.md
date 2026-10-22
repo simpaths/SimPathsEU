@@ -173,7 +173,7 @@ whole sample, with no splicing:
 | Volumes (GDP, C, I, G, X, M) | Eurostat `CLV15_MEUR` | ONS chained volumes, re-referenced to 2015 and converted at the fixed 2015 rate |
 | D1, D11 | Eurostat `namq_10_gdp` | ONS `DTWM`, `DTWL` (S.1 uses: the domestic concept) |
 | Employees, hours | Eurostat `namq_10_pe`, `namq_10_a10_e` | OECD QNA tables 0110/0111 (hours in millions, rescaled) |
-| Price level | Eurostat HICP, TRAMO/SEATS in EViews (`hicp_q_sa.dta`) | ONS CPI `D7BT`, the UK's HICP, X-13ARIMA-SEATS from Stata (`hicp_q_sa_uk.dta`) |
+| Price level | Eurostat HICP, X-13ARIMA-SEATS from Stata (`hicp_q_sa.dta`) | ONS CPI `D7BT`, the UK's HICP, X-13ARIMA-SEATS from Stata with the same spec (`hicp_q_sa_uk.dta`) |
 | 3-month rate | Euribor (ECB) or Eurostat `irt_st_m` | OECD STES, the same monthly-average concept |
 
 Three checks in `make_datasets.do` hold these to the other countries' concepts
@@ -183,10 +183,6 @@ to +3.3%, ONS revisions since 2020), the fixed rate is read off Eurostat's UK GD
 pair like Poland's and Sweden's, and hours per employee must lie in [200, 700] per
 quarter for every country. Before it was replaced, ONS `D7BT` equalled Eurostat's
 UK HICP in all 299 months of 1996m1-2020m11.
-
-The two seasonal adjustments in the price-level row are an interim state. The next
-step is to adjust every country's HICP with X-13 from Stata, as the UK's already is,
-and drop EViews; the README's "Next step" section lists what that involves.
 
 The re-referencing is not cosmetic. A chain-linked component is valued at its
 reference year's relative prices, so the base-year shares `calibrate_growth_model`
@@ -241,8 +237,8 @@ Extend the Stata script `make_datasets.do` with a country branch. For each count
 1. Add a `series_codes_q` block with that country's dbnomics provider/dataset/series IDs
 2. Map them onto the internal variable names the rename block expects
 3. Set `startdate`/`enddate`
-4. Add the HICP series to the seasonal-adjustment program if it is not already there
-   (the EViews `make_datasets_hicp_tramoseats.prg` until every country moves to X-13).
+4. Add the HICP series to `make_datasets_hicp.do` (its Eurostat code and output name)
+   if it is not already there; X-13 adjusts every series listed there.
    A country Eurostat no longer covers needs its own price-level file, as the UK's
    `hicp_q_sa_uk.dta` from `make_datasets_hicp_uk.do`, selected through `hicp_file`
 5. Add the SimPaths population workbook as `input/{CC}/align_popProjections.xlsx`.
