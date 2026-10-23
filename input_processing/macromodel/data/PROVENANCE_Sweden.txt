@@ -1,17 +1,17 @@
 Data vintage for Sweden
 =========================================
 generated_by     make_datasets.do
-generated_at     21 Oct 2026 14:32:05
+generated_at     23 Oct 2026 15:02:03
 stata_version    19.5
 country          Sweden
 sample_requested 2001q1 to 2025q1
 observed_span    2001q1 to 2025q1
 observations     97
 covid_censored   2020q1-2021q2 (y c inv pi w n u_rate L h)
-hicp_seasonal    reused existing hicp_q_sa.dta
+hicp_seasonal    reused existing hicp_q_sa.dta: X-13ARIMA-SEATS 1.1 b62 (SEATS) on Eurostat ei_cphi_m HICP 2015=100, 1996m1-2025m12, via make_datasets_hicp.do (fetched 22 Oct 2026)
 series_fetched   yes (dbnomics)
-script_checksum  816936140 (length 58725)
-git_head         ref: refs/heads/MG/dev/fix#29
+script_checksum  3260727129 (length 72076)
+git_head         ref: refs/heads/MG/dev/UK-model
 
 Files written by this run
 -----------------------------------------

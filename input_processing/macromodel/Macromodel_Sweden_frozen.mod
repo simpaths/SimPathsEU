@@ -1,6 +1,6 @@
 // =========================================================================
 // FROZEN MODEL - AUTO-GENERATED
-// Generated: 2026-10-13 14:43:59
+// Generated: 2026-10-23 15:08:39
 // Source: Macromodel_Sweden (estimation results)
 // DO NOT EDIT MANUALLY - regenerate with generate_frozen_model.m
 // =========================================================================
@@ -272,7 +272,7 @@ lambda_w = 0.75;
     rho_h    = 0.85;    // Estimation mode: AR(1) captures observed persistence
                         // (calibrated in country_params/Sweden_calibration.mod)
 @#endif
-omega_h  = 0.324567;  // ESTIMATED (posterior mode)    // hours weight in production (same starting point; ESTIMATED)
+omega_h  = 0.324568;  // ESTIMATED (posterior mode)    // hours weight in production (same starting point; ESTIMATED)
 
 // ----- DIRECT LABOR FORCE -> WAGE EFFECT (CALIBRATED) -----
 psi_wL   = -0.05;   // direct L->w elasticity (negative: more L -> lower w)
@@ -296,7 +296,7 @@ delta_k  = 0.025;   // quarterly depreciation ~9.6% annual
                     // delta_k governs the cyclical capital law of motion only.
 rho_inv  = 0.85;    // investment persistence (same starting point)
 phi_inv_y = 0.3;    // investment sensitivity to output gap (structural floor)
-phi_inv_r = 0.140110;  // ESTIMATED (posterior mode)    // investment sensitivity to interest rate
+phi_inv_r = 0.140109;  // ESTIMATED (posterior mode)    // investment sensitivity to interest rate
 
 // =========================================================================
 // STEADY STATE LABOR MARKET (Sweden, 2001q1-2025q1 sample)

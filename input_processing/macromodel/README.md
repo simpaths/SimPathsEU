@@ -203,11 +203,9 @@ StataMP-64.exe /e do make_datasets.do UK
 | UK | UK | yes | yes | shipped, but SimPathsEU cannot run the UK yet (`Country` has no UK), so no simulation reads the bundle; `CommittedBundlesTest` and `BundleProvenanceTest` check it like Poland's. Data from the ONS and the OECD, as Eurostat has none after Brexit (`docs/MULTI_COUNTRY_WORKFLOW.md`) |
 
 Seasonal adjustment moved from EViews' TRAMO/SEATS to X-13 in 2026-10 (the UK was on
-X-13 from the start). Poland's and the UK's data and bundles use X-13. The tracked data
-and frozen models of Germany, Spain and Sweden still carry the TRAMO/SEATS HICP and
-take the X-13 series at their next data refresh; over their estimation samples the two
-differ by an RMSE of 0.13 pp (Germany), 0.26 pp (Spain) and 0.001 pp (Sweden) of
-quarterly inflation (`stata/make_datasets_hicp.do`). The UK's larger measurement error
+X-13 from the start). The tracked data and frozen models of all five countries, and the
+Poland and UK bundles, use X-13; Germany, Spain and Sweden were re-estimated on it and,
+as before, have no bundle here. The UK's larger measurement error
 on inflation (`country_params/UK_estimation.mod`) allows for the 0.54 pp gap between
 the two methods on UK data; whether it is still needed is a question for the next UK
 re-estimation.

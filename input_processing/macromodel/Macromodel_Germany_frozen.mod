@@ -1,6 +1,6 @@
 // =========================================================================
 // FROZEN MODEL - AUTO-GENERATED
-// Generated: 2026-08-18 14:51:35
+// Generated: 2026-10-23 15:14:59
 // Source: Macromodel_Germany (estimation results)
 // DO NOT EDIT MANUALLY - regenerate with generate_frozen_model.m
 // =========================================================================
@@ -257,9 +257,9 @@ lambda_w = 0.75;    // baseline: 1-year average wage duration
                         // SimPaths sends LEVELS, not innovations
 @#else
     rho_h    = 0.85;    // Estimation mode: AR(1) captures observed persistence
-                        // Kurzarbeit contracts ~6 months (quarterly rho ~ 0.85)
+                        // (calibrated in country_params/Germany_calibration.mod)
 @#endif
-omega_h  = 0.438758;  // ESTIMATED (posterior mode)    // hours weight in production: total labor = n + omega_h * h
+omega_h  = 0.437293;  // ESTIMATED (posterior mode)    // hours weight in production: total labor = n + omega_h * h
                     // < 1.0 because headcount matters more than marginal hours
                     // Matches production function literature (Chetty et al. 2012)
 // NOTE (Option B): psi_hy and psi_hw REMOVED - h is now pure AR(1)
@@ -303,7 +303,7 @@ phi_inv_y = 0.3;    // V15: Restored to small positive value as structural floor
                     // negative demand shock → R↓ → inv↑ (investment rises in recessions).
                     // 0.3 ensures weak demand co-movement without dominating unconditional VD.
                     // cosn(rho_inv, phi_inv_y) = 0.9989 → keep calibrated, do NOT estimate.
-phi_inv_r = 0.209764;  // ESTIMATED (posterior mode)    // investment sensitivity to interest rate (cost of capital)
+phi_inv_r = 0.211903;  // ESTIMATED (posterior mode)    // investment sensitivity to interest rate (cost of capital)
                     // Grid search: determinacy boundary at ~0.5 for phi_inv_y=2.0
 
 // =========================================================================
@@ -498,15 +498,15 @@ end;
 //   u_rate std:        0.62%  (target: 0.49pp)   ✅ Acceptable
 //
 shocks;
-    var eps_a;      stderr 1.0970;  // ESTIMATED    // technology: slightly reduced
-    var eps_d;      stderr 0.3344;  // ESTIMATED    // demand: main driver for y-pi
-    var eps_r;      stderr 0.4538;  // ESTIMATED    // monetary: reduced from 0.80
-    var eps_L;      stderr 0.1419;  // ESTIMATED    // labor force: keep
+    var eps_a;      stderr 1.0977;  // ESTIMATED    // technology: slightly reduced
+    var eps_d;      stderr 0.3340;  // ESTIMATED    // demand: main driver for y-pi
+    var eps_r;      stderr 0.4557;  // ESTIMATED    // monetary: reduced from 0.80
+    var eps_L;      stderr 0.1423;  // ESTIMATED    // labor force: keep
     var eps_sep;    stderr 0.08;    // separation: keep
-    var eps_h;      stderr 0.4308;  // ESTIMATED    // hours shock (Kurzarbeit): calibrated to σ(h) ≈ 0.8%
+    var eps_h;      stderr 0.4241;  // ESTIMATED    // hours shock (Kurzarbeit): calibrated to σ(h) ≈ 0.8%
                                     // German data: σ(h) = 0.81%, σ(h)/σ(n) = 1.22
-    var eps_p;      stderr 1.4607;  // ESTIMATED    // cost-push / price markup shock
-    var eps_inv;    stderr 1.8972;  // ESTIMATED    // investment shock [CAPITAL EXTENSION]
+    var eps_p;      stderr 1.4682;  // ESTIMATED    // cost-push / price markup shock
+    var eps_inv;    stderr 1.8940;  // ESTIMATED    // investment shock [CAPITAL EXTENSION]
 end;
 
 // =========================================================================
