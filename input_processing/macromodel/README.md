@@ -25,8 +25,8 @@ The bundle lands in `../../input/{CC}/MacroModel/` directly. There is no copy st
 
 ## Dependencies
 
-Exact versions used for the committed bundles (Poland and UK); newer patch releases
-should work, nothing older has been tried.
+Exact versions used for the committed Poland bundle; newer patch releases should
+work, nothing older has been tried.
 
 - **MATLAB R2025b** with the **Statistics and Machine Learning Toolbox**. That is the
   complete product list reported by `matlab.codetools.requiredFilesAndProducts` on
@@ -35,13 +35,9 @@ should work, nothing older has been tried.
   blocks alone would need R2019b). `check_dependencies`
   reports an R2019b as too old; a release before R2019b cannot parse the `arguments`
   blocks and stops with a syntax error before any check runs.
-- **Dynare 7.1**, with `<dynare>/matlab` on the MATLAB path. Both committed bundles
-  were estimated with it; Poland's moved from 6.5 to 7.1 in #29, which shifted two
-  posterior modes in the sixth digit. Estimation runs `dynare ... use_dll`, which
-  needs a C compiler; the Windows Dynare installer bundles MinGW for this. On
-  Linux/macOS use the system compiler (`mex -setup C`). A `matlab -batch` run sees
-  Dynare only if it was saved to the path or a `startup.m` adds it; otherwise add it
-  in the command (`addpath('<dynare>/matlab'); ...`) or set `MATLABPATH` to it.
+- **Dynare 6.5**, with `<dynare>/matlab` on the MATLAB path. Estimation runs
+  `dynare ... use_dll`, which needs a C compiler; the Windows Dynare installer
+  bundles MinGW for this. On Linux/macOS use the system compiler (`mex -setup C`).
 - **Stata 19** with `ssc install dbnomics`, stage 1 only.
 - **X-13ARIMA-SEATS 1.1 build 62** (U.S. Census Bureau), stage 1 only, only when
   `do_HICP_seasonal_adjustment = 1` in `stata/make_datasets.do`. It seasonally
