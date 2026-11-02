@@ -135,8 +135,10 @@ class BundleProvenanceTest {
     @Test
     void everyCommittedBundleMatchesItsTrackedInputs() throws Exception {
         List<Path> bundles = committedBundles();
-        assertTrue(bundles.contains(INPUT.resolve("PL").resolve("MacroModel")),
-                "the tracked PL MacroModel bundle is missing; found " + bundles);
+        for (String cc : List.of("PL", "UK")) {
+            assertTrue(bundles.contains(INPUT.resolve(cc).resolve("MacroModel")),
+                    "the tracked " + cc + " MacroModel bundle is missing; found " + bundles);
+        }
         for (Path bundle : bundles) {
             checkBundle(bundle);
         }

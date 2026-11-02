@@ -21,6 +21,10 @@
 // X-13 and 0.90 to 0.997 for TRAMO/SEATS. The old UK column ran to 2022q4, extended
 // past the data (2020m11) by EViews' forecasts; it now stops at 2020q3, the last
 // quarter with three observed months.
+
+// First, so a missing X-13 binary stops the run before the tracked HICP.dta is rewritten.
+include x13_settings.do
+
 cap program drop get_hicp
 program get_hicp
     syntax , invar(string) outvar(string)
@@ -69,8 +73,6 @@ save HICP, replace
 // =====================================================================
 // Seasonal adjustment
 // =====================================================================
-include x13_settings.do
-
 keep if inrange(time, tm(1996m1), tm(2025m12))
 sort time
 tsset time, monthly
