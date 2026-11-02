@@ -362,6 +362,11 @@ public class SimPathsStart implements ExperimentBuilder {
 
 	private static void runGUIlessSetup(int option) throws FileNotFoundException {
 
+		// Load the country's parameters.xlsx first, so that validateStartYear below (and the second call in
+		// buildExperiment, run later via engine.setup()) agree on the same MIN/MAX_START_YEAR(_TRAINING) bounds as
+		// databaseSetup, instead of validating against the Java defaults here and the workbook values later
+		Parameters.loadCountrySpecificParameters(country);
+
 		// Auto-detect training mode only when -t/--training was NOT passed on the command line.
 		// If actual InitialPopulations/<country>/*.csv is empty, fall back to training data.
 		if (!trainingFlagExplicit) {
@@ -538,6 +543,10 @@ public class SimPathsStart implements ExperimentBuilder {
 		Parameters.setTaxDonorInputFileName(taxDonorInputFilename);
 
 		if (choices[0] || choices[1]) {
+			// this path (unlike runGUIlessSetup) never calls databaseSetup, so load the country's parameters.xlsx
+			// here: otherwise marginalEmploymentRecode would run against the Java default MIN_HOURS_EMPLOYED
+			// instead of the country's workbook value (e.g. PL's 1, not the default 6)
+			Parameters.loadCountrySpecificParameters(country);
 			DataParser.databaseFromCSV(country, showGui); // Initial database tables
 		}
 

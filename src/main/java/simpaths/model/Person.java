@@ -207,7 +207,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
     @Transient private Map<Labour, Integer> personContinuousHoursLabourSupplyMap = new EnumMap<>(Labour.class);
     @Transient private boolean evaluatingLabourChoice = false; // true while the benefit unit scores candidate hours brackets; see Parameters.useRepresentativeHoursInUtility
     @Transient private Double labHrsDrawYear; // this year's position within the hours bracket, used when Parameters.redrawHoursEachYear is true
-    @Transient private String silcLhwSheet; // EU-SILC hours-distribution sheet (sample type and gender) fixed at the start of each labour-supply choice pass; see Parameters.USE_SILC_LHW_DISTRIBUTION_ES
+    @Transient private String silcLhwSheet; // EU-SILC hours-distribution sheet (sample type and gender) fixed at the start of each labour-supply choice pass; see Parameters.USE_SILC_LHW_DISTRIBUTION
 
     // local variables interact with regression models
     @Transient private Integer i_demYear;
@@ -4272,12 +4272,11 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
      * candidate hours bracket, which would rerun the partner's atRiskOfWork() each time.
      */
     public void updateSilcLhwSheet() {
-        silcLhwSheet = (Parameters.USE_SILC_LHW_DISTRIBUTION_ES && "ES".equals(Parameters.COUNTRY_STRING))
-                ? findSilcLhwSheet() : null;
+        silcLhwSheet = Parameters.useSilcLhwDistribution() ? findSilcLhwSheet() : null;
     }
 
     /**
-     * EU-SILC hours-distribution sheet used to draw realised hours (Parameters.USE_SILC_LHW_DISTRIBUTION_ES):
+     * EU-SILC hours-distribution sheet used to draw realised hours (Parameters.USE_SILC_LHW_DISTRIBUTION):
      * the one fixed at the start of the last labour-supply choice pass, otherwise the person's current sample type.
      */
     public String getSilcLhwSheet() {
