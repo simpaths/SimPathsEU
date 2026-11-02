@@ -20,6 +20,8 @@ stata/*.dtas
 stata/*.log
 stata/*.png
 # X-13ARIMA-SEATS: the binary (see tools/x13as/README.md) and its run files, written
-# when do_HICP_seasonal_adjustment = 1.
+# when do_HICP_seasonal_adjustment = 1. The binary also leaves Fortran scratch files
+# in Stata's working directory.
 tools/x13as/*.exe
 stata/x13_work/
+stata/fort.*
