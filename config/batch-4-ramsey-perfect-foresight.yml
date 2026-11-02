@@ -1,4 +1,5 @@
 # Batch scenario 4/5 — Ramsey perfect-foresight demo (high g_A +0.5pp from 2040)
+countryString: "Poland"
 maxNumberOfRuns: 1
 executeWithGui: false
 randomSeed: 42

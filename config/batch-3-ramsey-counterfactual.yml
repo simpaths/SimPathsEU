@@ -1,4 +1,5 @@
 # Batch scenario 3/5 — Ramsey counterfactual (high g_A +0.5pp from start)
+countryString: "Poland"
 maxNumberOfRuns: 1
 executeWithGui: false
 randomSeed: 42

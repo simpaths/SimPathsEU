@@ -1,4 +1,5 @@
 # Recursive Ramsey feedback experiment - arm 1: feedback OFF (current top-down behavior)
+countryString: "Poland"
 maxNumberOfRuns: 8
 executeWithGui: false
 randomSeed: 42

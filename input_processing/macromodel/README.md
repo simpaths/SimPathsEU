@@ -6,8 +6,9 @@ the real wage, and an estimated New-Keynesian DSGE model for cyclical deviations
 around it. SimPaths applies `w_total = w_trend + w_cycle` to wages and, once per
 simulated year, feeds its realized employment and hours back into a re-solve of
 the Ramsey path. Nothing here affects a SimPaths run unless `mm_macroModel` is
-switched on in the YAML config (default `off`). Poland and the UK ship bundles;
-SimPathsEU itself runs Poland, not yet the UK (see "Country status").
+switched on in the YAML config (default `off`). Poland and the UK ship bundles.
+SimPathsEU itself runs Poland and Spain, not the UK, and Spain has no bundle yet
+(see "Country status").
 
 The committed bundle is enough to run SimPaths with the macro layer on. You only
 need the toolchains below to **rebuild** a bundle: after a data refresh, a
@@ -198,8 +199,8 @@ StataMP-64.exe /e do make_datasets.do UK
 |---|---|---|---|---|
 | Poland | PL | yes | yes | |
 | Germany | DE | yes | no | not exported into this repository; the last export predates the units contract (`simpaths_input_scale`), so re-export before any DE run |
-| Spain | ES | yes | no | no `input/ES/align_popProjections.xlsx` yet; employment is extrapolated mechanically, bundle refused |
-| Sweden | SE | yes | no | same as Spain, and SimPathsEU has no Sweden inputs |
+| Spain | ES | yes | no | SimPathsEU runs Spain with the macro layer off, but no bundle is exported. The tracked data and frozen model predate `input/ES/align_popProjections.xlsx` and extrapolate employment mechanically; the next `run_full_workflow('Spain')` reads the workbook and changes them |
+| Sweden | SE | yes | no | no `input/SE/align_popProjections.xlsx`, so employment is extrapolated mechanically and the bundle is refused; SimPathsEU has no Sweden inputs |
 | UK | UK | yes | yes | shipped, but SimPathsEU cannot run the UK yet (`Country` has no UK), so no simulation reads the bundle; `CommittedBundlesTest` and `BundleProvenanceTest` check it like Poland's. Data from the ONS and the OECD, as Eurostat has none after Brexit (`docs/MULTI_COUNTRY_WORKFLOW.md`) |
 
 Seasonal adjustment moved from EViews' TRAMO/SEATS to X-13 in 2026-10 (the UK was on

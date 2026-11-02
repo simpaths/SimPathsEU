@@ -53,7 +53,7 @@ Three enforcement patterns cover almost everything here:
 | 23 | Every JSON reader in the macro package parses the same way | `DSGEModel` ↔ `RamseyTrendModel` ↔ `MacroModelManager` ↔ both MATLAB writers | one `MacroJson`; `MacroJsonTest` asserts compact and pretty-printed input read identically | enforced |
 | 24 | A JSON artefact Java reads is never partially written | MATLAB writers ↔ Java string-scan readers | `write_text_atomic` (temp file + re-decode before move) | enforced |
 | 25 | Scenario CSVs reject non-finite values and keep trailing fields | `RamseyScenario` ↔ `DSGEShockScenario` | one `MacroCsv`; `ScenarioLoaderParityTest` | enforced |
-| 26 | The alignment diagnostic counts the population the alignment used | `ActivityAlignmentV2.matchesSubgroup` ↔ `AlignmentAdjustmentFactors.classifyBenefitUnit` | one `BenefitUnitSubgroup` | enforced by construction |
+| 26 | The alignment diagnostic counts the population the alignment used | `ActivityAlignmentV2.matchesSubgroup` ↔ `AlignmentStatistics.classifyBenefitUnit` | one `BenefitUnitSubgroup` | enforced by construction |
 | 27 | `growth_terminal_state.json` has exactly one writer | `export_dynamic_for_simpaths.m` ↔ `export_ramsey_for_simpaths.m` | both call `write_growth_terminal_state.m` | enforced by construction |
 | 28 | The forward FOC/HP smoother exists once per runtime | `calibrate_growth_model.m` ↔ `ramsey_trend.m` | `hp_filter_trend.m` is the single implementation | enforced by construction |
 | 29 | Sibling macro scenario configs differ only in their declared treatment | `config/phi-*.yml`, `config/batch-*.yml` | `MacroScenarioConfigTest` — any undeclared difference fails, including keys the test does not enumerate | enforced |

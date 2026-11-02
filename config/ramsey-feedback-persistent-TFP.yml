@@ -1,4 +1,5 @@
 # Recursive Ramsey feedback experiment - arm 2: feedback ON for headcount and hours, persistent belief (rho=1.0, default)
+countryString: "Poland"
 maxNumberOfRuns: 8
 executeWithGui: false
 randomSeed: 42

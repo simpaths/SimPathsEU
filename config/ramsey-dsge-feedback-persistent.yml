@@ -2,6 +2,7 @@
 # DSGE cycle layer on and no scenario shocks. Paired with arm 2 (same seed) it isolates what the
 # cycle layer adds in response to SimPaths' own labour input, the combination that
 # docs/SimPaths_Coupling.md §8.1 calls unmeasured.
+countryString: "Poland"
 maxNumberOfRuns: 8
 executeWithGui: false
 randomSeed: 42

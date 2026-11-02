@@ -1,4 +1,5 @@
 # Batch scenario 1/5 — No-macro baseline
+countryString: "Poland"
 maxNumberOfRuns: 1
 executeWithGui: false
 randomSeed: 42

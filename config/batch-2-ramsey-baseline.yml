@@ -1,4 +1,5 @@
 # Batch scenario 2/5 — Ramsey baseline (Ramsey trend only, no counterfactual)
+countryString: "Poland"
 maxNumberOfRuns: 1
 executeWithGui: false
 randomSeed: 42

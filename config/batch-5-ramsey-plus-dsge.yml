@@ -1,4 +1,5 @@
 # Batch scenario 5/5 — Ramsey counterfactual + DSGE energy shock
+countryString: "Poland"
 maxNumberOfRuns: 1
 executeWithGui: false
 randomSeed: 42
