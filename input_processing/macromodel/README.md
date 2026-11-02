@@ -39,6 +39,10 @@ work, nothing older has been tried.
 - **Dynare 6.5**, with `<dynare>/matlab` on the MATLAB path. Estimation runs
   `dynare ... use_dll`, which needs a C compiler; the Windows Dynare installer
   bundles MinGW for this. On Linux/macOS use the system compiler (`mex -setup C`).
+  Another version is allowed: `check_dependencies` only notes it, each export records
+  its Dynare and MATLAB versions in `BUNDLE_PROVENANCE.txt`, and `smoke_test.ps1
+  -Estimate` shows whether it reproduces the committed bundle. On one machine, 7.1 gave
+  the same numeric files as 6.5, byte for byte (2026-10).
 - **Stata 19** with `ssc install dbnomics`, stage 1 only.
 - **X-13ARIMA-SEATS 1.1 build 62** (U.S. Census Bureau), stage 1 only, only when
   `do_HICP_seasonal_adjustment = 1` in `stata/make_datasets.do`. It seasonally
@@ -120,10 +124,9 @@ StataMP-64.exe /e do make_datasets.do UK
   stamps and SHA-256 digests differ, and the regenerated datafile carries
   floating-point solver noise). It restores the committed bundle and `data/`
   afterwards, also after a failure or Ctrl+C, and fails if a restore fails. About
-  5 minutes. A tolerance this tight works because estimation is
+  a minute. A tolerance this tight works because estimation is
   skipped, so the Dynare solve of the tracked frozen model and the Ramsey solve are
-  deterministic up to that noise; the fourth-digit differences seen across machines
-  come from re-estimation, which the smoke test does not do. The comparison blanks the
+  deterministic up to that noise. The comparison blanks the
   SHA-256 digests in `BUNDLE_PROVENANCE.txt` (`BundleProvenanceTest` owns those) and
   compares the numbers inside text files at the same tolerance. It refuses to start
   if `input/{CC}/MacroModel/` or `input_processing/macromodel/data/` has uncommitted changes. Run
@@ -136,6 +139,16 @@ StataMP-64.exe /e do make_datasets.do UK
   It is tested on Windows PowerShell 5.1 only. On Linux or macOS the same script
   should run under PowerShell 7 (`pwsh -NoProfile -File input_processing/macromodel/smoke_test.ps1
   -MatlabExe <path to matlab>`); that has not been tried.
+- `smoke_test.ps1 -Estimate` is the check for a new machine or Dynare version. It also
+  re-estimates and regenerates the frozen model (about five minutes; git restores the
+  frozen model afterwards), and compares the bundle at `rel_tol = 1e-3`
+  (`-EstimatedRelTol`), the `data/` folder still at `1e-6`. Re-estimation moves the
+  numbers between machines even on one Dynare version: with 6.5 on two machines
+  (2026-11), Poland's posterior modes were identical and the UK's `omega_h` moved in the
+  sixth digit, taking policy entries by up to 6e-6; Spain's `omega_h` once moved by
+  2.6e-4. A real change is much larger: the switch to X-13 moved Poland's shock standard
+  deviations by up to 2.2%. A failure at `1e-3` means the difference needs explaining,
+  not that the version is forbidden.
 - `mvn -q test -Dtest='simpaths.model.macro.*Test'` runs the Java side.
   `CommittedBundlesTest` loads every committed bundle (Poland's and the UK's), replays
   each exported impulse response through the Java DSGE at `1e-8` and solves its Ramsey
@@ -182,7 +195,9 @@ StataMP-64.exe /e do make_datasets.do UK
   changed input is discarded with `git checkout -- input_processing/macromodel input/PL/MacroModel`
   followed by `git clean -f -- input/PL/MacroModel/BUNDLE_NOT_VERIFIED.txt`: a run that
   stopped before its export leaves that marker behind, and SimPaths refuses the bundle
-  while it is there.
+  while it is there. The same goes for a run on a new machine or Dynare version: with no
+  changed input the differences are noise, and committing them only rewrites every
+  number in the bundle.
   The data vintage moved only when `data/data_for_dynare_levels_*.csv` or
   `data/PROVENANCE_*.txt` changed; then the frozen model and the bundle must be
   regenerated (full `run_full_workflow`, with estimation) and committed with it.

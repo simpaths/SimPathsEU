@@ -21,6 +21,12 @@ function test_compare_bundles
     assert(r.ok, 'within tolerance, timestamps ignored: %s', strjoin(r.differences, '; '));
     assert(r.files_compared == 4, 'all four files compared, got %d', r.files_compared);
 
+    % The toolchain lines name what produced a bundle. Another Dynare or MATLAB, or a
+    % bundle exported before these lines existed, is not a difference.
+    put(b, 'BUNDLE_PROVENANCE.txt', sprintf('BUNDLE_PROVENANCE\nexported_at  2026-02-02 00:00:00\ndynare       7.1\nmatlab       R2026a\nsha256 t abc x\n'));
+    r = compare_bundles(a, b, 'rel_tol', 1e-6);
+    assert(r.ok, 'toolchain lines ignored: %s', strjoin(r.differences, '; '));
+
     r = compare_bundles(a, b, 'rel_tol', 1e-9);
     assert(~r.ok && any(contains(r.differences, 'policy_A.csv')), 'tighter tolerance must flag the CSV');
 

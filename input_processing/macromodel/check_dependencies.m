@@ -46,7 +46,8 @@ function report = check_dependencies(options)
             report.dynare_version = 'unknown';
         end
         if ~strcmp(report.dynare_version, '6.5')
-            report.notes{end+1} = sprintf('Dynare %s found; the committed bundles were produced with 6.5', report.dynare_version);
+            report.notes{end+1} = sprintf(['Dynare %s found; the committed bundles were produced with 6.5. ' ...
+                                           'Other versions are fine: check one with smoke_test.ps1 -Estimate'], report.dynare_version);
         end
         mingw = fullfile(fileparts(fileparts(dyn)), 'mingw64');
         cc = mex.getCompilerConfigurations('C', 'Selected');

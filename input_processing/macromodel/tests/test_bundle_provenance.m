@@ -35,6 +35,9 @@ function test_bundle_provenance
     assert(strcmp(lines{1}, 'BUNDLE_PROVENANCE'), 'first line is the format tag');
     assert(any(startsWith(lines, 'country      Testland')), 'country line');
     assert(any(startsWith(lines, 'exporter     test_bundle_provenance')), 'exporter line');
+    assert(any(strcmp(lines, ['matlab       R' version('-release')])), 'the MATLAB release is recorded');
+    if isempty(which('dynare_version')), dynare = 'unknown'; else, dynare = char(dynare_version()); end
+    assert(any(strcmp(lines, ['dynare       ' dynare])), 'the Dynare version is recorded, unknown without Dynare');
     sha_lines = lines(startsWith(lines, 'sha256 '));
     assert(numel(sha_lines) == 2, 'two hashable inputs expected, got %d', numel(sha_lines));
     assert(sum(startsWith(lines, 'missing ')) == 1, 'the absent input must be recorded as missing');

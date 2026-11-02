@@ -18,16 +18,26 @@ uncommitted changes. Afterwards, also on failure or Ctrl+C, a MATLAB process sti
 running is stopped, the bundle folder is restored from the snapshot and
 input_processing/macromodel/data from git, so a passing run leaves `git status`
 clean. A restore that fails says so, keeps the snapshot and fails the run.
-About five minutes. Tested on Windows PowerShell 5.1.
+About a minute. Tested on Windows PowerShell 5.1.
+
+With -Estimate the workflow also re-estimates and regenerates the frozen model
+(about five minutes), which git restores afterwards, and which must then be clean
+beforehand too. Re-estimating moves the posterior slightly on another machine or
+Dynare version, so the bundle is compared at -EstimatedRelTol; the data folder,
+which estimation does not touch, stays at -RelTol. This is the check for a new
+machine or Dynare version.
 
 .EXAMPLE
 .\smoke_test.ps1                      # Poland, matlab from PATH
 .\smoke_test.ps1 -MatlabExe 'C:\Program Files\MATLAB\R2025b\bin\matlab.exe' -RelTol 1e-6
+.\smoke_test.ps1 -Country UK -Estimate
 #>
 param(
     [string]$Country = 'Poland',
     [string]$MatlabExe = '',
-    [double]$RelTol = 1e-6
+    [double]$RelTol = 1e-6,
+    [switch]$Estimate,
+    [double]$EstimatedRelTol = 1e-3
 )
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -53,8 +63,10 @@ $bundle = Join-Path (Join-Path (Join-Path $root 'input') $cc) 'MacroModel'
 $data = Join-Path $here 'data'
 if (-not (Test-Path (Join-Path $bundle 'policy_A.csv'))) { throw "no committed bundle at $bundle" }
 
-# The restore below overwrites the bundle folder and input_processing/macromodel/data.
-$dirty = @(git -C $root status --porcelain -- "input/$cc/MacroModel" input_processing/macromodel/data)
+# The restore below overwrites the bundle folder and what git restores: the data folder and, with -Estimate, the frozen model.
+$fromGit = @('input_processing/macromodel/data')
+if ($Estimate) { $fromGit += "input_processing/macromodel/Macromodel_${Country}_frozen.mod" }
+$dirty = @(git -C $root status --porcelain -- "input/$cc/MacroModel" $fromGit)
 if ($LASTEXITCODE -ne 0) { throw "git status failed in $root" }
 if ($dirty.Count -gt 0) {
     throw ("commit or stash your bundle/data changes first; the smoke test compares against the committed bundle:`n" + ($dirty -join "`n"))
@@ -69,6 +81,14 @@ $script = Join-Path ([IO.Path]::GetTempPath()) ('macromodel_smoke_' + $token + '
 $log = Join-Path (Join-Path $here 'logs') "smoke_test_$Country.log"
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 $scenarios = '_macroScenario_*.csv'
+if ($Estimate) {
+    $workflowArgs = "'skip_postestimation', true, 'skip_projection_plot', true"
+    $bundleTol = $EstimatedRelTol
+}
+else {
+    $workflowArgs = "'skip_estimation', true, 'skip_frozen', true, 'skip_postestimation', true, 'skip_projection_plot', true"
+    $bundleTol = $RelTol
+}
 
 $matlabCode = @"
 cd('$(ConvertTo-MatlabText $here)');
@@ -76,11 +96,11 @@ setup_path();
 check_dependencies('strict', true);
 f = run_all_tests();
 assert(f == 0, '%d MATLAB check(s) failed', f);
-run_full_workflow('$Country', 'skip_estimation', true, 'skip_frozen', true, 'skip_postestimation', true, 'skip_projection_plot', true);
+run_full_workflow('$Country', $workflowArgs);
 r = compare_bundles('$(ConvertTo-MatlabText $dataSnapshot)', artifact_path('data', ''), 'rel_tol', $RelTol, 'fail', true);
 fprintf('compare_bundles: %d data files agree within rel_tol %g\n', r.files_compared, $RelTol);
-r = compare_bundles('$(ConvertTo-MatlabText $bundleSnapshot)', artifact_path('bundle', '', 'country', '$Country'), 'rel_tol', $RelTol, 'exclude', '$scenarios', 'fail', true);
-fprintf('compare_bundles: %d exporter files agree within rel_tol %g\n', r.files_compared, $RelTol);
+r = compare_bundles('$(ConvertTo-MatlabText $bundleSnapshot)', artifact_path('bundle', '', 'country', '$Country'), 'rel_tol', $bundleTol, 'exclude', '$scenarios', 'fail', true);
+fprintf('compare_bundles: %d exporter files agree within rel_tol %g\n', r.files_compared, $bundleTol);
 "@
 
 $exit = 1
@@ -125,11 +145,11 @@ finally {
                 Write-Cleanup "restoring the bundle failed: $($_.Exception.Message). The committed bundle is in $bundleSnapshot; copy it back into $bundle."
             }
         }
-        $gitOut = & git -C $root checkout -q -- input_processing/macromodel/data 2>&1
+        $gitOut = & git -C $root checkout -q -- $fromGit 2>&1
         if ($LASTEXITCODE -ne 0) {
             $keepSnapshot = $true
-            Write-Cleanup ("restoring input_processing/macromodel/data failed (git exit $LASTEXITCODE): " + ($gitOut -join ' ') +
-                           " Restore it with: git -C `"$root`" checkout -- input_processing/macromodel/data")
+            Write-Cleanup ("restoring $($fromGit -join ' ') failed (git exit $LASTEXITCODE): " + ($gitOut -join ' ') +
+                           " Restore it with: git -C `"$root`" checkout -- $($fromGit -join ' ')")
         }
         if (Test-Path $script) { Remove-Item $script -Force }
         if ($keepSnapshot) {
@@ -153,4 +173,4 @@ if ($exit -ne 0) {
     Write-Host "SMOKE TEST FAILED (exit $exit). Log: $log"
     exit $exit
 }
-Write-Host "SMOKE TEST PASSED: $Country data and bundle rebuilt from tracked inputs within rel_tol=$RelTol. Log: $log"
+Write-Host "SMOKE TEST PASSED: $Country data rebuilt from tracked inputs within rel_tol=$RelTol, bundle within rel_tol=$bundleTol. Log: $log"

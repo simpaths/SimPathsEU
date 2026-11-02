@@ -30,6 +30,10 @@ function prov_file = write_bundle_provenance(output_dir, country, exporter, inpu
 % as "missing <path>", never hashed, never fatal: Spain and Sweden have no
 % population file yet and their bundles are refused for other reasons.
 %
+% The dynare and matlab lines record the toolchain of this export. They are a
+% record, not a requirement: compare_bundles ignores them, and the Java test
+% reads only the country and sha256 lines.
+%
 % Contract #18: the committed bundle must be rebuilt whenever one of these
 % inputs changes. The Java test recomputes the hashes in CI, so a PR that
 % moves an input without re-exporting goes red without MATLAB on the runner.
@@ -51,6 +55,8 @@ function prov_file = write_bundle_provenance(output_dir, country, exporter, inpu
              sprintf('country      %s', country), ...
              sprintf('exporter     %s', exporter), ...
              sprintf('exported_at  %s', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'))), ...
+             sprintf('dynare       %s', dynare_release()), ...
+             sprintf('matlab       R%s', version('-release')), ...
              '# sha256 <t|b> <hex> <path relative to the SimPathsEU root>; t = CR bytes dropped before hashing'};
 
     for i = 1:size(inputs, 1)
@@ -70,6 +76,15 @@ function prov_file = write_bundle_provenance(output_dir, country, exporter, inpu
 
     prov_file = fullfile(output_dir, 'BUNDLE_PROVENANCE.txt');
     write_text_atomic(prov_file, strjoin(lines, newline));   % appends the final newline
+end
+
+function v = dynare_release()
+% 'unknown' when Dynare is not on the path: a Ramsey-only export does not need it.
+    try
+        v = char(dynare_version());
+    catch
+        v = 'unknown';
+    end
 end
 
 function lines = bundle_file_lines(output_dir)

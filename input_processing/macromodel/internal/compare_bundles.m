@@ -14,7 +14,9 @@ function result = compare_bundles(dir_a, dir_b, options)
 % (SIMPATHS_INTERFACE.md, BUNDLE_PROVENANCE.txt) are compared line by line: the
 % decimal numbers in a line under the same tolerance, integers and the text
 % around them exactly. Ignored there: generation
-% stamps, and the hex of `sha256` lines (kind and path are compared; the Java
+% stamps, the dynare and matlab lines of BUNDLE_PROVENANCE.txt (another toolchain
+% is not a difference, and bundles exported before 2026-11 lack the lines), and
+% the hex of `sha256` lines (kind and path are compared; the Java
 % provenance test owns the digests, which noise in a regenerated datafile
 % changes). A file present on one side only, a different header, a different
 % row or line count or a NaN facing a number are differences: the comparison
@@ -153,7 +155,7 @@ end
 function [lines, idx] = strip_stamps(txt)
     lines = strsplit(strrep(txt, char(13), ''), newline, 'CollapseDelimiters', false);
     lines = regexprep(lines, '^(sha256\s+\S+\s+)\S+', '$1<digest>');
-    idx = find(~contains(lines, 'Generated:') & ~startsWith(lines, 'exported_at'));
+    idx = find(~contains(lines, 'Generated:') & ~startsWith(lines, {'exported_at', 'dynare ', 'matlab '}));
     lines = lines(idx);
 end
 
