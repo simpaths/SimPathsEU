@@ -241,6 +241,28 @@ Five CSVs are diffed: `WealthIncomeStatistics`, `DemographicStatistics`, `Health
 
 Because each country has its own folders, either test can be run on its own, in any order. They do share `input/input.mv.db`, which each test rebuilds in its own `-DBSetup` step, so never run them concurrently. Both configs name their country (`countryString`), so `input/DatabaseCountryYear.xlsx` only needs to exist.
 
+### Macro model (read before changing macro code)
+
+The macro layer lives in `input_processing/macromodel/` (MATLAB/Dynare, plus a Stata data stage) and
+produces the bundle in `input/{CC}/MacroModel/` that `simpaths.model.macro` consumes.
+Read `input_processing/macromodel/README.md` and `input_processing/macromodel/docs/Integration_Contracts.md` first;
+`input_processing/macromodel/docs/SimPaths_Coupling.md` describes the Java side (switches, bundle files, Ramsey feedback).
+Two rules bind Java changes:
+
+1. **Never re-derive downstream what upstream already computes.** Carry the quantity
+   in a bundle artefact and fail the run if it is missing; a local fallback is the bug.
+2. **Parity fixtures are snapshots.** `src/test/resources/macro/exogenous/` is regenerated
+   only via `refresh_java_parity_fixtures('<Country>')` in `input_processing/macromodel/`, never hand-edited,
+   and `RamseyTrendModelTest` must then pass parity at `RELATIVE_TOLERANCE = 1e-9`. That `1e-9`
+   is never loosened.
+
+`BundleProvenanceTest` fails when any hashed input (frozen model, datafile, levels CSV, growth-params
+template, template or calibration .mod, population workbook) or any bundle file changes without a
+re-export; the fix is to re-export, not to edit the bundle. A changed input needs the full
+`run_full_workflow('<Country>')` with estimation, since the frozen model and the datafile are built from
+the inputs (commit both with the bundle); a changed bundle file alone needs only the skip-estimation
+re-export. The test prints the recipe that fits the failing line.
+
 ## Branch Conventions
 
 - `main` — stable release; `develop` — integration. PRs target `develop` on `simpaths/SimPathsEU`, and `develop` is merged into `main` by PR.

@@ -1,0 +1,248 @@
+# Macro model: Ramsey trend and DSGE cycle for SimPaths
+
+This folder produces the macro bundle SimPaths reads from `input/{CC}/MacroModel/`:
+a Ramsey growth model for the long-run path of capital, output, consumption and
+the real wage, and an estimated New-Keynesian DSGE model for cyclical deviations
+around it. SimPaths applies `w_total = w_trend + w_cycle` to wages and, once per
+simulated year, feeds its realized employment and hours back into a re-solve of
+the Ramsey path. Nothing here affects a SimPaths run unless `mm_macroModel` is
+switched on in the YAML config (default `off`). Poland and the UK ship bundles.
+SimPathsEU itself runs Poland and Spain, not the UK, and Spain has no bundle yet
+(see "Country status").
+
+The committed bundle is enough to run SimPaths with the macro layer on. You only
+need the toolchains below to **rebuild** a bundle: after a data refresh, a
+re-estimation, a model change, or for a new country.
+
+## Three stages, three toolchains
+
+| Stage | Tool | Reads | Writes | Who runs it |
+|---|---|---|---|---|
+| 1 Data | Stata 19 + `dbnomics`; X-13ARIMA-SEATS only for HICP seasonal adjustment | Eurostat/ECB/OECD via DBnomics (ONS/OECD for the UK); `stata/hicp_q_sa.dta` (`stata/hicp_q_sa_uk.dta` for the UK) | `data/data_for_dynare_levels_{Country}.csv`, `data/PROVENANCE_{Country}.txt` | Whoever refreshes the data vintage. The CSVs are tracked, so stages 2 and 3 run without Stata. |
+| 2 Trend | MATLAB + Dynare | `data/*.csv`, `country_params/`, `../../input/{CC}/align_popProjections.xlsx` | `output/` (ignored), Ramsey files in the bundle, `data/data_for_dynare_{Country}.csv` (the Dynare datafile) | Anyone rebuilding a bundle |
+| 3 Cycle | MATLAB + Dynare | the datafile, `Macromodel_{Country}.mod` | `Macromodel_{Country}_frozen.mod` (tracked), policy matrices in the bundle | Anyone re-estimating |
+
+The bundle lands in `../../input/{CC}/MacroModel/` directly. There is no copy step.
+
+## Dependencies
+
+Exact versions used for the committed Poland bundle; newer patch releases should
+work, nothing older has been tried.
+
+- **MATLAB R2025b** with the **Statistics and Machine Learning Toolbox**. That is the
+  complete product list reported by `matlab.codetools.requiredFilesAndProducts` on
+  the entry points. Tested on R2025b; at least R2020a is needed
+  (`readtable(..., 'VariableNamingRule', ...)`, `exportgraphics`; the `arguments`
+  blocks alone would need R2019b). `check_dependencies`
+  reports an R2019b as too old; a release before R2019b cannot parse the `arguments`
+  blocks and stops with a syntax error before any check runs.
+- **Dynare 6.5**, with `<dynare>/matlab` on the MATLAB path. Estimation runs
+  `dynare ... use_dll`, which needs a C compiler; the Windows Dynare installer
+  bundles MinGW for this. On Linux/macOS use the system compiler (`mex -setup C`).
+  Another version is allowed: `check_dependencies` only notes it, each export records
+  its Dynare and MATLAB versions in `BUNDLE_PROVENANCE.txt`, and `smoke_test.ps1
+  -Estimate` shows whether it reproduces the committed bundle. On one machine, 7.1 gave
+  the same numeric files as 6.5, byte for byte (2026-10).
+- **Stata 19** with `ssc install dbnomics`, stage 1 only.
+- **X-13ARIMA-SEATS 1.1 build 62** (U.S. Census Bureau), stage 1 only, only when
+  `do_HICP_seasonal_adjustment = 1` in `stata/make_datasets.do`. It seasonally
+  adjusts the price level, called from Stata through `stata/x13_seats.ado` with the
+  binary and spec set in `stata/x13_settings.do`: `stata/make_datasets_hicp.do`
+  adjusts the Eurostat HICP of every country into `stata/hicp_q_sa.dta`, and
+  `stata/make_datasets_hicp_uk.do` the ONS CPI into `stata/hicp_q_sa_uk.dta`, because
+  Eurostat's UK HICP stops at 2020m11. The binary is not tracked;
+  `tools/x13as/README.md` says where to get it and its SHA-256. Both `.dta` files are
+  tracked as the cached results, so X-13 is optional: without it, stage 1 reuses them.
+- **Java 19 and Maven**, for the bundle tests (`BundleProvenanceTest`,
+  `RamseyTrendModelTest`, `DSGEBundleContractTest`), already required by SimPaths.
+
+**Octave is not supported.** 25 of the 56 MATLAB files use `arguments` blocks and
+12 use `table`/`readtable`; Octave has neither. Dynare itself runs under Octave,
+the orchestration here does not, and no port is planned.
+
+Run `check_dependencies` in MATLAB (from this folder) to see what your machine has.
+
+## Running it
+
+The working directory must be this folder: data is found by `pwd`-relative paths
+and Dynare writes its output into `pwd`. From MATLAB:
+
+```matlab
+>> cd input_processing/macromodel
+>> check_dependencies
+>> run_full_workflow('Poland')
+```
+
+That runs: `calibrate_growth_model`, `ramsey_trend`, `build_population_projection`
+(reads `../../input/PL/align_popProjections.xlsx`), the Ramsey diagnostic plot,
+`dynare Macromodel_Poland.mod use_dll` (estimation, about 3 minutes),
+`generate_frozen_model`, `dynare Macromodel_Poland_frozen.mod` and
+`export_dynamic_for_simpaths`, then `postestimation_analysis`. About 5 minutes in
+all on a 2025 laptop. The same steps one by one:
+
+```matlab
+>> calibrate_growth_model('Poland')
+>> ramsey_trend('Poland')
+>> build_population_projection('Poland')
+>> dynare Macromodel_Poland.mod use_dll
+>> generate_frozen_model('Poland')
+>> dynare Macromodel_Poland_frozen.mod noclearall nograph
+>> export_dynamic_for_simpaths
+>> postestimation_analysis
+```
+
+`run_full_workflow` takes `skip_growth_calibration`, `skip_detrending`,
+`skip_estimation`, `skip_frozen`, `skip_dynamic_export`, `skip_postestimation`,
+`skip_population_projection`, `skip_projection_plot`, `use_parallel`,
+`simpaths_pop_file` and `projection_start` as name-value options. Unattended:
+
+```powershell
+matlab -batch "cd('<repo>\input_processing\macromodel'); run_full_workflow('Poland')" -logfile run.log
+```
+
+Stage 1, when the data vintage should move (Stata's working directory must be
+`stata/`; pass the country as an argument, or set `global country` at the top of
+the do-file; the argument leaves the file, and so the `script_checksum` it stamps
+into `data/PROVENANCE_{Country}.txt`, unchanged):
+
+```powershell
+cd input_processing\macromodel\stata
+StataMP-64.exe /e do make_datasets.do UK
+```
+
+## Verifying it
+
+- `setup_path` and then `run_all_tests` from this folder runs the MATLAB checks
+  (`setup_path` puts `tests/` on the MATLAB path). Exit by its return value: `0`
+  failures. None of the checks solves the model; they and `smoke_test.ps1` are the
+  merge gates.
+- `smoke_test.ps1` is the fresh-clone test: dependency check, `run_all_tests`, the
+  workflow from tracked inputs with estimation, frozen-model generation,
+  post-estimation and the projection plot skipped, and `compare_bundles` of the
+  regenerated `data/` folder and of the regenerated bundle against snapshots taken
+  before the run, at `rel_tol = 1e-6` (byte identity is not expected: generation
+  stamps and SHA-256 digests differ, and the regenerated datafile carries
+  floating-point solver noise). It restores the committed bundle and `data/`
+  afterwards, also after a failure or Ctrl+C, and fails if a restore fails. About
+  a minute. A tolerance this tight works because estimation is
+  skipped, so the Dynare solve of the tracked frozen model and the Ramsey solve are
+  deterministic up to that noise. The comparison blanks the
+  SHA-256 digests in `BUNDLE_PROVENANCE.txt` (`BundleProvenanceTest` owns those) and
+  compares the numbers inside text files at the same tolerance. It refuses to start
+  if `input/{CC}/MacroModel/` or `input_processing/macromodel/data/` has uncommitted changes. Run
+  it from the repository root (the script finds its own folders):
+
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File input_processing\macromodel\smoke_test.ps1 [-MatlabExe <path>]
+  ```
+
+  It is tested on Windows PowerShell 5.1 only. On Linux or macOS the same script
+  should run under PowerShell 7 (`pwsh -NoProfile -File input_processing/macromodel/smoke_test.ps1
+  -MatlabExe <path to matlab>`); that has not been tried.
+- `smoke_test.ps1 -Estimate` is the check for a new machine or Dynare version. It also
+  re-estimates and regenerates the frozen model (about five minutes; git restores the
+  frozen model afterwards), and compares the bundle at `rel_tol = 1e-3`
+  (`-EstimatedRelTol`), the `data/` folder still at `1e-6`. Re-estimation moves the
+  numbers between machines even on one Dynare version: with 6.5 on two machines
+  (2026-11), Poland's posterior modes were identical and the UK's `omega_h` moved in the
+  sixth digit, taking policy entries by up to 6e-6; Spain's `omega_h` once moved by
+  2.6e-4. A real change is much larger: the switch to X-13 moved Poland's shock standard
+  deviations by up to 2.2%. A failure at `1e-3` means the difference needs explaining,
+  not that the version is forbidden.
+- `mvn -q test -Dtest='simpaths.model.macro.*Test'` runs the Java side.
+  `CommittedBundlesTest` loads every committed bundle (Poland's and the UK's), replays
+  each exported impulse response through the Java DSGE at `1e-8` and solves its Ramsey
+  forward projection; the other DSGE and Ramsey tests use Poland's.
+  `BundleProvenanceTest` recomputes the SHA-256 hashes in
+  `input/PL/MacroModel/BUNDLE_PROVENANCE.txt` from the tracked frozen model, the
+  Dynare datafile and the Stata levels CSV, the growth-params template,
+  `Macromodel_template.mod` and the calibration file, and
+  `input/{CC}/align_popProjections.xlsx`, and it also recomputes the hashes of the
+  bundle's own exporter files, so a change to any of them without a re-export fails
+  CI. It checks every `input/*/MacroModel/` folder, requires `policy_A.csv` in each
+  and fails on a committed `BUNDLE_NOT_VERIFIED.txt`. `RamseyTrendModelTest` checks
+  MATLAB-Java parity of the Ramsey solve at `1e-9` against the fixtures in
+  `src/test/resources/macro/exogenous/`, refreshed only by
+  `refresh_java_parity_fixtures`.
+- Editing any hashed input (`input/PL/align_popProjections.xlsx`, the datafile
+  `data/data_for_dynare_Poland.csv`, the levels CSV
+  `data/data_for_dynare_levels_Poland.csv`, the growth-params template
+  `country_params/Poland_growth_params.json`, `Macromodel_template.mod`,
+  `country_params/Poland_calibration.mod`, `Macromodel_Poland_frozen.mod`) or any
+  exporter file in the bundle folder turns `BundleProvenanceTest` red until the
+  bundle is re-exported and committed together with the edit. Which re-export fits
+  depends on what failed, and the test prints the one that does. A changed bundle
+  file alone (nothing upstream moved) needs the re-export that skips estimation
+  (MATLAB + Dynare, about five minutes):
+
+  ```matlab
+  >> run_full_workflow('Poland', 'skip_estimation', true, 'skip_frozen', true, 'skip_postestimation', true)
+  ```
+
+  A changed input needs the full workflow with estimation, `run_full_workflow('Poland')`
+  (about five minutes for Poland): the frozen model and the Dynare datafile are built
+  from the inputs, so the skip-estimation re-export would re-hash the edit around an
+  unchanged posterior. Commit `Macromodel_Poland_frozen.mod` and
+  `data/data_for_dynare_Poland.csv` together with the bundle.
+  `export_ramsey_for_simpaths('Poland')` refreshes only the Ramsey half; it carries
+  the three DSGE-half lines (the frozen model, `Macromodel_template.mod` and
+  `country_params/Poland_calibration.mod`) forward from the bundle's existing
+  `BUNDLE_PROVENANCE.txt`.
+- After a run, `git status` is rarely clean, and most of what it shows is not a
+  change: generation stamps alone dirty the frozen model (`// Generated:`),
+  `SIMPATHS_INTERFACE.md` and `BUNDLE_PROVENANCE.txt`, and on another machine the
+  solver's floating-point noise dirties `data/data_for_dynare_*.csv`. A run with no
+  changed input is discarded with `git checkout -- input_processing/macromodel input/PL/MacroModel`
+  followed by `git clean -f -- input/PL/MacroModel/BUNDLE_NOT_VERIFIED.txt`: a run that
+  stopped before its export leaves that marker behind, and SimPaths refuses the bundle
+  while it is there. The same goes for a run on a new machine or Dynare version: with no
+  changed input the differences are noise, and committing them only rewrites every
+  number in the bundle.
+  The data vintage moved only when `data/data_for_dynare_levels_*.csv` or
+  `data/PROVENANCE_*.txt` changed; then the frozen model and the bundle must be
+  regenerated (full `run_full_workflow`, with estimation) and committed with it.
+- A bundle folder containing `BUNDLE_NOT_VERIFIED.txt` was refused by
+  `verify_export_bundle` (incomplete or mixed vintages), or the export never reached
+  verification, or `calibrate_growth_model` or `ramsey_trend` rewrote its growth-params
+  JSON after the last export. It is never
+  committed, the layout test fails if one is tracked, and SimPaths refuses to start
+  the macro layer on it. The next export that verifies removes the file.
+
+## Country status
+
+| Country | Code | Estimated | Bundle shipped | Why not |
+|---|---|---|---|---|
+| Poland | PL | yes | yes | |
+| Germany | DE | yes | no | not exported into this repository; the last export predates the units contract (`simpaths_input_scale`), so re-export before any DE run |
+| Spain | ES | yes | no | SimPathsEU runs Spain with the macro layer off, but no bundle is exported. The tracked data and frozen model predate `input/ES/align_popProjections.xlsx` and extrapolate employment mechanically; the next `run_full_workflow('Spain')` reads the workbook and changes them |
+| Sweden | SE | yes | no | no `input/SE/align_popProjections.xlsx`, so employment is extrapolated mechanically and the bundle is refused; SimPathsEU has no Sweden inputs |
+| UK | UK | yes | yes | shipped, but SimPathsEU cannot run the UK yet (`Country` has no UK), so no simulation reads the bundle; `CommittedBundlesTest` and `BundleProvenanceTest` check it like Poland's. Data from the ONS and the OECD, as Eurostat has none after Brexit (`docs/MULTI_COUNTRY_WORKFLOW.md`) |
+
+Seasonal adjustment moved from EViews' TRAMO/SEATS to X-13 in 2026-10 (the UK was on
+X-13 from the start). The tracked data and frozen models of all five countries, and the
+Poland and UK bundles, use X-13; Germany, Spain and Sweden were re-estimated on it and,
+as before, have no bundle here. The UK's larger measurement error
+on inflation (`country_params/UK_estimation.mod`) allows for the 0.54 pp gap between
+the two methods on UK data; whether it is still needed is a question for the next UK
+re-estimation.
+
+## Adding a country
+
+Four files: `country_params/{Country}_calibration.mod`,
+`country_params/{Country}_estimation.mod`, the Ramsey parameter template
+`country_params/{Country}_growth_params.json`, and the two-line wrapper
+`Macromodel_{Country}.mod`; plus the country's row in `stata/make_datasets.do` and
+`internal/get_country_config.m`. `docs/MULTI_COUNTRY_WORKFLOW.md` walks through it,
+including the data sources that bite.
+
+## Contracts and documents
+
+- `docs/Integration_Contracts.md`: the numbered contracts between the stages and
+  between MATLAB and Java, each with what enforces it. Two bind Java changes: never
+  re-derive downstream what upstream computes (carry it in the bundle, fail if it is
+  missing), and treat parity fixtures as snapshots that are refreshed, never edited.
+- `docs/Technical_Documentation_Macromodel.md` (v17): the model.
+- `docs/SimPaths_Coupling.md`: the Java side: the `mm_*` switches, which bundle files
+  SimPaths reads, and the yearly Ramsey re-solve against realized labour supply.
+- `docs/Estimation_Guide.md`: priors, shocks, diagnostics.
+- `docs/MULTI_COUNTRY_WORKFLOW.md`: adding a country.

@@ -1,0 +1,49 @@
+{
+  "model_version": "2.0",
+  "model_type": "ramsey",
+  "country": "Sweden",
+  "calibration_date": "2026-09-17",
+  "calibration_source": "Eurostat (namq_10_gdp, namq_10_pe, namq_10_a10_e, demo_pjanbroad, lfsi_emp_a, irt_st_m), OECD LFS, Riksbank",
+  "parameters": {
+    "alpha_K": 0.33,
+    "delta_annual": 0.055,
+    "beta_annual": 0.96,
+    "sigma": 1.5,
+    "tfp_growth_annual": 0.0065,
+    "x_comments": {
+      "alpha_K": "Capital share set to 0.33 for cross-country comparability with Germany, Poland and Spain, all of which use 0.33 in the Ramsey layer. Holding alpha_K fixed across countries keeps the Ramsey trends comparable.",
+      "delta_annual": "5.5% annual depreciation for total-economy capital, between Germany/Spain (5%) and Poland (6%). Sweden is a mature economy like Germany, but its capital stock carries an unusually high ICT and R&D share, and those assets depreciate far faster than structures. PWT composite rates for Sweden sit around 5.5-6%. This is the one Swedish structural input with no sharp empirical pin in this repo; if the Ramsey K/Y comes out far from the PIM value, revisit it first.",
+      "beta_annual": "Discount factor: 0.96 annual, as for the other three countries. It pins the terminal modified-golden-rule BGP real rate jointly with sigma and tfp_growth_annual; the resulting r* is written to output/documentation_data/ramsey/ramsey_summary_Sweden.json (structural.r_star_annual) by calibrate_growth_model rather than quoted here, because it is derived and would go stale.",
+      "sigma": "Inverse IES (CRRA coefficient). sigma=1.5 is mid-range consensus (1=log, 2=high risk aversion), same as the other three.",
+      "tfp_growth_annual": "0.65% annual labour-augmenting TFP growth, DERIVED FROM THIS SAMPLE rather than assumed. Over 2001q1-2025q1 the Swedish levels data give GDP per hour growth of 0.98% p.a.; on a BGP where K grows with Y, g_A = g_(Y/L) * (1 - alpha_K) = 0.98% * 0.67 = 0.65%. This is the HIGHEST of the four implemented countries (Germany 0.5%, Spain 0.4%, Poland 1.5% in-sample but converging to 0.5%), which matches Sweden's comparatively strong measured productivity performance over the period."
+    }
+  },
+  "base_year": 2001,
+  "base_quarter": "2001Q1",
+  "base_year_values": {
+    "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into input/SE/MacroModel/growth_params_Sweden.json."
+  },
+  "inflation_target": {
+    "pi_star_annual": 2,
+    "convergence_rho": 0.95,
+    "x_comment": "Riksbank 2% target. Numerically the same as the ECB's, but it is an INDEPENDENT national target, in force since 1993 and restated on the CPIF measure in 2017 - not an imported one as for Spain. The whole 2001q1 sample sits inside that regime. pi_star entered as annual percent."
+  },
+  "labor_trends": {
+    "nawru_source": "PLACEHOLDER: HP trend (lambda=160000) of the in-sample ILO unemployment rate, written by calibrate_growth_model.m. Intended source: AMECO.",
+    "nawru_file": "nawru_sweden.csv",
+    "demographic_L_source": "PLACEHOLDER: HP trend (lambda=160000) of the in-sample labour force, written by calibrate_growth_model.m; no projection tail. Intended source: Eurostat population projections + SCB (Statistics Sweden) labor force participation.",
+    "demographic_L_file": "demographic_L_sweden.csv",
+    "hours_trend_method": "log_linear",
+    "x_comment": "nawru_file is read for diagnostics only. demographic_L_file has no post-sample tail, so ramsey_trend.m extends N at its trailing 20-quarter trend growth rate, untapered, until build_population_projection.m supplies a projection. Hours: log-linear trend fitted to observed."
+  },
+  "solver": {
+    "method": "stacked_newton_lbj",
+    "terminal_tail_quarters": 400,
+    "newton_tolerance": 1e-10,
+    "max_newton_iterations": 200,
+    "finite_difference_step_scale": 1e-7,
+    "jacobian_half_bandwidth": 1,
+    "line_search": "armijo_backtracking",
+    "x_comment": "Stacked-time Newton (LBJ) perfect-foresight solver with terminal K/Y closure. 400 terminal quarters (~100 years) as for Germany and Spain; Poland needs 600 only because its terminal_growth block has to converge a catch-up TFP path, which Sweden does not have. Newton convergence requires ||F||_inf <= 1.0e-10 within 200 iterations."
+  }
+}
