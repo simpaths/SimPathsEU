@@ -190,6 +190,20 @@ reads (C/Y, I/Y, NX/Y) depend on the reference year, not only on a currency fact
 Re-referencing each ONS volume by its own 2015 current-price total puts it on
 Eurostat's `CLV15` basis.
 
+### The population workbook's growth reaches the estimation sample
+
+`demographic_L_{country}.csv` follows the SimPaths workbook from the handoff quarter
+(2023q1) on, and that quarter lies inside the estimation sample, so the workbook's
+growth over 2023q1-2025q1 enters the estimated `L` observable as well as the forward
+`N` path. Contract 38 needs this: `eps_L` is measured against the projection the
+DSGE was estimated against. A step in the workbook therefore reads as a labour-force
+shock in the sample's last quarters. The UK workbook's working-age population falls
+1.2% from 2023 to 2024 (the note in `UK_growth_params.json`), while the observed labour
+force rises, and the UK's `L` goes from -0.41 in 2023q1 to +3.10 in 2025q1, against a
+sample standard deviation of 0.70. Poland's workbook steps the other way: `L_demo` grows
+2.3% over 2023 while the labour force is flat, and its `L` goes from +1.55 in 2023q1 to
+-1.10 in 2024q1.
+
 ### Currency: euro volumes, national-currency wages
 
 Two rules, for any country with its own currency:
