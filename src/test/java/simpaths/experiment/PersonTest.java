@@ -7,12 +7,14 @@ import simpaths.model.BenefitUnit;
 import simpaths.model.Person;
 import simpaths.model.SimPathsModel;
 import simpaths.model.enums.Dcpst;
+import simpaths.model.enums.Dhhtp_c4;
 import simpaths.model.enums.Education;
 import simpaths.model.enums.EducationLevel;
 import simpaths.model.enums.Indicator;
 import simpaths.model.enums.Gender;
 import simpaths.model.enums.Les_c4;
 import simpaths.model.enums.TimeSeriesVariable;
+import simpaths.model.enums.Ydses_c5;
 import simpaths.model.Innovations;
 
 import microsim.statistics.regression.BinomialRegression;
@@ -27,6 +29,7 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -179,9 +182,9 @@ public class PersonTest {
 
         @Test
         @DisplayName("D_Children_L1 matches D_Children when both periods have children")
-        public void dChildrenLagMatchesCurrentWhenChildrenPresent() {
+        public void dChildrenLagMatchesCurrentWhenChildrenPresent() throws Exception {
             Mockito.when(mockBenefitUnit.getNumberChildrenAll()).thenReturn(2);
-            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(2);
+            setPrivateField(testPerson, "demNChildAllL1", 2);
 
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.D_Children));
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.D_Children_L1));
@@ -189,9 +192,9 @@ public class PersonTest {
 
         @Test
         @DisplayName("D_Children_L1 matches D_Children when both periods have no children")
-        public void dChildrenLagMatchesCurrentWhenNoChildrenPresent() {
+        public void dChildrenLagMatchesCurrentWhenNoChildrenPresent() throws Exception {
             Mockito.when(mockBenefitUnit.getNumberChildrenAll()).thenReturn(0);
-            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(0);
+            setPrivateField(testPerson, "demNChildAllL1", 0);
 
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.D_Children));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.D_Children_L1));
@@ -230,18 +233,18 @@ public class PersonTest {
 
         @Test
         @DisplayName("Dnc parity dummies split the lagged child count at zero, one and two")
-        public void dncParityDummiesSplitLaggedChildCount() {
-            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(0);
+        public void dncParityDummiesSplitLaggedChildCount() throws Exception {
+            setPrivateField(testPerson, "demNChildAllL1", 0);
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_L1));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc2_plus_L1));
 
-            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(1);
+            setPrivateField(testPerson, "demNChildAllL1", 1);
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_L1));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc2_plus_L1));
 
-            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(3);
+            setPrivateField(testPerson, "demNChildAllL1", 3);
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_L1));
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc2_plus_L1));
@@ -249,15 +252,15 @@ public class PersonTest {
 
         @Test
         @DisplayName("Dnc1_plus_L1 matches D_Children_L1; Dnc02_yes_L1 flags any child aged 0-2")
-        public void dncPresenceDummiesBehaveAsExpected() {
-            Mockito.when(mockBenefitUnit.getNumberChildrenAll_lag1()).thenReturn(2);
-            Mockito.when(mockBenefitUnit.getNumberChildren02_lag1()).thenReturn(0);
+        public void dncPresenceDummiesBehaveAsExpected() throws Exception {
+            setPrivateField(testPerson, "demNChildAllL1", 2);
+            setPrivateField(testPerson, "demNChildren02L1", 0);
 
             assertEquals(testPerson.getDoubleValue(Person.DoublesVariables.D_Children_L1),
                     testPerson.getDoubleValue(Person.DoublesVariables.Dnc1_plus_L1));
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc02_yes_L1));
 
-            Mockito.when(mockBenefitUnit.getNumberChildren02_lag1()).thenReturn(1);
+            setPrivateField(testPerson, "demNChildren02L1", 1);
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc02_yes_L1));
         }
 
@@ -280,6 +283,62 @@ public class PersonTest {
             testPerson.setDcpst_lag1(Dcpst.Single);
 
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.New_rel_L1));
+        }
+
+        @Test
+        @DisplayName("Ydses_c5 lags read the quintile saved on the person, not the current benefit unit's")
+        public void ydsesLagIsKeptPerPerson() throws Exception {
+            // Saved last year from the parents' unit (Q4); the person now heads a new unit, as after turning 18
+            setPrivateField(testPerson, "yHhQuintilesC5L1", Ydses_c5.Q4);
+            setPrivateField(testPerson, "parentsKnownL1", true);
+            Mockito.when(mockBenefitUnit.getYdses_c5()).thenReturn(Ydses_c5.Q3);
+
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Ydses_c5_Q4_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Ydses_c5_Q3_L1));
+            assertEquals(4.0, testPerson.getDoubleValue(Person.DoublesVariables.Ydses_c5_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Parents_known_Ydses_Q4_L1));
+        }
+
+        @Test
+        @DisplayName("Dhh_owned_L1 reads the home ownership saved on the person, not the current benefit unit's")
+        public void homeOwnershipLagIsKeptPerPerson() throws Exception {
+            // Saved last year from the parents' owned home; the person now heads a new, not-owned unit, as after turning 18
+            setPrivateField(testPerson, "wealthDhhOwnedL1", Boolean.TRUE);
+            Mockito.when(mockBenefitUnit.isDhhOwned()).thenReturn(false);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dhh_owned_L1));
+
+            setPrivateField(testPerson, "wealthDhhOwnedL1", null);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dhh_owned_L1));
+        }
+
+        @Test
+        @DisplayName("Children and household-type lags: a child has none, an adult takes their unit's, both kept after a move")
+        public void childrenAndHouseholdTypeLagsArePerPerson() throws Exception {
+            Method update = Person.class.getDeclaredMethod("updateChildrenAndHouseholdTypeLags");
+            update.setAccessible(true);
+            // Last year's unit: a couple with three children, one of them aged 0-2
+            Mockito.when(mockBenefitUnit.getNumberChildrenAll()).thenReturn(3);
+            Mockito.when(mockBenefitUnit.getNumberChildren(0, 2)).thenReturn(1);
+            Mockito.when(mockBenefitUnit.getDhhtp_c4()).thenReturn(Dhhtp_c4.CoupleChildren);
+
+            // A 17-year-old child in that unit: no children of their own and single, as in the data
+            testPerson.setDag(17);
+            update.invoke(testPerson);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc_L1));
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc02_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dhhtp_c4_SingleNoChildren_L1));
+
+            // A parent in that unit: the unit's values
+            testPerson.setDag(35);
+            update.invoke(testPerson);
+            assertEquals(3.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc02_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dhhtp_c4_CoupleChildren_L1));
+
+            // After a move to a new unit this year (e.g. a separation), the lags stay last year's
+            setPrivateField(testPerson, "benefitUnit", Mockito.mock(BenefitUnit.class));
+            assertEquals(3.0, testPerson.getDoubleValue(Person.DoublesVariables.Dnc_L1));
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dhhtp_c4_CoupleChildren_L1));
         }
     }
 

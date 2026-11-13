@@ -169,6 +169,13 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
     @Transient private Integer demPartnerNYearL1; //Lag(1) of number of years in partnership
     private Double yNonBenPersGrossMonth; // asinh of personal non-benefit income per month
     @Transient private Double yNonBenPersGrossMonthL1; //Lag(1) of gross personal non-benefit income
+    @Transient private Ydses_c5 yHhQuintilesC5L1; //Lag(1) income quintile of the benefit unit the person was in last year (Ydses_c5_*_L1); kept per person, see updateLaggedVariables
+    @Transient private Boolean wealthDhhOwnedL1; //Lag(1) home ownership of the benefit unit the person was in last year (Dhh_owned_L1); kept per person, see updateLaggedVariables
+    @Transient private Integer demNChildAllL1; //Lag(1) number of own dependent children aged 0-17 (Dnc*_L1, D_Children_L1); see updateChildrenAndHouseholdTypeLags
+    @Transient private Integer demNChildren02L1; //Lag(1) number of own dependent children aged 0-2 (Dnc02*_L1)
+    @Transient private Dhhtp_c4 demCompHhC4L1; //Lag(1) own household type (Dhhtp_c4_*_L1, Dhhtp_c8_*_L1)
+    @Transient private Double yDispEquivYearL1; //Lag(1) equivalised disposable income of the benefit unit the person was in last year (RealIncomeChange, RealIncomeDecrease_D)
+    @Transient private Integer yPvrtyFlagL1; //Lag(1) at-risk-of-poverty flag of the benefit unit the person was in last year (NonPovertyToPoverty, PovertyToNonPoverty, PersistentPoverty)
     @Transient private boolean parentsKnownL1; //Lag(1): a mother or father lived in the same household (Parents_known_L1)
     @Transient private Double parentsYpnbL1; //Lag(1) asinh of co-resident parents' summed non-benefit income; null if none
     @Transient private Ydses_c5 parentsYpnbQuintileL1; //Quintile of parentsYpnbL1, cut each year by SimPathsModel; null if none
@@ -413,6 +420,13 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         demPartnerStatusL1 = originalPerson.demPartnerStatusL1;
         yNonBenPersGrossMonth = originalPerson.getYpnbihs_dv();
         yNonBenPersGrossMonthL1 = originalPerson.yNonBenPersGrossMonthL1;
+        yHhQuintilesC5L1 = originalPerson.yHhQuintilesC5L1;
+        wealthDhhOwnedL1 = originalPerson.wealthDhhOwnedL1;
+        demNChildAllL1 = originalPerson.demNChildAllL1;
+        demNChildren02L1 = originalPerson.demNChildren02L1;
+        demCompHhC4L1 = originalPerson.demCompHhC4L1;
+        yDispEquivYearL1 = originalPerson.yDispEquivYearL1;
+        yPvrtyFlagL1 = originalPerson.yPvrtyFlagL1;
         parentsKnownL1 = originalPerson.parentsKnownL1;
         parentsYpnbL1 = originalPerson.parentsYpnbL1;
         yMiscPersGrossMonth = Objects.requireNonNullElse(originalPerson.yMiscPersGrossMonth, 0.0);
@@ -1829,6 +1843,18 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         eduHighestC4L1 = eduHighestC4; //Update lag(1) of education level
         eduDedL1 = eduSpellFlag; //Update lag(1) of education level
         yNonBenPersGrossMonthL1 = getYpnbihs_dv(); //Update lag(1) of gross personal non-benefit income
+        // Lag(1) income quintile, saved per person as Stata's l.ydses_c5 is. This runs before ageing, while the person is
+        // still in last year's benefit unit, so someone who turns 18 and moves to a new unit keeps their parents' quintile.
+        yHhQuintilesC5L1 = benefitUnit.getYdses_c5();
+        // Lag(1) home ownership, saved per person for the same reason. At 17 it is the parents' unit's, as in the data,
+        // where every benefit unit takes the home ownership of its household (03_create_benefit_units_<CC>.do).
+        wealthDhhOwnedL1 = benefitUnit.isDhhOwned();
+        // Lag(1) equivalised disposable income and poverty status, saved per person for the same reason. The only Stata
+        // definition (exp_incchange and exp_poverty in regression_estimates/ES/with_time_trend/variable_update_ak.do, which
+        // no ES or PL estimation runs) also lags them per person.
+        yDispEquivYearL1 = benefitUnit.getEquivalisedDisposableIncomeYearly();
+        yPvrtyFlagL1 = benefitUnit.getAtRiskOfPoverty();
+        updateChildrenAndHouseholdTypeLags();
         updateParentsLaggedVariables();
         labHrsWorkEnumWeekL1 = getLabourSupplyWeekly(); // Lag(1) of labour supply
         yBenReceivedFlagL1 = yBenReceivedFlag; // Lag(1) of flag indicating if individual receives benefits
@@ -3561,26 +3587,27 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                 return (getYear() > 2015) ? 1. : 0.;
             }
 
+            // poverty and income change: the current benefit unit's value against the person's own lag
             case NonPovertyToPoverty -> {
-                if (benefitUnit.getAtRiskOfPoverty_lag1() != null) {
-                    return (benefitUnit.getAtRiskOfPoverty_lag1() == 0 && benefitUnit.getAtRiskOfPoverty() == 1) ? 1. : 0.;
+                if (yPvrtyFlagL1 != null) {
+                    return (yPvrtyFlagL1 == 0 && benefitUnit.getAtRiskOfPoverty() == 1) ? 1. : 0.;
                 } else return 0.;
             }
             case PovertyToNonPoverty -> {
-                if (benefitUnit.getAtRiskOfPoverty_lag1() != null) {
-                    return (benefitUnit.getAtRiskOfPoverty_lag1() == 1 && benefitUnit.getAtRiskOfPoverty() == 0) ? 1. : 0.;
+                if (yPvrtyFlagL1 != null) {
+                    return (yPvrtyFlagL1 == 1 && benefitUnit.getAtRiskOfPoverty() == 0) ? 1. : 0.;
                 } else return 0.;
             }
             case PersistentPoverty -> {
-                if (benefitUnit.getAtRiskOfPoverty_lag1() != null) {
-                    return (benefitUnit.getAtRiskOfPoverty_lag1() == 1 && benefitUnit.getAtRiskOfPoverty() == 1) ? 1. : 0.;
+                if (yPvrtyFlagL1 != null) {
+                    return (yPvrtyFlagL1 == 1 && benefitUnit.getAtRiskOfPoverty() == 1) ? 1. : 0.;
                 } else return 0.;
             }
             case RealIncomeChange -> {
-                return (benefitUnit.getYearlyChangeInLogEDI());
+                return getYearlyChangeInLogEDI();
             }
             case RealIncomeDecrease_D -> {
-                return (benefitUnit.isDecreaseInYearlyEquivalisedDisposableIncome()) ? 1. : 0.;
+                return (yDispEquivYearL1 != null && benefitUnit.getEquivalisedDisposableIncomeYearly() < yDispEquivYearL1) ? 1. : 0.;
             }
             case D_Econ_benefits -> {
                 return isReceivesBenefitsFlag_L1() ? 1. : 0.;
@@ -3589,7 +3616,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                 return getBenefitUnit().isDhhOwned() ? 1. : 0.;
             } // Evaluated at the level of a benefit unit. If required, can be changed to individual-level homeownership status.
             case Dhh_owned_L1 -> {
-                return getBenefitUnit().isDhhOwned_lag1() ? 1. : 0.;
+                return Boolean.TRUE.equals(wealthDhhOwnedL1) ? 1. : 0.;
             }
             case Pt -> {
                 return (getLabourSupplyHoursWeekly() > 0 && getLabourSupplyHoursWeekly() < Parameters.MIN_HOURS_FULL_TIME_EMPLOYED) ? 1. : 0.;
@@ -3870,6 +3897,41 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
             }
         }
         return parents;
+    }
+
+    /**
+     * Lag(1) number of own dependent children and own household type, as Stata's l.dnc, l.dnc02 and l.dhhtp_c4. In the
+     * data (03_create_benefit_units_<CC>.do) an adult's dnc is the number of children aged 0-17 in their benefit unit (ES)
+     * or of their own children (PL), a person aged 17 or under has none, and dhhtp_c4 combines dnc with the person's own
+     * partnership status. So an adult takes the values of their benefit unit, and a child, whose unit is the parents',
+     * has no children and is single. Called from updateLaggedVariables, before ageing, so a person who moves to a new
+     * benefit unit during the year (at 18, or when a partnership forms or ends) keeps last year's values.
+     */
+    private void updateChildrenAndHouseholdTypeLags() {
+
+        if (demAge < Parameters.AGE_TO_BECOME_RESPONSIBLE) {
+            demNChildAllL1 = 0;
+            demNChildren02L1 = 0;
+            demCompHhC4L1 = Dhhtp_c4.SingleNoChildren;
+        } else {
+            demNChildAllL1 = benefitUnit.getNumberChildrenAll();
+            demNChildren02L1 = benefitUnit.getNumberChildren(0,2);
+            demCompHhC4L1 = benefitUnit.getDhhtp_c4();
+        }
+    }
+
+    /**
+     * Change in log equivalised disposable income from last year (RealIncomeChange): this year's income of the current
+     * benefit unit against the person's own lag, so a person who moved to a new unit this year is compared with the unit
+     * they were in last year. Like Stata's econ_realequivinc - L.econ_realequivinc, it compares this year's income, so
+     * it is meaningful once that is known (after BenefitUnit.Processes.CalculateChangeInEDI). +1 because log(0) is not
+     * defined. Returns 0 when either income is missing or negative.
+     */
+    private double getYearlyChangeInLogEDI() {
+        double edi = benefitUnit.getEquivalisedDisposableIncomeYearly();
+        if (yDispEquivYearL1 != null && edi >= 0. && yDispEquivYearL1 >= 0.)
+            return Math.log(edi + 1) - Math.log(yDispEquivYearL1 + 1);
+        return 0.;
     }
 
     /**
@@ -4924,9 +4986,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
     private Ydses_c5 getYdses_c5_lag1() {
         if (model!=null) {
-            if (benefitUnit==null)
-                throw new RuntimeException("attempt to access unassigned benefit unit");
-            return benefitUnit.getYdses_c5_lag1();
+            return yHhQuintilesC5L1;
         } else {
             if (i_yHhQuintilesC5==null)
                 throw new RuntimeException("attempt to access unassigned ydses_c5_lag1Local");
@@ -4940,9 +5000,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
     private Dhhtp_c4 getDhhtp_c4_lag1() {
         if (model!=null) {
-            if (benefitUnit==null)
-                throw new RuntimeException("attempt to access unassigned benefit unit");
-            return benefitUnit.getDhhtp_c4_lag1();
+            return demCompHhC4L1;
         } else {
             if (i_demCompHhC4L1==null)
                 throw new RuntimeException("attempt to access unassigned dhhtp_c4_lag1Local");
@@ -4973,8 +5031,8 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
     }
 
     private Integer getNumberChildrenAll_lag1() {
-        if (benefitUnit != null) {
-            return (benefitUnit.getNumberChildrenAll_lag1() != null) ? benefitUnit.getNumberChildrenAll_lag1() : 0;
+        if (model != null) {
+            return (demNChildAllL1 != null) ? demNChildAllL1 : 0;
         } else {
             return (i_demNchildL1==null) ? 0 : i_demNchildL1;
         }
@@ -5006,9 +5064,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
     private Integer getNumberChildren02_lag1() {
         if (model != null) {
-            if (benefitUnit==null)
-                throw new RuntimeException("attempt to access unassigned benefit unit");
-            return benefitUnit.getNumberChildren02_lag1();
+            return (demNChildren02L1 != null) ? demNChildren02L1 : 0;
         } else {
             if (i_demNchild0to2L1==null)
                 throw new RuntimeException("attempt to access unassigned numberChildren02Local_lag1");

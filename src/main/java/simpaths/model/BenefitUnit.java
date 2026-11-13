@@ -71,14 +71,9 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
     private Double yGrossMonth;
     private Double yBenAmountMonth;
     private Double yDispEquivYear;
-    @Transient private Double yDispEquivYearL1;
-    @Transient private Double yDiffDispEquivPrevYear;
     private Integer yPvrtyFlag;        //1 if at risk of poverty, defined by an equivalisedDisposableIncomeYearly < 60% of median household's
-    @Transient private Integer yPvrtyFlagL1;
     @Transient private Indicator i_demNChild0to2L1;                //Lag(1) of d_children_3under;
     @Transient private Indicator dem4to12L1;                //Lag(1) of d_children_4_12;
-    @Transient private Integer demNChildren02L1; //Lag(1) of the number of children aged 0-2 in the household
-    @Transient private Integer demNChildAllL1; //Lag(1) of the number of children of all ages in the household
     private Double xChildCareWeek;
     private Double xCareWeek;
     private Integer careProvidedFlag;
@@ -86,13 +81,10 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
     @Transient private Match taxDbMatch;
     @Enumerated(EnumType.STRING) private Region demRgn;        //Region of household.  Also used in findDonorHouseholdsByLabour method
     @Enumerated(EnumType.STRING) private Ydses_c5 yHhQuintilesMonthC5;
-    @Transient private Ydses_c5 yHhQuintilesC5L1;
     @Transient private Double i_yNonBenHhGrossAsinh;
     private Dhhtp_c4 demCompHhC4;
-    @Transient private Dhhtp_c4 demCompHhC4L1;
     private String demCreatedByConstructor;
     private Boolean wealthPrptyFlag; // are any of the individuals in the benefit unit a homeowner? True / false
-    @Transient private Boolean wealthDhhOwnedL1;
     @Transient ArrayList<Triple<Les_c7_covid, Double, Integer>> covid19MonthlyStateAndGrossIncomeAndWorkHoursTripleMale = new ArrayList<>();
     @Transient ArrayList<Triple<Les_c7_covid, Double, Integer>> covid19MonthlyStateAndGrossIncomeAndWorkHoursTripleFemale = new ArrayList<>(); // This ArrayList stores monthly values of labour market states and gross incomes, to be sampled from by the LabourMarket class, for the female member of the benefit unit
 
@@ -198,8 +190,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         this.statSeed = statSeed;
         innovations = new Innovations(9, statSeed);
 
-        this.demNChildAllL1 = 0;
-        this.demNChildren02L1 = 0;
         this.i_demNChild0to2L1 = Indicator.False;
         this.dem4to12L1 = Indicator.False;
         this.xChildCareWeek = 0.0;
@@ -283,11 +273,8 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         xDiscretionaryYear = Objects.requireNonNullElse(originalBenefitUnit.xDiscretionaryYear, 0.0);
         yGrossMonth = Objects.requireNonNullElse(originalBenefitUnit.getGrossIncomeMonthly(),0.0);
         yDispEquivYear = Objects.requireNonNullElse(originalBenefitUnit.yDispEquivYear,0.0);
-        yDispEquivYearL1 = Objects.requireNonNullElse(originalBenefitUnit.yDispEquivYearL1,yDispEquivYear);
         yBenAmountMonth = Objects.requireNonNullElse(originalBenefitUnit.getBenefitsReceivedPerMonth(),0.0);
         yPvrtyFlag = Objects.requireNonNullElse(originalBenefitUnit.yPvrtyFlag,0);
-        yPvrtyFlagL1 = Objects.requireNonNullElse(originalBenefitUnit.yPvrtyFlagL1,yPvrtyFlag);
-        yDiffDispEquivPrevYear = Objects.requireNonNullElse(originalBenefitUnit.yDiffDispEquivPrevYear,0.0);
         if (Parameters.projectLiquidWealth)
             initialiseLiquidWealth(
                     originalBenefitUnit.getRefPersonForDecisions().getDag(),
@@ -295,8 +282,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
                     originalBenefitUnit.getPensionWealth(false),
                     originalBenefitUnit.getHousingWealth(false)
             );
-        this.demNChildAllL1 = originalBenefitUnit.demNChildAllL1;
-        this.demNChildren02L1 = originalBenefitUnit.demNChildren02L1;
         this.i_demNChild0to2L1 = originalBenefitUnit.i_demNChild0to2L1;
         this.dem4to12L1 = originalBenefitUnit.dem4to12L1;
         this.xChildCareWeek = originalBenefitUnit.xChildCareWeek;
@@ -304,10 +289,7 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         this.careProvidedFlag = originalBenefitUnit.careProvidedFlag;
         this.demRgn = originalBenefitUnit.demRgn;
         this.yHhQuintilesMonthC5 = originalBenefitUnit.getYdses_c5();
-        this.yHhQuintilesC5L1 = originalBenefitUnit.yHhQuintilesC5L1;
-        this.demCompHhC4L1 = originalBenefitUnit.demCompHhC4L1;
         this.wealthPrptyFlag = originalBenefitUnit.wealthPrptyFlag;
-        this.wealthDhhOwnedL1 = originalBenefitUnit.wealthDhhOwnedL1;
         demCreatedByConstructor = Objects.requireNonNullElse(originalBenefitUnit.demCreatedByConstructor,"CopyConstructor");
         i_yNonBenHhGrossAsinh = Objects.requireNonNullElse(originalBenefitUnit.i_yNonBenHhGrossAsinh, 0.0);
         taxDbMatch = originalBenefitUnit.getTaxDbMatch();
@@ -347,7 +329,8 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
             }
             case CalculateChangeInEDI -> {
                 calculateEquivalisedDisposableIncomeYearly(); //Update BU's EDI
-                calculateYearlyChangeInLogEquivalisedDisposableIncome(); //Calculate change in EDI
+                // the change in EDI from last year (RealIncomeChange, RealIncomeDecrease_D) is computed per person, against
+                // the person's own lag (Person.getYearlyChangeInLogEDI)
             }
             case Homeownership -> {
                 homeownership();
@@ -371,7 +354,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
 
         if (getNumberChildrenAll()==0)
             xChildCareWeek = 0.0;
-        demCompHhC4L1 = getDhhtp_c4();
 
         // clean-up odd ends
         if (getYdses_c5() == null) {
@@ -422,14 +404,10 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         // lags
         i_demNChild0to2L1 = getIndicatorChildren(0,3);
         dem4to12L1 = getIndicatorChildren(4,12);
-        demNChildAllL1 = getNumberChildrenAll();
-        demNChildren02L1 = getNumberChildren(0,2);
-        demCompHhC4L1 = getDhhtp_c4();
-        wealthDhhOwnedL1 = isDhhOwned();
 
-        yDispEquivYearL1 = getEquivalisedDisposableIncomeYearly();
-        yPvrtyFlagL1 = getAtRiskOfPoverty();
-        yHhQuintilesC5L1 = getYdses_c5();
+        // the lags of the income quintile (Ydses_c5_*_L1), home ownership (Dhh_owned_L1), number of children (Dnc*_L1),
+        // household type (Dhhtp_c4_*_L1), equivalised disposable income and poverty status are kept per person, in
+        // Person.updateLaggedVariables
 
         // random draws
         innovations.getNewDoubleDraws();
@@ -4057,22 +4035,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
     }
 
 
-    private double calculateYearlyChangeInLogEquivalisedDisposableIncome() {
-        double yearlyChangeInLogEquivalisedDisposableIncome = 0.;
-        if (yDispEquivYear != null && yDispEquivYearL1 != null && yDispEquivYear >= 0. && yDispEquivYearL1 >= 0.) {
-            // Equivalised disposable income is already stored in BASE_PRICE_YEAR prices.
-            // +1 added as log(0) is not defined
-            yearlyChangeInLogEquivalisedDisposableIncome =
-                    Math.log(yDispEquivYear + 1)
-                            - Math.log(yDispEquivYearL1 + 1);
-        }
-        yDiffDispEquivPrevYear = yearlyChangeInLogEquivalisedDisposableIncome;
-        if (yDiffDispEquivPrevYear==null)
-            throw new RuntimeException("problem evaluating yearly change in log edi");
-        return yearlyChangeInLogEquivalisedDisposableIncome;
-    }
-
-
     ////////////////////////////////////////////////////////////////////////////////
     //
     //	Access Methods
@@ -4273,10 +4235,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
     public Indicator getIndicatorChildren(int minAge, int maxAge) {
         return (getNumberChildren(minAge, maxAge) > 0) ? Indicator.True : Indicator.False;
     }
-    public Integer getNumberChildrenAll_lag1() {
-        return demNChildAllL1;
-    }
-    public Integer getNumberChildren02_lag1() { return demNChildren02L1; }
     public Indicator getIndicatorChildren03_lag1() { return i_demNChild0to2L1; }
     public Indicator getIndicatorChildren412_lag1() {
         return dem4to12L1;
@@ -4296,10 +4254,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         if (yPvrtyFlag != null) {
             return yPvrtyFlag;
         } else return 0;
-    }
-
-    public Integer getAtRiskOfPoverty_lag1() {
-        return yPvrtyFlagL1;
     }
 
     public void setAtRiskOfPoverty(Integer yPvrtyFlag) {
@@ -4356,10 +4310,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         return yHhQuintilesMonthC5;
     }
 
-    public Ydses_c5 getYdses_c5_lag1() {
-        return yHhQuintilesC5L1;
-    }
-
     public double getTmpHHYpnbihs_dv_asinh() {
         if (i_yNonBenHhGrossAsinh==null)
             throw new RuntimeException("tmpHHYpnbihs_dv_asinh accessed before initialised");
@@ -4385,16 +4335,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
     }
 
 
-    public Dhhtp_c4 getDhhtp_c4_lag1() {
-        return demCompHhC4L1;
-    }
-
-    public double getYearlyChangeInLogEDI() {
-        if (yDiffDispEquivPrevYear==null)
-            throw new RuntimeException("yearlyChangeInLogEDI requested before set");
-        return yDiffDispEquivPrevYear;
-    }
-
     public boolean isDhhOwned() {
         if (wealthPrptyFlag ==null) {
             wealthPrptyFlag = false;
@@ -4404,17 +4344,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
 
     public void setDhhOwned(boolean dhh_owned) {
         this.wealthPrptyFlag = dhh_owned;
-    }
-
-    public Boolean isDhhOwned_lag1() {
-        if (wealthDhhOwnedL1 == null) {
-            wealthDhhOwnedL1 = false;
-        }
-        return wealthDhhOwnedL1;
-    }
-
-    public void setDhhOwned_lag1(Boolean wealthDhhOwnedL1) {
-        this.wealthDhhOwnedL1 = wealthDhhOwnedL1;
     }
 
 
@@ -4446,10 +4375,6 @@ public class BenefitUnit implements EventListener, IDoubleSource, Weight, Compar
         if (Math.abs(cost) > 0.01)
             cost *= Parameters.WEEKS_PER_MONTH / Parameters.getTimeSeriesValue(model.getYear(), TimeSeriesVariable.Inflation);
         return cost;
-    }
-
-    public boolean isDecreaseInYearlyEquivalisedDisposableIncome() {
-        return (yDispEquivYear != null && yDispEquivYearL1 != null && yDispEquivYear < yDispEquivYearL1);
     }
 
     public void clearStates() {
