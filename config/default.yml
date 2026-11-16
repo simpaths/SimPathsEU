@@ -43,6 +43,16 @@ model_args:
 #    minAgeForPoorHealth: 50
 #    responsesToRegion: false
 
+#    Macromodel arguments
+#    mm_macroModel: ramsey   # off | ramsey | dsge | ramsey_dsge
+#    mm_useMacroPathRecorder: true  # Record L/h paths in MacroPaths.csv without macro feedback (works with mm_macroModel: off)
+#    mm_macroLogging: state   # off | state | verbose
+#    mm_ramseyScenario: "ramsey_high_gA.csv" # <-- the trend model scenario file; baseline runs (assumption: no deviation from trend) should comment it out
+#    mm_dsgeShockScenario: "energy_shock_20q.csv"   # <-- the scenario file; baseline runs (assumption: all shocks zero) should comment it out
+#    mm_dsgeMaxStateDeviation: 10.0 # Allowed maximum % deviation from steady state for DSGE; linearization accuracy deteriorates
+#                       # beyond this range, so the simulation will crash if any state variable exceeds ±mm_dsgeMaxStateDeviation.
+
+
 # Arguments that alter processing of the SimPathsMultiRun object
 innovation_args:
 #    randomSeedInnov: false

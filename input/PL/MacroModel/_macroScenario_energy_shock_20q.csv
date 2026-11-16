@@ -1,0 +1,36 @@
+# Energy/Cost-Push Shock Scenario (20 quarters)
+#
+# Simulates a persistent cost-push shock (eps_p) that decays over 5 years.
+# Initial shock: 2.0 standard deviations, decaying at rate 0.9 per quarter.
+#
+# Usage:
+#   Set mm_dsgeShockScenario = "energy_shock_20q.csv" in config YAML
+#   Run with mm_staticIntegration = false (dynamic mode only)
+#
+# Shock units: standard-deviation units (eps_p is multiplied by sigma_p internally)
+# All unlisted shocks default to zero.
+#
+# Note: The DSGE's first active year is startYear+1 (e.g., 2026 for a 2025 start).
+# Shocks for years before that are ignored.
+#
+year,quarter,eps_p
+2026,1,2.0000
+2026,2,1.8000
+2026,3,1.6200
+2026,4,1.4580
+2027,1,1.3122
+2027,2,1.1810
+2027,3,1.0629
+2027,4,0.9566
+2028,1,0.8609
+2028,2,0.7748
+2028,3,0.6974
+2028,4,0.6276
+2029,1,0.5649
+2029,2,0.5084
+2029,3,0.4575
+2029,4,0.4118
+2030,1,0.3706
+2030,2,0.3335
+2030,3,0.3002
+2030,4,0.2702

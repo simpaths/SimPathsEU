@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -159,12 +160,29 @@ public class OutputReadme {
         out.println((multiRun ? "| Random seeds | " : "| Random seed | ") + seed + " |");
         out.println("| Base price year | " + Parameters.BASE_PRICE_YEAR + " |");
         out.println("| Training data | " + (Parameters.trainingFlag ? "yes" : "no") + " |");
+        simpaths.data.InputScenario scenario = Parameters.getInputScenario();
+        out.println("| Input scenario | " + (scenario.isActive() ? scenario.name() : "none") + " |");
         out.println();
+        if (scenario.isActive()) {
+            out.println(inputScenarioParagraph(String.valueOf(model.getCountry()), scenario.name(), scenario.replacedFiles()));
+            out.println();
+        }
         if (Parameters.trainingFlag) {
             out.println("**This run used the training-data subset.** Results are for development only and");
             out.println("should not be interpreted as estimates for this country.");
             out.println();
         }
+    }
+
+    /** The README paragraph on an active input scenario: the workbooks it replaced, or that it replaced none. */
+    static String inputScenarioParagraph(String country, String scenarioName, List<String> replaced) {
+        String folder = "`input/" + country + "/scenarios/" + scenarioName + "/`";
+        if (replaced.isEmpty()) {
+            return "**This run's input scenario replaces no workbook**; its folder " + folder
+                    + " supplies only other files, such as a Ramsey scenario file.";
+        }
+        return "**This run replaced input workbooks** with the files in " + folder + ": " + String.join(", ", replaced)
+                + ". Compare it with a run without this scenario, not with the baseline's documentation.";
     }
 
     private static void writeModelOptions(PrintWriter out, SimPathsModel model) {

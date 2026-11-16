@@ -1,0 +1,39 @@
+# Combined DSGE scenario: negative demand shock + positive energy/cost-push shock
+#
+# Preserves original timing of both source scenarios:
+# - demand_shock_neg1sd_8q.csv   -> eps_d in 2026Q1..2027Q4
+# - energy_shock_1sd_20q.csv     -> eps_p in 2030Q1..2034Q4
+#
+# Units:
+# - eps_d, eps_p are in sigma-units (scaled internally in DSGEModel.java)
+# - Unlisted shocks default to zero
+#
+year,quarter,eps_d,eps_p
+2026,1,1.000,
+2026,2,0.875,
+2026,3,0.750,
+2026,4,0.625,
+2027,1,0.500,
+2027,2,0.375,
+2027,3,0.250,
+2027,4,0.125,
+2030,1,,1
+2030,2,,.89999998
+2030,3,,.81
+2030,4,,.72899997
+2031,1,,.65609998
+2031,2,,.5905
+2031,3,,.53144997
+2031,4,,.47830001
+2032,1,,.43044999
+2032,2,,.3874
+2032,3,,.34869999
+2032,4,,.31380001
+2033,1,,.28244999
+2033,2,,.25420001
+2033,3,,.22875001
+2033,4,,.2059
+2034,1,,.18529999
+2034,2,,.16675
+2034,3,,.15009999
+2034,4,,.13510001
