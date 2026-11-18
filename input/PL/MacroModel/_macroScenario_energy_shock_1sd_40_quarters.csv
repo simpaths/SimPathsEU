@@ -1,0 +1,50 @@
+# Energy/Cost-Push Shock Scenario (40 quarters)
+#
+# Simulates a persistent 1 standard deviation energy/cost-push shock (eps_p)
+# that decays exponentially over 10 years.
+# Initial shock: 1.0 standard deviation, decaying at rate 0.9 per quarter.
+#
+# Shock units: standard-deviation units (eps_p is multiplied by sigma_p internally)
+# All unlisted shocks default to zero.
+#
+year,quarter,eps_p
+2024,1,1.0000
+2024,2,0.9000
+2024,3,0.8100
+2024,4,0.7290
+2025,1,0.6561
+2025,2,0.5905
+2025,3,0.5314
+2025,4,0.4783
+2026,1,0.4305
+2026,2,0.3874
+2026,3,0.3487
+2026,4,0.3138
+2027,1,0.2824
+2027,2,0.2542
+2027,3,0.2288
+2027,4,0.2059
+2028,1,0.1853
+2028,2,0.1668
+2028,3,0.1501
+2028,4,0.1351
+2029,1,0.1216
+2029,2,0.1094
+2029,3,0.0985
+2029,4,0.0886
+2030,1,0.0798
+2030,2,0.0718
+2030,3,0.0646
+2030,4,0.0581
+2031,1,0.0523
+2031,2,0.0471
+2031,3,0.0424
+2031,4,0.0382
+2032,1,0.0343
+2032,2,0.0309
+2032,3,0.0278
+2032,4,0.0250
+2033,1,0.0225
+2033,2,0.0203
+2033,3,0.0182
+2033,4,0.0164

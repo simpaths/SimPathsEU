@@ -1,0 +1,40 @@
+# Poland migration experiment (see input/PL/scenarios/migration_200k/README.md and input_processing/macromodel/docs/SimPaths_Coupling.md section 8.1)
+# Run 2 of 5: baseline population, Ramsey planner with persistent feedback (rho=1.0)
+countryString: "Poland"
+maxNumberOfRuns: 1
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation:   true
+    # Off: in a run that starts in 2023, the last year with alignment targets, the retirement
+    # alignment solves once, for the start year, and SimPaths applies that one-year catch-up
+    # in every later year (three quarters of the people aged 55-64 are retired by 2029)
+    alignRetirement:   false
+    alignDisability:   true
+    alignEducation:    true
+    alignInSchool:     true
+    alignCohabitation: true
+    # Inert for startYear >= 2023: LabourMarket gates employment alignment on
+    # year <= EMPLOYMENT_ALIGNMENT_END_YEAR (=2023), and the labour market first
+    # runs in startYear+1. Kept only for parity with the other config files.
+    alignEmployment:   true
+    alignFertility:    true
+
+    # Macro Model
+    mm_macroModel: ramsey
+    mm_macroLogging: state          # off | state | verbose (verbose implies state)
+    mm_useMacroPathRecorder: true
+
+    mm_ramseyFeedbackPersistence: 1.0
+    # The planner measures SimPaths' workers against 2028, not against the first simulated
+    # year 2024, in which SimPaths' labour supply dips; it has recovered by 2027. 2028 is the
+    # latest year that leaves the first arrivals (2030) two years after it
+    mm_ramseyFeedbackReferenceYear: 2028
+
+
+collector_args:
+    exportToCSV: true

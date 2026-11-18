@@ -11,6 +11,7 @@ import simpaths.model.enums.Gender;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
@@ -59,6 +60,30 @@ public final class StatePensionAgeSchedule {
         } catch (IOException e) {
             throw new IllegalStateException("Could not read " + file, e);
         }
+    }
+
+    /** Uses the baseline ages after checking that a scenario workbook contains the same years and ages. */
+    static StatePensionAgeSchedule loadMatchingBaseline(String baselineFile, String scenarioFile) {
+        StatePensionAgeSchedule baseline = load(baselineFile);
+        StatePensionAgeSchedule scenario = load(scenarioFile);
+        if (!baseline.hasSameAgesAs(scenario)) {
+            throw new IllegalArgumentException("Scenario pension-age workbook " + scenarioFile
+                    + " must have the same years and ages as " + baselineFile
+                    + ". Tax-donor matching uses the baseline pension-age schedule.");
+        }
+        return baseline;
+    }
+
+    private boolean hasSameAgesAs(StatePensionAgeSchedule other) {
+        if (firstYear != other.firstYear) {
+            return false;
+        }
+        for (Gender gender : Gender.values()) {
+            if (!Arrays.equals(agesByGender.get(gender), other.agesByGender.get(gender))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static StatePensionAgeSchedule read(String file, Sheet sheet) {

@@ -1,0 +1,40 @@
+# Recursive Ramsey feedback experiment - Ramsey layer only: the planner re-solves each year on SimPaths' realized headcount and hours, persistent belief (rho=1.0, default)
+countryString: "Poland"
+maxNumberOfRuns: 8
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation:   true
+    # Off: in a run that starts in 2023, the last year with alignment targets, the retirement
+    # alignment solves once, for the start year, and SimPaths applies that one-year catch-up
+    # in every later year (three quarters of the people aged 55-64 are retired by 2029)
+    alignRetirement:   false
+    alignDisability:   true
+    alignEducation:    true
+    alignInSchool:     true
+    alignCohabitation: true
+    # Inert for startYear >= 2023: LabourMarket gates employment alignment on
+    # year <= EMPLOYMENT_ALIGNMENT_END_YEAR (=2023), and the labour market first
+    # runs in startYear+1. Kept only for parity with the other config files.
+    # alignDisability above also searches only up to 2023 and keeps that year's adjustment.
+    alignEmployment:   true
+    alignFertility:    true
+
+    # Macro Model
+    mm_macroModel: ramsey
+    # off | ramsey | dsge | ramsey_dsge   (dsge alone is diagnostic: the cycle was
+    # estimated on Ramsey-detrended data, so without the trend layer it deviates
+    # around SimPaths' own wage trend instead)
+    mm_macroLogging: state          # off | state | verbose (verbose implies state)
+
+    mm_ramseyFeedbackPersistence: 1.0
+
+    # mm_ramseyScenario: "_macroScenario_ramsey_high_gA_0_5pp.csv"
+
+
+collector_args:
+    exportToCSV: true

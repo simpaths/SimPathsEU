@@ -4,7 +4,6 @@ import microsim.data.MultiKeyCoefficientMap;
 import microsim.engine.SimulationEngine;
 import simpaths.data.IEvaluation;
 import simpaths.data.Parameters;
-import simpaths.model.enums.Occupancy;
 import simpaths.model.enums.OccupancyExtended;
 import simpaths.model.enums.TargetShares;
 
@@ -193,64 +192,19 @@ public class ActivityAlignmentV2 implements IEvaluation {
     }
 
     /**
-     * Determines whether a BenefitUnit belongs to the subgroup defined by subgroupFlag.
-     * Mirrors the atRiskOfWork()/getAdultChildFlag() flow used by BenefitUnit class.
+     * Determines whether a BenefitUnit belongs to the subgroup defined by
+     * subgroupFlag.
      *
-     * Determines whether a BenefitUnit belongs to the subgroup defined by subgroupFlag.
-     * Safely handles missing male/female members and retrieves the adult-child flag
-     * from the Person instance.
+     * <p>Delegates to {@link BenefitUnitSubgroup}, which is also what the
+     * alignment diagnostics in {@code AlignmentAdjustmentFactors} use. The two
+     * used to hold separate copies of this logic and had drifted apart at the
+     * missing-member case, so the diagnostic could report a different
+     * population than the alignment operated on. Do not re-inline it.</p>
      */
     private boolean matchesSubgroup(BenefitUnit bu) {
-        Occupancy occ = bu.getOccupancy();
-
-        // Safely retrieve the male and female Person objects (may be null)
-        Person male = bu.getMale();
-        boolean maleAtRisk = (male != null) && male.atRiskOfWork();
-
-        Person female = bu.getFemale();
-        boolean femaleAtRisk = (female != null) && female.atRiskOfWork();
-
-        // Retrieve adult-child flag only for single‐person units
-        int acFlag = 0;
-        if (occ == Occupancy.Single_Male && male != null) {
-            acFlag = male.getAdultChildFlag();
-        } else if (occ == Occupancy.Single_Female && female != null) {
-            acFlag = female.getAdultChildFlag();
-        }
-
-        switch (subgroupFlag) {
-            case Couple:
-                return occ == Occupancy.Couple
-                        && maleAtRisk && femaleAtRisk;
-
-            case Male_With_Dependent:
-                return occ == Occupancy.Couple
-                        && maleAtRisk && !femaleAtRisk;
-
-            case Female_With_Dependent:
-                return occ == Occupancy.Couple
-                        && femaleAtRisk && !maleAtRisk;
-
-            case Single_Male:
-                return occ == Occupancy.Single_Male
-                        && acFlag != 1;
-
-            case Male_AC:
-                return occ == Occupancy.Single_Male
-                        && acFlag == 1;
-
-            case Single_Female:
-                return occ == Occupancy.Single_Female
-                        && acFlag != 1;
-
-            case Female_AC:
-                return occ == Occupancy.Single_Female
-                        && acFlag == 1;
-
-            default:
-                return false;
-        }
+        return BenefitUnitSubgroup.matches(bu, subgroupFlag);
     }
+
 
 
     /**

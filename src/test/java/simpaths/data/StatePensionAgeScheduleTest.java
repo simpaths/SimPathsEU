@@ -109,6 +109,38 @@ public class StatePensionAgeScheduleTest {
                 new Object[][]{{2020, 65, null}}));
     }
 
+    @Test
+    void scenarioCanRepeatBaselinePensionAgesWithColumnsInADifferentOrder() throws IOException {
+        String baseline = write(StatePensionAgeSchedule.SHEET_NAME, HEADER, new Object[][]{
+                {2020, 65, 60}, {2021, 66, 61}});
+        String scenario = write(StatePensionAgeSchedule.SHEET_NAME, new String[]{"Female", "year", "Male"},
+                new Object[][]{{60, 2020, 65}, {61, 2021, 66}});
+
+        StatePensionAgeSchedule schedule = StatePensionAgeSchedule.loadMatchingBaseline(baseline, scenario);
+        assertAges(schedule, 2020, 65, 60);
+        assertAges(schedule, 2021, 66, 61);
+    }
+
+    @Test
+    void scenarioCannotChangeBaselinePensionAges() throws IOException {
+        String baseline = write(StatePensionAgeSchedule.SHEET_NAME, HEADER, new Object[][]{{2020, 65, 60}});
+        String scenario = write(StatePensionAgeSchedule.SHEET_NAME, HEADER, new Object[][]{{2020, 65, 62}});
+
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> StatePensionAgeSchedule.loadMatchingBaseline(baseline, scenario));
+        assertTrue(error.getMessage().contains(scenario), error.getMessage());
+        assertTrue(error.getMessage().contains("baseline pension-age schedule"), error.getMessage());
+    }
+
+    @Test
+    void scenarioCannotChangeBaselinePensionAgeYears() throws IOException {
+        String baseline = write(StatePensionAgeSchedule.SHEET_NAME, HEADER, new Object[][]{{2020, 65, 60}});
+        String scenario = write(StatePensionAgeSchedule.SHEET_NAME, HEADER, new Object[][]{{2021, 65, 60}});
+
+        assertThrows(IllegalArgumentException.class,
+                () -> StatePensionAgeSchedule.loadMatchingBaseline(baseline, scenario));
+    }
+
     private static void assertFailure(String expectedMessagePart, String file) {
         IllegalStateException e = assertThrows(IllegalStateException.class, () -> StatePensionAgeSchedule.load(file));
         assertTrue(e.getMessage().contains(expectedMessagePart), e.getMessage());

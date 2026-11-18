@@ -1,0 +1,42 @@
+# Recursive Ramsey feedback experiment - as ramsey-feedback-persistent.yml, with the
+# DSGE cycle layer on and no scenario shocks. The DSGE takes no input from SimPaths, so paired
+# with ramsey-feedback-persistent.yml (same seed) this run checks that the cycle layer adds
+# nothing on its own: w_total equals that run's in every year and the cycle wage is zero.
+countryString: "Poland"
+maxNumberOfRuns: 8
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation:   true
+    # Off: in a run that starts in 2023, the last year with alignment targets, the retirement
+    # alignment solves once, for the start year, and SimPaths applies that one-year catch-up
+    # in every later year (three quarters of the people aged 55-64 are retired by 2029)
+    alignRetirement:   false
+    alignDisability:   true
+    alignEducation:    true
+    alignInSchool:     true
+    alignCohabitation: true
+    # Inert for startYear >= 2023: LabourMarket gates employment alignment on
+    # year <= EMPLOYMENT_ALIGNMENT_END_YEAR (=2023), and the labour market first
+    # runs in startYear+1. Kept only for parity with the other config files.
+    # alignDisability above also searches only up to 2023 and keeps that year's adjustment.
+    alignEmployment:   true
+    alignFertility:    true
+
+    # Macro Model
+    mm_macroModel: ramsey_dsge
+    # off | ramsey | dsge | ramsey_dsge
+    mm_macroLogging: state          # off | state | verbose (verbose implies state)
+    mm_dsgeMaxStateDeviation: 30
+
+    mm_ramseyFeedbackPersistence: 1.0
+
+    # No mm_ramseyScenario and no mm_dsgeShockScenario: the DSGE receives no shocks at all.
+
+
+collector_args:
+    exportToCSV: true

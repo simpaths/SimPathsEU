@@ -67,6 +67,7 @@ CLI help: `java -jar singlerun.jar -h` or `java -jar multirun.jar -h`
 - `singlerun.jar`: `-c <CC>` country code (`EL`, `IT`, `ES`, `HU`, `PL`); `-Setup` setup phase only (build the H2 input DB, no simulation); `--reuse-existing-db` / `--rebuild-db` when running headless. Its `-r` is `--rewrite-policy-schedule`, **not** a seed.
 - `multirun.jar`: `-r <seed>` random seed, `-n <N>` max runs, `-f` output to file, `-config <file.yml>` custom config (default `config/default.yml`: 5 runs, 2011–2023, 50,000 persons, seed 1821), `-DBSetup` setup only.
 - **`multirun.jar` has no `-c`.** At start-up it reads `input/DatabaseCountryYear.xlsx` for its default country and start year, and fails if that file is missing or names an unknown country. A YAML `countryString` (the English name, e.g. `"Spain"`) or `startYear` overrides them, and `-s` overrides both. `multirun -DBSetup` builds `input/input.mv.db` but does **not** update `DatabaseCountryYear.xlsx`, which only `singlerun.jar` setup writes.
+- `model_args: inputScenario: <name>` reads every country workbook from `input/<CC>/scenarios/<name>/` where a file of that name exists there, else from `input/<CC>/`. The name is a bare folder name (letters, digits, `_` and `-`) and the folder must exist. File names match exactly, case included. The run fails if an `.xlsx` in the folder matches no input file name exactly (Excel lock files `~$*` are ignored), if a replaced `align_popProjections.xlsx` covers other years or ends at another age than the baseline or differs from it in the start year, or if a replaced workbook changes another input of the cached starting population (`AGE_TO_BECOME_RESPONSIBLE`, `MAX_START_YEAR` in `parameters.xlsx`; the start year of `alignment_targets_partnered_share.xlsx`; `time_series_factor.xlsx` up to the start year when it lies past `MAX_START_YEAR`). The run's `README.md` and its output label name the scenario, and the README lists the replaced files.
 - `-t true|false` (`--training`) — use the training-data subset under `input/<CC>/InitialPopulations/training/` and `EUROMODoutput/training/` (uses `TaxDonorParserTraining`). On `multirun.jar` this **overrides** `parameter_args.trainingFlag` from the YAML config.
 - **Training auto-detect**: if `-t` is omitted and `input/<CC>/InitialPopulations/*.csv` is empty, `Parameters.trainingFlag` is flipped to `true` automatically and a notice is printed to stdout (both the headless setup path and the GUI start-up path in `SimPathsStart`). To diagnose which mode is active at runtime, look for either `Training-data flag set explicitly via CLI: -t ...` or `auto-switching to training data` in the console output.
 - **Start-year check**: `Parameters.validateStartYear` rejects a start year outside `[MIN_START_YEAR, MAX_START_YEAR]` (the `_TRAINING` pair with `-t true`). It runs before `parameters.xlsx` is loaded, so it checks the Java defaults (2011–2023 in both modes), not the workbook values (`MAX_START_YEAR` 2023 for PL and ES, 2020 for EL/HU/IT; training 2019–2019 for every country). Once loaded, the workbook value decides what happens: a start year above it starts from the population of that last year, with monetary values uprated (`SimPathsModel`, `uprateInitialPopulation`). Keep `MAX_START_YEAR` in step with the newest `population_initial_<CC>_<year>.csv`: a lower value passes the check but silently starts later years from an older population.
@@ -170,6 +171,7 @@ and this file.
 - `input/[COUNTRY]/InitialPopulations/` — actual starting-population CSVs; `…/training/` holds the shipped training subset
 - `input/[COUNTRY]/EUROMODoutput/` — EUROMOD donor CSVs; `…/training/` holds the training subset
 - `input/[COUNTRY]/` — country-specific Excel parameter files (e.g. `parameters.xlsx`, `EUROMODpolicySchedule.xlsx`, `reg_*.xlsx`, `alignment_targets_*.xlsx`)
+- `input/[COUNTRY]/scenarios/<name>/` — scenario folders read under `inputScenario` (see Key CLI flags): replacement workbooks, a `README.md` saying how they were made, and optionally a Ramsey scenario file
 - `input/DatabaseCountryYear.xlsx` — the country and start year of the last `singlerun.jar` setup. It is tracked in git but rewritten by every such setup, and `multirun.jar` reads its defaults from it (see Key CLI flags)
 - `input/system_bu_names.xlsx` — EUROMOD benefit-unit identifier per country
 - `config/default.yml` — Default multi-run parameters (population size, year range, run count)
@@ -185,6 +187,7 @@ and this file.
   - `labour_supply/<CC>/do-files/` — labour-supply estimation (ES, PL)
   - `alignment_targets/<CC>/` — build the alignment-target workbooks from the initial populations (`01`–`05` for retirement, in-school, disability, partnership and employment; `91_plot_targets_from_xlsx.do` for plots) for ES and PL. EL/HU/IT keep older versions in `input/<CC>/DoFilesTargets/`
   - `time_series/ES/do_files/` — Spain's time series (inflation, GDP, wage growth, fertility, mortality, population projections; master `00_master.do`)
+  - `scenarios/` — `build_migration_scenario.do` builds a migration scenario folder `input/<CC>/scenarios/<name>/` (population workbook, Ramsey `N`/`P` file, README) from the baseline workbook and the saved Eurostat fertility extract beside it; `build_ramsey_workers_path.do` adds `ramsey_migration_workers.csv`, whose `N` is SimPaths' own extra workers, read off two runs with the macro layer off (baseline inputs and the scenario)
   - `key_function_thresholds/` — income thresholds for the tax-donor key function (`KEY_FUNCTION_HU2_*` in `parameters.xlsx`)
   - `00_master_conditions_{ES,PL}.do` (sample conditions), `93_generate_lag_structure.do` (writes `documentation/SimPaths_lag_structure_<CC>.xlsx`)
 - `documentation/` — `SimPathsEU_Variable_Codebook.xlsx` (variable codebook), `SimPathsEU_Schedule.xlsx` (yearly process order), `SimPaths_Stata_Parameters.xlsx`, `SimPaths_lag_structure_{ES,PL}.xlsx`
@@ -232,6 +235,42 @@ Both countries default to `trainingFlag: true`, so both baselines are **committe
 Five CSVs are diffed: `WealthIncomeStatistics`, `DemographicStatistics`, `HealthStatistics`, `HealthByGender` and `LabourStatistics`. `AlignmentStatistics.csv` is only checked for existence. The test configs set no `model_args`, so the runs use `SimPathsModel`'s defaults: changing a default moves both baselines, as switching `alignCohabitation` to `true` did. To regenerate a baseline after an intentional behaviour change, run the test, then copy those five CSVs from `output/INTEGRATION_TESTS_TRAINING_<CC>/csv/` into `expected_training_<CC>/` (full steps in that folder's `INTEGRATION_TEST_REGENERATION.md`). Copy only the CSVs. The instructions file is deliberately not called `README.md`, because each run writes its own `README.md` beside the CSVs and copying a whole output folder once overwrote the instructions; don't rename it back.
 
 Because each country has its own folders, either test can be run on its own, in any order. They do share `input/input.mv.db`, which each test rebuilds in its own `-DBSetup` step, so never run them concurrently. Both configs name their country (`countryString`), so `input/DatabaseCountryYear.xlsx` only needs to exist.
+
+### Macro model (read before changing macro code)
+
+The macro layer lives in `input_processing/macromodel/` (MATLAB/Dynare, plus a Stata data stage) and
+produces the bundle in `input/{CC}/MacroModel/` that `simpaths.model.macro` consumes.
+Read `input_processing/macromodel/README.md` and `input_processing/macromodel/docs/Integration_Contracts.md` first;
+`input_processing/macromodel/docs/SimPaths_Coupling.md` describes the Java side (switches, bundle files, Ramsey feedback).
+Two rules bind Java changes:
+
+1. **Never re-derive downstream what upstream already computes.** Carry the quantity
+   in a bundle artefact and fail the run if it is missing; a local fallback is the bug.
+2. **Parity fixtures are snapshots.** `src/test/resources/macro/exogenous/` is regenerated
+   only via `refresh_java_parity_fixtures('<Country>')` in `input_processing/macromodel/`, never hand-edited,
+   and `RamseyTrendModelTest` must then pass parity at `RELATIVE_TOLERANCE = 1e-9`. That `1e-9`
+   is never loosened.
+
+`BundleProvenanceTest` fails when any hashed input (frozen model, datafile, levels CSV, growth-params
+template, template or calibration .mod, population workbook) or any bundle file changes without a
+re-export; the fix is to re-export, not to edit the bundle. A changed input needs the full
+`run_full_workflow('<Country>')` with estimation, since the frozen model and the datafile are built from
+the inputs (commit both with the bundle); a changed bundle file alone needs only the skip-estimation
+re-export. The test prints the recipe that fits the failing line.
+
+## Documentation describes the current state
+
+All documentation in this repository (Markdown docs and READMEs, diagrams, config headers, code
+comments and Javadoc) says how things work now, never how they once worked.
+
+- State the rule and, where it helps, its reason in the present tense. Write no "fixed on 2026-05-19",
+  "until 2026-11", "no longer", "previously", "as before" or "vN change" notes, no lists of removed
+  switches and no "do not undo" warnings about past defects.
+- A code change updates the documentation that describes it, diagrams included, in the same commit.
+- History goes into commit messages, PR descriptions and a document's own changelog table (its
+  "Document History"), nowhere else.
+- Allowed: a dated measurement ("checked on 2026-10-21") as evidence, and an error message that tells
+  the user what an outdated input is and how to replace it.
 
 ## Branch Conventions
 
