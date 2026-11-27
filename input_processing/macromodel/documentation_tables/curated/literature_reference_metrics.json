@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "country": "Germany",
+    "source_function": "manual_curated_literature_reference",
+    "model_version": "v17",
+    "description": "Curated literature and interpretation metrics referenced in documentation prose."
+  },
+  "labour_supply_wage_elasticity": {
+    "model_target": -0.40,
+    "literature_range_low": -0.20,
+    "literature_range_high": -0.40,
+    "source_reference": "Borjas2003; DustmannSchonbergStuhler2017"
+  }
+}

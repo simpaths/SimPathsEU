@@ -50,8 +50,193 @@ public class Parameters {
         return INPUT_DIRECTORY + country + File.separator;
     }
 
+    private static String inputScenarioName = "";
+    private static InputScenario inputScenario = InputScenario.none();
+
+    /**
+     * Name of the folder below input/&lt;CC&gt;/scenarios/ whose workbooks replace the country's, surrounding blanks
+     * removed; blank for none. Takes effect in the next loadParameters.
+     */
+    public static void setInputScenarioName(String name) {
+        inputScenarioName = name == null ? "" : name.strip();
+    }
+
+    public static InputScenario getInputScenario() {
+        return inputScenario;
+    }
+
+    /**
+     * Deactivates the input scenario. The setup paths call it first: the scenario of an earlier run stays active
+     * in this static state, and setup must read the baseline workbooks that the input database is built from.
+     */
+    public static void resetInputScenario() {
+        inputScenario = InputScenario.none();
+    }
+
     private static String resolveCountryFile(Country country, String fileName) {
-        return getCountryInputDir(country) + fileName;
+        return inputScenario.isActive() ? inputScenario.resolve(fileName) : getCountryInputDir(country) + fileName;
+    }
+
+    /**
+     * Fails when the scenario's align_popProjections.xlsx covers other years or ages than the baseline's or changes
+     * the start year's population: the cached starting population was prepared against the baseline workbook, and
+     * the workbook's last age ({@link #getPopulationProjectionsMaxAge()}) bounds the ages of the starting population.
+     */
+    private static void checkScenarioPopulationProjections(Country country, int startYearModel) {
+        MultiKeyCoefficientMap baseline = ExcelAssistant.loadCoefficientMap(
+                getCountryInputDir(country) + "align_popProjections.xlsx", "Population_projections", 3);
+        String probeRegion = countryRegions.iterator().next().toString();
+        int[] scenarioYears = populationYearRange(populationProjections, probeRegion);
+        int[] baselineYears = populationYearRange(baseline, probeRegion);
+        InputScenario.requireSamePopulationYears(inputScenario.name(), scenarioYears, baselineYears);
+        String boundsRegion = mapBoundsRegion(country.toString());
+        InputScenario.requireSamePopulationMaxAge(inputScenario.name(),
+                populationMaxAge(populationProjections, boundsRegion, MIN_START_YEAR),
+                populationMaxAge(baseline, boundsRegion, MIN_START_YEAR));
+        Map<String, Double> scenarioCells = new HashMap<>();
+        Map<String, Double> baselineCells = new HashMap<>();
+        for (Gender gender : Gender.values()) {
+            for (Region region : countryRegions) {
+                for (int age = 0; age <= populationProjectionsMaxAge; age++) {
+                    String key = gender + "|" + region + "|" + age;
+                    Number s = (Number) populationProjections.getValue(gender.toString(), region.toString(), age, startYearModel);
+                    Number b = (Number) baseline.getValue(gender.toString(), region.toString(), age, startYearModel);
+                    if (s != null) scenarioCells.put(key, s.doubleValue());
+                    if (b != null) baselineCells.put(key, b.doubleValue());
+                }
+            }
+        }
+        InputScenario.requirePopulationStartYearUnchanged(inputScenario.name(), startYearModel, scenarioCells, baselineCells);
+    }
+
+    private static final List<String> CACHED_PARAMETER_KEYS = List.of("AGE_TO_BECOME_RESPONSIBLE", "MAX_START_YEAR");
+    private static final Map<String, Class<?>> DONOR_KEY_PARAMETER_TYPES = Map.of(
+            "KEY_FUNCTION_HU2_MID_AGE", int.class,
+            "KEY_FUNCTION_HU2_LO_INCOME", double.class,
+            "KEY_FUNCTION_HU2_HI_INCOME", double.class,
+            "KEY_FUNCTION_HU2_INCOME_REF_YEAR", int.class);
+
+    /**
+     * Fails when a replaced workbook changes the cells that enter the cached starting population: the two
+     * scalars of parameters.xlsx, the start year's partnership target, and (only when the start year lies past
+     * the last available population, so that the population is uprated) the time series up to the start year.
+     * Both versions are read from file, so the check is independent of loading order and of index rebasing.
+     * Nothing is loaded for a workbook the scenario does not replace.
+     */
+    private static void checkScenarioCachedInputs(Country country, int startYearModel) {
+        String name = inputScenario.name();
+        String baselineDir = getCountryInputDir(country);
+        String scenarioDir = inputScenario.folder().toString() + File.separator;
+
+        if (inputScenario.replaces("parameters.xlsx")) {
+            InputScenario.requireCachedInputsUnchanged(name, "AGE_TO_BECOME_RESPONSIBLE or MAX_START_YEAR", "parameters.xlsx",
+                    parameterCells(ExcelAssistant.loadCoefficientMap(scenarioDir + "parameters.xlsx", "Parameters", 1)),
+                    parameterCells(ExcelAssistant.loadCoefficientMap(baselineDir + "parameters.xlsx", "Parameters", 1)));
+        }
+        if (inputScenario.replaces("alignment_targets_partnered_share.xlsx")) {
+            String file = "alignment_targets_partnered_share.xlsx";
+            InputScenario.requireCachedInputsUnchanged(name, "the partnership target of the start year " + startYearModel, file,
+                    yearCells("partnered", ExcelAssistant.loadCoefficientMap(scenarioDir + file, "partnered", 1), startYearModel, startYearModel),
+                    yearCells("partnered", ExcelAssistant.loadCoefficientMap(baselineDir + file, "partnered", 1), startYearModel, startYearModel));
+        }
+        if (inputScenario.replaces("time_series_factor.xlsx") && InputScenario.timeSeriesEntersCachedPopulation(startYearModel, getMaxStartYear())) {
+            String file = "time_series_factor.xlsx";
+            Map<String, Double> scenarioCells = new HashMap<>();
+            Map<String, Double> baselineCells = new HashMap<>();
+            for (String sheet : List.of("gdp", "inflation", "wage_growth")) {
+                scenarioCells.putAll(yearCells(sheet, ExcelAssistant.loadCoefficientMap(scenarioDir + file, sheet, 1), Integer.MIN_VALUE, startYearModel));
+                baselineCells.putAll(yearCells(sheet, ExcelAssistant.loadCoefficientMap(baselineDir + file, sheet, 1), Integer.MIN_VALUE, startYearModel));
+            }
+            InputScenario.requireCachedInputsUnchanged(name, "the uprating series (gdp, inflation, wage_growth) up to the start year " + startYearModel, file,
+                    scenarioCells, baselineCells);
+        }
+    }
+
+    /** Numeric values of the parameters that enter the cached starting population, keyed by name. */
+    private static Map<String, Double> parameterCells(Map<MultiKey<?>, Object> parameters) {
+        Map<String, Double> cells = new HashMap<>();
+        for (Map.Entry<MultiKey<?>, Object> entry : parameters.entrySet()) {
+            String paramName = parameterName(entry.getKey());
+            if (CACHED_PARAMETER_KEYS.contains(paramName) && entry.getValue() instanceof Number n) {
+                cells.put(paramName, n.doubleValue());
+            }
+        }
+        return cells;
+    }
+
+    private static String parameterName(MultiKey<?> key) {
+        return (key.size() > 1 ? key.getKey(1) : key.getKey(0)).toString();
+    }
+
+    /** Verifies that scenario parameters use the settings used to build the stored tax-donor keys. */
+    static void requireSameDonorKeyParameters(String scenarioName, Map<MultiKey<?>, Object> scenarioParameters,
+                                              Map<MultiKey<?>, Object> baselineParameters) {
+        Map<String, Object> scenario = donorKeyParameterCells(scenarioParameters);
+        Map<String, Object> baseline = donorKeyParameterCells(baselineParameters);
+        for (String key : DONOR_KEY_PARAMETER_TYPES.keySet()) {
+            if (!Objects.equals(scenario.get(key), baseline.get(key))
+                    || scenario.containsKey(key) != baseline.containsKey(key)) {
+                throw new IllegalArgumentException("Input scenario '" + scenarioName + "' changes " + key
+                        + " from " + baseline.getOrDefault(key, "(missing)") + " to "
+                        + scenario.getOrDefault(key, "(missing)") + " in parameters.xlsx. "
+                        + "The stored tax-donor keys use the baseline setting. Restore it in the scenario workbook.");
+            }
+        }
+    }
+
+    private static Map<String, Object> donorKeyParameterCells(Map<MultiKey<?>, Object> parameters) {
+        Map<String, Object> cells = new HashMap<>();
+        for (Map.Entry<MultiKey<?>, Object> entry : parameters.entrySet()) {
+            String name = parameterName(entry.getKey());
+            Class<?> type = DONOR_KEY_PARAMETER_TYPES.get(name);
+            if (type != null) {
+                cells.put(name, ParametersLoader.convertValueToFieldType(entry.getValue(), type));
+            }
+        }
+        return cells;
+    }
+
+    /** Numeric values of a one-key (year) sheet for the years first..last, keyed "sheet|year". */
+    private static Map<String, Double> yearCells(String sheet, Map<MultiKey<?>, Object> map, int first, int last) {
+        Map<String, Double> cells = new HashMap<>();
+        for (Map.Entry<MultiKey<?>, Object> entry : map.entrySet()) {
+            Object yearKey = entry.getKey().getKey(0);
+            if (yearKey instanceof Number y && y.intValue() >= first && y.intValue() <= last && entry.getValue() instanceof Number n) {
+                cells.put(sheet + "|" + y.intValue(), n.doubleValue());
+            }
+        }
+        return cells;
+    }
+
+    /** First and last year of a population projection map, probed outward from MIN_START_YEAR as setMapBounds does. */
+    private static int[] populationYearRange(MultiKeyCoefficientMap map, String region) {
+        int minYear = MIN_START_YEAR;
+        while (map.getValue("Female", region, 25, minYear - 1) != null) minYear--;
+        int maxYear = MIN_START_YEAR;
+        while (map.getValue("Female", region, 25, maxYear + 1) != null) maxYear++;
+        return new int[]{minYear, maxYear};
+    }
+
+    /**
+     * Last age of a population projection map, probed upward from age 55 for women in {@code region} and
+     * {@code year}, as setMapBounds does for {@link #getPopulationProjectionsMaxAge()}.
+     */
+    static int populationMaxAge(MultiKeyCoefficientMap map, String region, int year) {
+        int maxAge = 55;
+        while (map.getValue("Female", region, maxAge + 1, year) != null) maxAge++;
+        return maxAge;
+    }
+
+    /** The region in which setMapBounds probes a country's maps. */
+    private static String mapBoundsRegion(String countryString) {
+        return switch (countryString) {
+            case "EL" -> "EL3";
+            case "HU" -> "HUC";
+            case "IT" -> "ITC";
+            case "PL" -> "PL2";
+            case "ES" -> "ES5";
+            default -> null;
+        };
     }
 
 
@@ -770,6 +955,12 @@ public class Parameters {
     public static Integer timeTrendStopsInE1a;
     public static Integer timeTrendStopsInE1b;
     public static Integer timeTrendStopsInE2a;
+    // When the Ramsey macro layer supplies the secular wage trend, the exogenous WageGrowth
+    // index must not also trend out of sample, or the secular real wage is double-counted
+    // (Ramsey trend stacked on top of the extrapolated wage_growth index). Freeze the index
+    // at its last in-sample year for the projection; in-sample years are untouched.
+    public static boolean freezeWageGrowthForRamseyTrend = false;
+    public static int wageGrowthLastInSampleYear = Integer.MAX_VALUE;
     public static boolean flagFormalChildcare;
     public static boolean flagSuppressChildcareCosts;
     public static boolean donorPoolAveraging;
@@ -928,6 +1119,11 @@ public class Parameters {
         // display a dialog box to let the user know what is happening
         System.out.println("Loading model parameters");
         System.out.flush();
+
+        inputScenario = InputScenario.of(java.nio.file.Path.of(getCountryInputDir(country)), inputScenarioName);
+        if (inputScenario.isActive()) {
+            System.out.println("Input scenario '" + inputScenario.name() + "': workbooks are read from " + inputScenario.folder() + " where present.");
+        }
 
         /**
          * countrySpecificParameters map contains country-specific values of parameters declared in this Parameters class.
@@ -1123,6 +1319,9 @@ public class Parameters {
 
         setMapBounds(MapBounds.Population, countryString);
 
+        if (inputScenario.replaces("align_popProjections.xlsx")) {
+            checkScenarioPopulationProjections(country, startYearModel);
+        }
 
 
         // Not currently used. Consider removing.
@@ -1382,6 +1581,11 @@ public class Parameters {
         calculateFertilityRatesFromProjections();
         calculatePopulationGrowthRatiosFromProjections();
 
+        if (inputScenario.isActive()) {
+            checkScenarioCachedInputs(country, startYearModel);
+            InputScenario.requireNoUnusedWorkbooks(inputScenario.name(), inputScenario.unusedWorkbooks(), getCountryInputDir(country));
+            System.out.println(inputScenario.replacementSummary());
+        }
     }
 
 
@@ -2059,8 +2263,17 @@ public class Parameters {
 
         MultiKeyCoefficientMap map = getTimeSeriesValueMap(timeSeriesVariable);
         double valueBase = getTimeSeriesValue(baseYear, timeSeriesVariable);
+        // Captured here because the map still holds only explicit (in-sample) keys; once
+        // extendValueTimeSeries extrapolates forward this maximum would be polluted.
+        boolean captureWageGrowthLastYear = (timeSeriesVariable == TimeSeriesVariable.WageGrowth);
+        int wageGrowthMaxYear = Integer.MIN_VALUE;
         for (Object key: map.keySet()) {
 
+            if (captureWageGrowthLastYear) {
+                int yearHere = key.hashCode();
+                if (yearHere >= 1900 && yearHere <= 2500 && yearHere > wageGrowthMaxYear)
+                    wageGrowthMaxYear = yearHere;
+            }
             double valueHere = ((Number) map.getValue(key)).doubleValue();
             if (ratioAdjust) {
                 map.replace(key, valueHere/valueBase);
@@ -2068,6 +2281,8 @@ public class Parameters {
                 map.replace(key, valueHere - valueBase);
             }
         }
+        if (captureWageGrowthLastYear && wageGrowthMaxYear != Integer.MIN_VALUE)
+            wageGrowthLastInSampleYear = wageGrowthMaxYear;
     }
 
     private static MultiKeyCoefficientMap getTimeSeriesValueMap(TimeSeriesVariable timeSeriesVariable) {
@@ -2648,14 +2863,7 @@ public static void putPrevOrNewTarget(int year, Object newTarget, TimeSeriesVari
 
     private static void setMapBounds(MapBounds map, String countryString) {
 
-        String rgn = switch (countryString) {
-            case "EL" -> "EL3";
-            case "HU" -> "HUC";
-            case "IT" -> "ITC";
-            case "PL" -> "PL2";
-            case "ES" -> "ES5";
-            default -> null;
-        };
+        String rgn = mapBoundsRegion(countryString);
 
         boolean searchBack = true;
         boolean searchForward = true;
@@ -2935,12 +3143,29 @@ public static void putPrevOrNewTarget(int year, Object newTarget, TimeSeriesVari
      * tax-donor keys built at setup and the simulation must use the same ages.
      */
     public static void loadCountrySpecificParameters(Country country) {
-        countrySpecificParameters = ExcelAssistant.loadCoefficientMap(resolveCountryFile(country, "parameters.xlsx"), "Parameters", 1);
-        ParametersLoader.setParametersFromMap(countrySpecificParameters);
-        statePensionAgeSchedule = StatePensionAgeSchedule.load(resolveCountryFile(country, StatePensionAgeSchedule.FILE_NAME));
+        String parametersFile = "parameters.xlsx";
+        MultiKeyCoefficientMap loadedParameters =
+                ExcelAssistant.loadCoefficientMap(resolveCountryFile(country, parametersFile), "Parameters", 1);
+        if (inputScenario.replaces(parametersFile)) {
+            MultiKeyCoefficientMap baselineParameters = ExcelAssistant.loadCoefficientMap(
+                    getCountryInputDir(country) + parametersFile, "Parameters", 1);
+            requireSameDonorKeyParameters(inputScenario.name(), loadedParameters, baselineParameters);
+        }
+
+        String pensionAgeFile = StatePensionAgeSchedule.FILE_NAME;
+        String baselinePensionAgeFile = getCountryInputDir(country) + pensionAgeFile;
+        StatePensionAgeSchedule loadedPensionAges = inputScenario.replaces(pensionAgeFile)
+                ? StatePensionAgeSchedule.loadMatchingBaseline(baselinePensionAgeFile, inputScenario.resolve(pensionAgeFile))
+                : StatePensionAgeSchedule.load(baselinePensionAgeFile);
+
+        ParametersLoader.setParametersFromMap(loadedParameters);
+        countrySpecificParameters = loadedParameters;
+        statePensionAgeSchedule = loadedPensionAges;
     }
 
     public static void databaseSetup(Country country, boolean executeWithGui, int startYear) {
+
+        resetInputScenario();   // the input database is built from the baseline workbooks, never a scenario's
 
         // remove database file if it exists
         String filePath = "./input" + File.separator + "input.mv.db";

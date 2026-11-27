@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "country": "Germany",
+    "source_function": "manual_curated_version_comparison",
+    "model_version": "v17",
+    "description": "Curated historical comparison metrics referenced in documentation prose."
+  },
+  "nkpc_indexation": {
+    "dampening_percent": 26,
+    "sigma_p_v14": 2.26,
+    "source_reference": "Technical_Documentation_Macromodel_17.md"
+  }
+}

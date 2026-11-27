@@ -1,0 +1,34 @@
+# Batch scenario 2/5 — Ramsey baseline (Ramsey trend only, no counterfactual)
+countryString: "Poland"
+maxNumberOfRuns: 1
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation: true
+    # Off: in a run that starts in 2023, the last year with alignment targets, the retirement
+    # alignment solves once, for the start year, and SimPaths applies that one-year catch-up
+    # in every later year (three quarters of the people aged 55-64 are retired by 2029)
+    alignRetirement: false
+    alignDisability: true
+    alignEducation: true
+    alignInSchool: true
+    alignCohabitation: true
+    alignEmployment: true
+    alignFertility: true
+
+    # Macro Model
+    mm_macroModel: ramsey
+    # off | ramsey | dsge | ramsey_dsge   (dsge alone is diagnostic: the cycle was
+    # estimated on Ramsey-detrended data, so without the trend layer it deviates
+    # around SimPaths' own wage trend instead)
+    mm_macroLogging: verbose          # off | state | verbose (verbose implies state)
+    mm_dsgeMaxStateDeviation: 30
+
+    mm_ramseyFeedbackPersistence: 1.0
+
+collector_args:
+    exportToCSV: true

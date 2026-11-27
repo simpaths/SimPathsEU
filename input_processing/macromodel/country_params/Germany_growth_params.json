@@ -1,0 +1,59 @@
+{
+  "model_version": "2.0",
+  "model_type": "ramsey",
+  "country": "Germany",
+  "calibration_date": "2026-11-09",
+  "calibration_source": "PWT 10.0, Destatis VGR 2024, AMECO NAWRU, Eurostat",
+  "parameters": {
+    "alpha_K": 0.33,
+    "delta_annual": 0.05,
+    "beta_annual": 0.96,
+    "sigma": 1.5,
+    "tfp_growth_annual": 0.0053,
+    "K_override": 8311000,
+    "x_comments": {
+      "alpha_K": "Capital share from PWT (labor share ~0.67). Standard for Germany.",
+      "delta_annual": "5% annual depreciation for total-economy capital (structures + equipment). PWT 10.0 composite rate for Germany ~4.5-5.5%. NOTE: This differs from the DSGE .mod file delta_k=0.025 quarterly (~9.6% annual), which represents fast-depreciating equipment for cyclical dynamics. The growth model matches total GFCF (Eurostat P51G) including slow-depreciating structures, so it needs the lower rate.",
+      "beta_annual": "Discount factor: 0.96 annual. With positive trend growth, the modified-golden-rule BGP real rate exceeds 4%; under the current Germany calibration it is about 5.3% annual.",
+      "sigma": "Inverse IES (CRRA coefficient). sigma=1.5 is mid-range consensus (1=log, 2=high risk aversion).",
+      "tfp_growth_annual": "0.53% annual labour-augmenting TFP growth, set by the rule g_A = g_(Y/(N h)) * (1 - alpha_K), with g_(Y/(N h)) the growth of GDP per hour worked: on a BGP where K grows with Y, output per hour grows at g_A / (1 - alpha_K). On the current levels data (2000q1-2025q1, all persons in employment and hours per person employed) GDP per hour worked grows 0.78% p.a. (first against last four quarters; 0.79% between the annual means of 2000 and 2024), so the rule gives 0.52-0.53%. The rule assumes that the trend starts on its balanced path, which is why K_override puts K_0 there. The forward path converges to the common terminal_growth rate (see that block).",
+      "K_override": "Override initial capital stock K_0 (million EUR, chain-linked 2015) at the base year, set to the balanced-growth K/Y these structural parameters imply (3.19 x the 2000 GDP), as for the UK. The perpetual-inventory stock gives K/Y = 3.58. Starting there forces a capital-shallowing transition the data do not show, so the trend's output per hour grows too slowly and the output gap drifts. Measured 2026-11-09 at the calibrated g_A: with the PIM stock the trend's output per hour grows 0.60% p.a. against 0.78% in the data, corr(y_ramsey, y_hp) is 0.69 and corr(c_ramsey, c_hp) 0.62; with the override they are 0.79%, 0.84 and 0.86. Set to 0 to disable the override and use PIM."
+    }
+  },
+  "base_year": 2000,
+  "base_quarter": "2000Q1",
+  "base_year_values": {
+    "x_comment": "calibrate_growth_model.m writes calibrated base-year levels and derived fields into input/DE/MacroModel/growth_params_Germany.json."
+  },
+  "inflation_target": {
+    "pi_star_annual": 2,
+    "convergence_rho": 0.95,
+    "x_comment": "ECB 2% target. rho=0.95 for pre-EMU convergence (irrelevant for DE post-2000). pi_star entered as annual percent."
+  },
+  "labor_trends": {
+    "nawru_source": "PLACEHOLDER: HP trend (lambda=160000) of the in-sample ILO unemployment rate, written by calibrate_growth_model.m. Intended source: AMECO.",
+    "nawru_file": "nawru_germany.csv",
+    "demographic_L_source": "PLACEHOLDER: HP trend (lambda=160000) of the in-sample labour force, written by calibrate_growth_model.m; no projection tail. Intended source: Eurostat population projections + Destatis labor force participation.",
+    "demographic_L_file": "demographic_L_germany.csv",
+    "demographic_P_source": "Up to the SimPaths handoff quarter: HP trend (lambda=160000) of the resident population (pop_level, census breaks spliced in the data stage), written by calibrate_growth_model.m. After it: growth path of SimPaths align_popProjections.xlsx (all ages), written by build_population_projection.m.",
+    "demographic_P_file": "demographic_P_germany.csv",
+    "hours_trend_method": "log_linear",
+    "x_comment": "nawru_file is read for diagnostics only. demographic_L_file has no post-sample tail, so ramsey_trend.m extends N at its trailing 20-quarter trend growth rate, untapered, until build_population_projection.m supplies a projection. Hours: log-linear trend fitted to observed. The planner reads demographic_P_file in full and holds P/N at its last value beyond it."
+  },
+  "solver": {
+    "method": "stacked_newton_lbj",
+    "terminal_tail_quarters": 400,
+    "newton_tolerance": 1e-10,
+    "max_newton_iterations": 200,
+    "finite_difference_step_scale": 1e-7,
+    "jacobian_half_bandwidth": 1,
+    "line_search": "armijo_backtracking",
+    "x_comment": "Stacked-time Newton (LBJ) perfect-foresight solver with terminal K/Y closure. The solve runs over the observed sample plus a terminal tail of 400 quarters (~100 years); Newton convergence requires ||F||_inf <= 1.0e-10 within 200 iterations."
+  },
+  "terminal_growth": {
+    "enabled": true,
+    "g_A_terminal_annual": 0.005,
+    "rho_quarterly": 0.966,
+    "x_comment": "Forward TFP growth starts at tfp_growth_annual and converges quarter by quarter to g_A_terminal_annual, g_t = g_term + rho_quarterly * (g_(t-1) - g_term). All five countries share g_A_terminal_annual = 0.5% and rho_quarterly = 0.966, a half-life of 5 years. The in-sample rate is measured per country; the long run is a common assumption, because TFP growth decades ahead is unknown and convergence to a common rate is the neutral one. 0.5% is the conservative value: it implies long-run growth of output per hour of 0.75% a year (g_A / (1 - alpha_K)). The half-life keeps a catch-up rate from carrying far into the projection: it puts Poland's forward trend wage growth (2023q1-2059q4) at about 1.6% a year (measured 2026-11-09), close to the trend in vanilla SimPaths' wage equation (about 1.5% a year). The in-sample solve holds tfp_growth_annual through the last data quarter; the forward solve converges from the handoff quarter."
+  }
+}

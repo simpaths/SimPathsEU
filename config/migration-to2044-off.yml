@@ -1,0 +1,40 @@
+# Poland migration experiment, variant in which the arrivals stop after 2044
+# (input/PL/scenarios/migration_200k_to2044/README.md): migration population, macro layer off.
+# Its baselines are migration-baseline-off.yml and migration-baseline-ramsey.yml
+countryString: "Poland"
+maxNumberOfRuns: 1
+executeWithGui: false
+randomSeed: 42
+startYear: 2023
+endYear: 2060
+popSize: 20000
+
+model_args:
+    alignPopulation:   true
+    # Off: in a run that starts in 2023, the last year with alignment targets, the retirement
+    # alignment solves once, for the start year, and SimPaths applies that one-year catch-up
+    # in every later year (three quarters of the people aged 55-64 are retired by 2029)
+    alignRetirement:   false
+    alignDisability:   true
+    alignEducation:    true
+    alignInSchool:     true
+    alignCohabitation: true
+    # Inert for startYear >= 2023: LabourMarket gates employment alignment on
+    # year <= EMPLOYMENT_ALIGNMENT_END_YEAR (=2023), and the labour market first
+    # runs in startYear+1. Kept only for parity with the other config files.
+    alignEmployment:   true
+    alignFertility:    true
+
+    # Input scenario: workbooks are read from input/PL/scenarios/migration_200k_to2044/ first
+    inputScenario: migration_200k_to2044
+
+    # Macro Model
+    mm_macroModel: off
+    mm_macroLogging: state          # off | state | verbose (verbose implies state)
+    mm_useMacroPathRecorder: true
+
+    mm_ramseyFeedbackPersistence: 1.0
+
+
+collector_args:
+    exportToCSV: true

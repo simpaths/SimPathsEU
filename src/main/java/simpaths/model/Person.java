@@ -135,7 +135,9 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 //	individual in the simulated population, in each simulated period.
     @Transient private boolean labWageHrlyFullTimeFlag; // labWageHrly is the W1 full-time wage (Pt = 0), set in each simulated year; false while it is the observed wage of the initial population
     private Double labWageHrly;		//Is hourly rate.  Initialised with value: ils_earns / (4.34 * lhw), where lhw is the weekly hours a person worked in EUROMOD input data
-    private Double labWageHrlyL1; // Lag(1) of the hourly wage earned (see getHourlyWageEarned)
+    private Double labWageHrlyL1; // Lag(1) of the hourly wage earned before the macro adjustment
+    // Full-time regression wage before the macro adjustment, used to form the wage lag.
+    @Transient private Double labWageHrlyRegression;
     @Transient private Series.Double yearlyEquivalisedDisposableIncomeSeries;
     private Double xEquivYear;
     @Transient private Series.Double yearlyEquivalisedConsumptionSeries;
@@ -504,6 +506,10 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                 labC4L1 = Les_c4.NotEmployed;
             }
         }
+        // The start-year lag roll uses this before any wage update, so a start-population person
+        // (no pre-overlay wage of its own; input wages carry no macro overlay) seeds it with the
+        // current wage.
+        labWageHrlyRegression = (originalPerson.labWageHrlyRegression != null) ? originalPerson.labWageHrlyRegression : labWageHrly;
     }
 
     // used by other constructors
@@ -1208,6 +1214,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         double upratedLevelPotentialHourlyEarnings = Math.exp(logPotentialHourlyEarnings);
         setFullTimeHourlyEarningsPotential(upratedLevelPotentialHourlyEarnings);
         setL1_fullTimeHourlyEarningsPotential(upratedLevelPotentialHourlyEarnings);
+        labWageHrlyRegression = upratedLevelPotentialHourlyEarnings; // no macro overlay at init
     }
 
 
@@ -1253,6 +1260,30 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
         // Uprate and set level of potential earnings
         double upratedFullTimeHourlyEarnings = Math.exp(logFullTimeHourlyEarnings);
+
+        // Snapshot the pre-overlay regression wage (same MIN/MAX clamp as the effective wage)
+        // so the AR(1) lag propagates the SimPaths wage process, not the macro-multiplied wage.
+        if (upratedFullTimeHourlyEarnings < Parameters.MIN_HOURLY_WAGE_RATE) {
+            labWageHrlyRegression = Parameters.MIN_HOURLY_WAGE_RATE;
+        } else if (upratedFullTimeHourlyEarnings > Parameters.MAX_HOURLY_WAGE_RATE) {
+            labWageHrlyRegression = Parameters.MAX_HOURLY_WAGE_RATE;
+        } else {
+            labWageHrlyRegression = upratedFullTimeHourlyEarnings;
+        }
+
+        // Apply the macro wage deviation (Ramsey trend and/or DSGE cycle) when mm_macroModel is on.
+        // wageDeviation is in % (e.g., 2.5 means 2.5% above the regression wage)
+        if (model.getMm_macroModel().isOn()) {
+            double wageDeviation = model.getMm_wageDeviation();
+            if (Math.abs(wageDeviation) > 1e-9) {  // Only adjust if deviation is non-zero
+                double originalWage = upratedFullTimeHourlyEarnings;
+                double wageMultiplier = 1.0 + wageDeviation / 100.0;
+                upratedFullTimeHourlyEarnings *= wageMultiplier;
+                // Track for logging summary (includes sample individual logging)
+                model.trackWageAdjustment(this, originalWage, upratedFullTimeHourlyEarnings, wageDeviation);
+            }
+        }
+
         if (upratedFullTimeHourlyEarnings < Parameters.MIN_HOURLY_WAGE_RATE) {
             setFullTimeHourlyEarningsPotential(Parameters.MIN_HOURLY_WAGE_RATE);
         } else if (upratedFullTimeHourlyEarnings > Parameters.MAX_HOURLY_WAGE_RATE) {
@@ -1513,7 +1544,11 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
 
         // Wage earned last year, taken before labC4L1 moves on: getHourlyWageRate picks the W1 equation, and so the
         // part-time effect, by labC4L1. Hours are only read once labWageHrly is the W1 full-time wage (not at load).
-        Double hourlyWageLastYear = labWageHrlyFullTimeFlag ? getHourlyWageEarned(getLabourSupplyHoursWeekly()) : labWageHrly;
+        // Keep the macro adjustment out of the wage regression's lagged input.
+        Double hourlyWageLastYear = (labWageHrlyRegression != null) ? labWageHrlyRegression : labWageHrly;
+        if (labWageHrlyFullTimeFlag) {
+            hourlyWageLastYear = getHourlyWageRate(getLabourSupplyHoursWeekly(), hourlyWageLastYear);
+        }
 
         labC4L1 = labC4;
         labC7CovidL1 = labC7Covid;
@@ -1541,7 +1576,7 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         updateParentsLaggedVariables();
         labHrsWorkEnumWeekL1 = getLabourSupplyWeekly(); // Lag(1) of labour supply
         yBenReceivedFlagL1 = yBenReceivedFlag; // Lag(1) of flag indicating if individual receives benefits
-        labWageHrlyL1 = hourlyWageLastYear; // Lag(1) of the hourly wage earned (L1_log_hourly_wage, Stata l.lwage_hour)
+        labWageHrlyL1 = hourlyWageLastYear; // L1_log_hourly_wage, Stata l.lwage_hour
 
         if (initialUpdate) {
             yEmpPersGrossMonthL1 = getYplgrs_dv(); //Lag(1) of gross personal employment income
@@ -3375,7 +3410,12 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
                 return 0.;
             }
             case RealWageGrowth -> { // Note: the values provided to the wage regression must be rebased to 2015, the default BASE_PRICE_YEAR.
-                return 100*Parameters.getTimeSeriesIndex(getYear(), UpratingCase.Earnings); //wage estimates use WageGrowth upscaled to 100 base
+                // When Ramsey supplies the secular wage trend, freeze this index at the last
+                // in-sample year so the trend is not double-counted (see Parameters).
+                int wageGrowthYear = getYear();
+                if (Parameters.freezeWageGrowthForRamseyTrend && wageGrowthYear > Parameters.wageGrowthLastInSampleYear)
+                    wageGrowthYear = Parameters.wageGrowthLastInSampleYear;
+                return 100*Parameters.getTimeSeriesIndex(wageGrowthYear, UpratingCase.Earnings); //wage estimates use WageGrowth upscaled to 100 base
             }
             case RealGDPGrowth -> {
                 return Parameters.getTimeSeriesIndex(getYear(), UpratingCase.Capital);
@@ -4676,8 +4716,8 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
         return getHourlyWageRate(weeklyHours);
     }
     /**
-     * Hourly wage earned at the given weekly hours, the lag of which is L1_log_hourly_wage (Stata l.lwage_hour, the
-     * observed hourly wage). Once labWageHrly is the W1 full-time wage, that is getHourlyWageRate at those hours, which
+     * Hourly wage earned at the given weekly hours, including the macro adjustment when enabled.
+     * Once labWageHrly is the W1 full-time wage, that is getHourlyWageRate at those hours, which
      * adds the part-time effect. The observed wage of the initial population already includes it, so it is kept as is.
      */
     public Double getHourlyWageEarned(int labourHoursWeekly) {
@@ -4692,12 +4732,15 @@ public class Person implements EventListener, IDoubleSource, IIntSource, Weight,
      * then added or removed only where the given hours and the observed hours fall on different sides of the cutoff.
      */
     public double getHourlyWageRate(int labourHoursWeekly) {
+        return getHourlyWageRate(labourHoursWeekly, labWageHrly);
+    }
 
+    private double getHourlyWageRate(int labourHoursWeekly, double hourlyWage) {
         int ptAtHours = isPartTimeInWageEquations(labourHoursWeekly) ? 1 : 0;
         int ptInWage = (!labWageHrlyFullTimeFlag && labHrsWorkWeek != null && isPartTimeInWageEquations(labHrsWorkWeek)) ? 1 : 0;
         if (ptAtHours == ptInWage)
-            return labWageHrly;
-        return Math.exp(Math.log(labWageHrly) + (ptAtHours - ptInWage) * getPartTimeWageEffect());
+            return hourlyWage;
+        return Math.exp(Math.log(hourlyWage) + (ptAtHours - ptInWage) * getPartTimeWageEffect());
     }
 
     private static boolean isPartTimeInWageEquations(int labourHoursWeekly) {
