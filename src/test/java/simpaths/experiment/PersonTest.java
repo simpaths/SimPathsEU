@@ -301,11 +301,24 @@ public class PersonTest {
         @Test
         @DisplayName("New_rel_L1 is one only for a partnership formed in last year's union matching")
         public void newRelLagFlagsNewPartnership() throws Exception {
-            setPrivateField(testPerson, "demNewPartnerFlagL1", true);
+            setPrivateField(testPerson, "demPartnerFirstYearFlagL1", true);
             assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.New_rel_L1));
 
-            setPrivateField(testPerson, "demNewPartnerFlagL1", false);
+            setPrivateField(testPerson, "demPartnerFirstYearFlagL1", false);
             assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.New_rel_L1));
+        }
+
+        @Test
+        @DisplayName("Dehsp_c4_Na_L1 is one only when last year's partner had education NotAssigned")
+        public void partnerEducationNotAssignedLag() {
+            testPerson.setDehsp_c4_lag1(Education.NotAssigned);
+            assertEquals(1.0, testPerson.getDoubleValue(Person.DoublesVariables.Dehsp_c4_Na_L1));
+
+            testPerson.setDehsp_c4_lag1(Education.Low);
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dehsp_c4_Na_L1));
+
+            testPerson.setDehsp_c4_lag1(null); // no partner last year
+            assertEquals(0.0, testPerson.getDoubleValue(Person.DoublesVariables.Dehsp_c4_Na_L1));
         }
 
         @Test

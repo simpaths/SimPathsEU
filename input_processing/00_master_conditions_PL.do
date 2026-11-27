@@ -4,10 +4,9 @@
 * DESCRIPTION:         	Sets out the assumptions and conditions imposed in the 
 * 						creation of the unique dataset and the if conditions 
 * 						imposed when estimating the processes for SimPaths.  
-********************************************************************************
 * COUNTRY:              PL
-* AUTHORS: 				Ashley Burdett
-* LAST UPDATE:          Feb 2026 AB
+* AUTHORS: 				Ashley Burdett, Aleksandra Kolndrekaj
+* LAST UPDATE:          Nov 2026 AK
 ********************************************************************************
 *   -----------------------------------------------------------------------
 *    Assumptions imposed to align the SILC data with simulation rules:
@@ -85,7 +84,7 @@ global country "PL"
 
 global first_sim_year "2011"
 
-global last_sim_year "2023"
+global last_sim_year "2024"
 
 
 * Define threshold ages
@@ -111,6 +110,8 @@ global age_form_partnership 18
 global age_have_child_min 18 	
 
 global age_leave_parental_home 18
+
+global age_max_leave_parental_home 45
 
 global age_own_home 18
 
@@ -143,7 +144,7 @@ global e1b_if_condition "dag >= ${age_leave_school} & l.les_c4 != 4 & l.les_c4 !
 global e2_if_condition "dag >= ${age_leave_school} & l.les_c4 == 2 & les_c4 != 2 & flag_deceased != 1"
 
 * Leave the parental home 
-global p1_if_condition "ded == 0 & dag >= ${age_leave_parental_home} & flag_deceased != 1"
+global p1_if_condition "ded == 0 & dag >= ${age_leave_parental_home} & dag <= ${age_max_leave_parental_home} & flag_deceased != 1"
 
 * Partnership 
 global u1_if_condition "dag >= ${age_form_partnership} & ssscp != 1 & flag_deceased != 1"

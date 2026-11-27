@@ -7,11 +7,9 @@
 * DATA:         	    GESIS - EU SILC			
 * AUTHORS: 				Daria Popova, Justin van de Ven, Ashley Burdett, 
 * 						Aleksandra Kolndrekaj 
-* LAST UPDATE:          March 2026 (AB)
+* LAST UPDATE:          November 2026 (AK)
 ********************************************************************************
-* NOTES: 	
-*	ENSURE HAVE ALREADY RUN 00_master_conditions_PL.do FILE.
-* 	This can be found in the main "input_processing" folder. Called below. 
+* NOTES: 				
 * 			
 *******************************************************************************/
 
@@ -36,7 +34,7 @@ set matsize 1000
 *******************************************************************************/
 
 * Individual 
-global dir_ind "/Users/ashleyburdett/Library/CloudStorage/Box-Box"
+global dir_ind "C:/Users/Aleksandra/Box"
 
 //"C:/Users/ak25793/Box"
 //"C:/Users/Aleksandra/Box"
@@ -68,7 +66,7 @@ global dir_external_data "$dir_ind/CeMPA shared area/projects - completed/ESPON 
 * DEFINE PARAMETERS & PROCESS IF CONDITIONS 
 *******************************************************************************/
 
-do "$dir_ind/CeMPA shared area/_SimPaths/_SimPathsEU/input_processing/00_master_conditions.do"
+do "$dir_ind/CeMPA shared area/_SimPaths/_SimPathsEU/input_processing/00_master_conditions_PL.do"
 
 
 /*******************************************************************************
@@ -94,4 +92,9 @@ do "$dir_do/08_reg_wages_${country}.do"
 do "$dir_do/09_reg_income_${country}.do"
 
 do "$dir_do/10_parametric_matching_process_${country}.do"
+
+do "$dir_do/11_attrition_analysis_${country}.do"
+
+do "$dir_do/90_cleaning_excel_inputs.do"
+
 

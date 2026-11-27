@@ -83,7 +83,7 @@ drop if missing(dagDifference) | missing(predictedWageDifference)
 
 sum dagDifference predictedWageDifference //Get sample mean and std dev
 
-putexcel set "$dir_work/scenario_parametricMatching_PL", sheet("Parameters") replace
+putexcel set "$dir_work/scenario_parametricMatching", sheet("Parameters") replace
 putexcel A1 = ("Parameter") 
 putexcel A2 = ("mean_dag_diff")
 putexcel A3 = ("mean_wage_diff")
