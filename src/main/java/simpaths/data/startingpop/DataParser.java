@@ -80,6 +80,8 @@ public class DataParser {
 				//Refresh table
 				"DROP TABLE IF EXISTS " + inputFileName + " CASCADE;"
 				+ "CREATE TABLE " + inputFileName + " AS SELECT * FROM CSVREAD(\'" + inputFileLocation + "\');"
+				//demPartnerFirstYearFlag (Stata new_rel) as missing where the CSV lacks it (at present ES, real and training data)
+				+ "ALTER TABLE " + inputFileName + " ADD COLUMN IF NOT EXISTS demPartnerFirstYearFlag INT DEFAULT -9;"
 				+ "DROP TABLE IF EXISTS " + personTable + " CASCADE;"
 				+ "CREATE TABLE " + personTable + " AS (SELECT " + stringAppender(inputPersonColumnNamesSet) + " FROM " + inputFileName + ");"
 
@@ -207,6 +209,13 @@ public class DataParser {
 				+ "UPDATE " + personTable + " SET dhh_owned_add = 'True' WHERE wealthPrptyFlag = 1;"
 				+ "ALTER TABLE " + personTable + " DROP COLUMN wealthPrptyFlag;"
 				+ "ALTER TABLE " + personTable + " ALTER COLUMN dhh_owned_add RENAME TO wealthPrptyFlag;"
+
+				//Partnership in first year (Stata new_rel): 1 if the partnership formed this year, otherwise 0, or -9 for the
+				//unpartnered. Person holds it as a boolean, true for 1 only; the start-year Update copies it to New_rel_L1
+				+ "ALTER TABLE " + personTable + " ADD partner_first_year BOOLEAN DEFAULT FALSE NOT NULL;"
+				+ "UPDATE " + personTable + " SET partner_first_year = TRUE WHERE demPartnerFirstYearFlag = 1;"
+				+ "ALTER TABLE " + personTable + " DROP COLUMN demPartnerFirstYearFlag;"
+				+ "ALTER TABLE " + personTable + " ALTER COLUMN partner_first_year RENAME TO demPartnerFirstYearFlag;"
 
 				//SYSTEM : statInterviewYear / statCollectionWave / labHrsWorkWeek / yPersDispMonth — CSV column
 				//names already match JPA field names, no rename needed.

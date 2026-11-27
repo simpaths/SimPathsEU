@@ -125,6 +125,7 @@ public class Parameters {
             "eduReturnFlag",                    //return to education dummy
             "healthSelfRated",                    //health status
             "demPartnerNYear",                //years in partnership
+            "demPartnerFirstYearFlag",        //partnership formed this year (Stata new_rel); added as missing where the CSV lacks it (DataParser)
             "demAgePartnerDiff",                //partners age difference
             "demNChild0to2",                //number children aged 0-2
             "demNChild",                    //number children

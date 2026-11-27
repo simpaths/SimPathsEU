@@ -4,7 +4,7 @@
 * OBJECT: 			Probit Model 
 * AUTHORS:			Daria Popova, Justin van de Ven, Ashley Burdett
 *					Aleksandra Kolndrekaj 
-* LAST UPDATE:		January 2026
+* LAST UPDATE:		November 2026 AK
 * COUNTRY: 			Poland  
 ********************************************************************************
 * NOTES: 			
@@ -26,7 +26,7 @@ log using "$dir_log/reg_leaveParentalHome.log", replace
 /********************************* SET EXCEL FILE *****************************/
 
 * Info sheet
-putexcel set "$dir_work/reg_leave_parental_home_${country}", sheet("Info") ///
+putexcel set "$dir_work/reg_leave_parental_home", sheet("Info") ///
 	replace
 putexcel A1 = "Description:", bold
 putexcel B1 = "Model parameters governing leaving parental home process"
@@ -34,7 +34,7 @@ putexcel B1 = "Model parameters governing leaving parental home process"
 putexcel A2 = "Authors:", bold
 putexcel B2 = "Ashley Burdett, Aleksandra Kolndrekaj" 	
 putexcel A3 = "Last edit:", bold
-putexcel B3 = "12 Jan 2016 AB"
+putexcel B3 = "08 Oct 2026 AK"
 
 putexcel A5 = "Process:", bold
 putexcel B5 = "Description:", bold
@@ -45,7 +45,7 @@ putexcel A11 = "Notes:", bold
 putexcel B11 = "Regions: PL4 = Polnocno-Zachodni, PL5 = Poludniowo-Zachodni, PL6 = Polnocy, PL10 = Central + East. Poludniowy is the omitted category." 
 putexcel B11 = "DV is synchronised with the adult child definition"
 
-putexcel set "$dir_work/reg_leave_parental_home_${country}", sheet("Gof") modify
+putexcel set "$dir_work/reg_leave_parental_home", sheet("Gof") modify
 putexcel A1 = "Goodness of fit", bold		
 
 
@@ -84,6 +84,7 @@ gen y2020 = (stm == 20)
 gen y2021 = (stm == 21)
 gen y2022 = (stm == 22)
 gen y2023 = (stm == 23)
+gen y2024 = (stm == 24)
 
 
 * Labeling and formating variables
@@ -169,14 +170,19 @@ gen Y2020 = y2020
 gen Y2021 = y2021 
 gen Y2022 = y2022 
 gen Y2023 = y2023
+gen Y2024 = y2024
 
 
+
+	
 /********************************** ESTIMATION ********************************/
+* Run Stata programs to produce Excel file 
+do "${dir_do}/programs.do" 
 
 /**************** P1: PROBABILITY OF LEAVING THE PARENTAL HOME ****************/
 
 xtset idperson swv		
-fre dlftphm if (ded == 0 & dag >= 18) 
+fre dlftphm if (ded == 0 & dag >= 18 & dag <= 45) 
 	
 * Estimation
 probit dlftphm i.Dgn Dag Dag_sq li.Deh_c4_Medium li.Deh_c4_Low ///
@@ -186,160 +192,13 @@ probit dlftphm i.Dgn Dag Dag_sq li.Deh_c4_Medium li.Deh_c4_Low ///
 	vce(robust)
 	
 	
-* Save raw results 
-matrix results = r(table)
-matrix results = results[1..6,1...]'
-
-putexcel set "$dir_raw_results/leave_parental_home/leave_parental_home", ///
-	sheet("Process P1") replace
-putexcel A3 = matrix(results), names nformat(number_d2) 
-putexcel J4 = matrix(e(V))
-
-outreg2 stats(coef se pval) using ///
-	"$dir_raw_results/leave_parental_home/P1.doc", replace ///
-title("Process P1: Probability Leave the Parental Home") ///
-	ctitle(Leave home) label side dec(2) noparen ///
-	addstat(R2, e(r2_p), Chi2, e(chi2), Log-likelihood, e(ll)) ///
-	addnote(`"Note: Regression if condition = (${p1_if_condition})"')	
+process_regression, domain("leave_parental_home") process("P1") sheet("P1") ///
+	title("Process P1: Prob. leave parental home") ///
+	gofrow(3) goflabel("P1 - Leave parental home") ///
+	ifcond("${p1_if_condition}") probit	
 	
-* Save sample inclusion indicator and predicted probabilities	
-gen in_sample = e(sample)	
-predict p
-
-* Save sample for estiamte validation
-save "$dir_data/P1_sample", replace
 	
-* Store model summary statistics	
-scalar r2_p = e(r2_p) 
-scalar N_sample = e(N)	
-scalar chi2 = e(chi2)
-scalar ll = e(ll)	
-
-
-* Store results in Excel 
-
-* Store estimates in matrices
-matrix b = e(b)	
-matrix V = e(V)
-
-* Eliminate rows and columns containing zeros (baseline cats) 
-mata:
-	// Call matrices into mata 
-    V = st_matrix("V")
-    b = st_matrix("b")
-
-    // Find which coefficients are nonzero
-    keep = (b :!= 0)
+display "Leaving parental home analysis complete!"
 	
-	// Eliminate zeros
-	b_trimmed = select(b, keep)
-    V_trimmed = select(V, keep)
-    V_trimmed = select(V_trimmed', keep)'
-
-	// Inspection
-	b_trimmed 
-	V_trimmed 
 	
-    // Return to Stata
-    st_matrix("b_trimmed", b_trimmed')
-    st_matrix("V_trimmed", V_trimmed)
-	st_matrix("nonzero_b_flag", keep)
-end	
-
-* Export into Excel 
-putexcel set "$dir_work/reg_leave_parental_home_${country}", sheet("P1") modify
-putexcel B2 = matrix(b_trimmed)
-putexcel C2 = matrix(V_trimmed)
-
-
-* Labels 
-putexcel set "$dir_work/reg_leave_parental_home_${country}", sheet("P1") modify
-
-putexcel A1 = "REGRESSOR"
-putexcel B1 = "COEFFICIENT"
-
-* Use frame and Mata to extract nice labels from colstripe of e(b)
-frame create temp_frame
-frame temp_frame: {
-
-    mata: 
-		// Import matrices from Stata
-		nonzero_b_flag = st_matrix("nonzero_b_flag")'
-		stripe = st_matrixcolstripe("e(b)")
-		
-		// Extract and variable and category names
-		varnames = stripe[.,2]
-		varnames_no_bl = select(varnames, nonzero_b_flag :== 1)
-		
-		// Create label vector
-		labels_no_bl = usubinstr(varnames_no_bl, "1.", "", 1)
-		labels_no_bl = regexr(labels_no_bl, "^_cons", "Constant")
-		labels_no_bl = regexm(labels_no_bl, "^L\.") :* (regexr(labels_no_bl, "^L\.", "") :+ "_L1") :+ (!regexm(labels_no_bl, "^L\.") :* labels_no_bl)
-		labels_no_bl = regexm(labels_no_bl, "^1L.") :* (regexr(labels_no_bl, "^1L.", "") :+ "_L1") :+ (!regexm(labels_no_bl, "1L.") :* labels_no_bl)
-		labels_no_bl
-		
-		nonzero_labels_structure = "v1"\labels_no_bl
-		
-		// Create temp file 
-		fh = fopen("$dir_work/temp_labels.txt", "w")
-		for (i=1; i<=rows(nonzero_labels_structure); i++) {
-			fput(fh, nonzero_labels_structure[i])
-		}
-		fclose(fh)
-    end
-
-    * Import cleaned labels into Stata
-    import delimited "$dir_work/temp_labels.txt", clear varnames(1) ///
-		encoding(utf8)
-	
-	gen n = _n
-    
-    * Export labels to Excel
-	putexcel set "$dir_work/reg_leave_parental_home_${country}", ///
-		sheet("P1") modify
-	
-	* Vertical labels
-    summarize n, meanonly
-	local N = r(max)+1
-	forvalue i = 2/`N' {
-		local j = `i' - 1
-		putexcel A`i' = v1[`j'] 
-	}
-	
-	* Horizontal labels 
-	summarize n, meanonly
-	local N = r(max) + 1  // Adjusted since we're working across columns
-
-	forvalues j = 1/`N' {
-		local col = char(66 + `j')  // 66 = ASCII for 'B', so D=68, E=69, etc.
-		putexcel `col'1 = v1[`j']
-	}
-	
-    * Clean up
-    erase "$dir_work/temp_labels.txt"
-}
-
-* Export model fit statistics
-putexcel set "$dir_work/reg_leave_parental_home_${country}", sheet("Gof") modify
-
-putexcel A3 = "P1 - Leaving the parental home ", bold		
-
-putexcel A5 = "Pseudo R-squared" 
-putexcel B5 = r2_p 
-putexcel A6 = "N"
-putexcel B6 = N_sample 
-putexcel E5 = "Chi^2"		
-putexcel F5 = chi2
-putexcel E6 = "Log likelihood"		
-putexcel F6 = ll
-		
-* Clean up 		
-drop in_sample p
-scalar drop _all
-matrix drop _all
-frame drop temp_frame 	
-
-capture log close 
-
-cap erase "$dir_work/temp.dta"
-
+cap log close 	
